@@ -63,6 +63,10 @@ curl -sS -X POST $W/api/workouts -H "Authorization: Bearer $TOKEN" \
 # List, read, replace and delete (the owner or an admin; deleting a workout being ridden is 409 workout_in_use)
 curl -sS $W/api/workouts -H "Authorization: Bearer $TOKEN"
 curl -sS $W/api/workouts/1 -H "Authorization: Bearer $TOKEN"
+curl -sS -X PUT $W/api/workouts/1 -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Sweet spot v2","type":"erg","blocks":[{"duration_s":600,"ftp_pct":60},{"duration_s":1500,"ftp_pct":92}]}'
+curl -sS -X DELETE $W/api/workouts/1 -H "Authorization: Bearer $TOKEN"   # 204; 409 workout_in_use while ridden
 
 # Ride workout 1 (the bike must be ready). The blocks are resolved for the connected rider when the ride starts,
 # so editing the workout later affects the next ride only.

@@ -17,13 +17,18 @@ export default defineConfig({
     launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
   projects: [
-    { name: 'phone', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, hasTouch: true } },
+    // workouts.spec.ts is one flow on the tablet project only.
+    {
+      name: 'phone',
+      testIgnore: /workouts\.spec/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, hasTouch: true },
+    },
     // layout.spec.ts sets its own viewports, so only the phone project runs it.
     {
       name: 'tablet',
       testIgnore: /layout\.spec/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1024, height: 768 }, hasTouch: true },
     },
-    { name: 'tv', testIgnore: /layout\.spec/, use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } } },
+    { name: 'tv', testIgnore: /layout\.spec|workouts\.spec/, use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } } },
   ],
 });

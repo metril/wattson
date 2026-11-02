@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { MAX_TARGET_W, MIN_TARGET_W } from '@/lib/workout-math';
+import type { TickStore } from '@/lib/tick-store';
 import { Minus, Plus } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
@@ -16,17 +18,23 @@ const step =
  */
 export function ErgControls({
   send,
+  ticks,
   free = false,
   disabled = false,
   onError,
 }: {
   send: (command: CommandName, value?: number) => Promise<void>;
+  /** Prefills the free-ERG input with the current target. */
+  ticks?: TickStore;
   /** Free ERG (no workout): shows the numeric target input. */
   free?: boolean;
   disabled?: boolean;
   onError?: (e: unknown) => void;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => {
+    const w = ticks?.latest?.target_power_w ?? 0;
+    return w > 0 ? String(Math.round(w)) : '';
+  });
   const watts = Number(text);
   const invalid = text === '' || ergError(watts) !== null;
 
@@ -69,6 +77,9 @@ export function ErgControls({
               label="Target power (W)"
               type="number"
               inputMode="numeric"
+              min={MIN_TARGET_W}
+              max={MAX_TARGET_W}
+              step={1}
               value={text}
               onChange={(e) => setText(e.target.value)}
               error={text !== '' ? (ergError(watts) ?? undefined) : undefined}

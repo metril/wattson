@@ -1,6 +1,12 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RidePage } from '@/pages/Ride';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { WorkoutView } from './WorkoutView';
+import { TickStore } from '@/lib/tick-store';
+import { workoutKey } from '@/features/workouts/queries';
 import { renderWithClient, stubApi } from '@/test-utils';
 import { bikeFixture, FakeWebSocket, tickFixture } from '@/test-ws';
 import type { components } from '@/lib/openapi';
@@ -142,6 +148,22 @@ describe('Ride workout and ERG', () => {
     expect(ws.commands.at(-1)).toMatchObject({ command: 'set_target_power', value: 260 });
   });
 
+  it('the free-ERG input starts at the current target and carries the range', async () => {
+    const { ws } = await setup('/');
+    push(ws, { state: 'riding', mode: 'erg', target_power_w: 220 });
+    const watts = await screen.findByLabelText('Target power (W)');
+    expect(watts).toHaveValue(220);
+    expect(watts).toHaveAttribute('min', '50');
+    expect(watts).toHaveAttribute('max', '1000');
+    expect(watts).toHaveAttribute('step', '1');
+  });
+
+  it('a workouts list that fails to load drops ?workout= with a notice', async () => {
+    await setup('/?workout=5', {}, { 'GET /api/workouts': [500, { error: { code: 'internal_error', message: 'x' } }] });
+    expect(await screen.findByText(/Could not load the workouts/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Ride')).toHaveValue('free');
+  });
+
   it('an ERG workout has no numeric target input', async () => {
     const { ws } = await setup('/');
     push(ws, { state: 'riding', mode: 'erg', workout_id: 5, block_index: 0, block_count: 2, block_remaining_s: 5, target_power_w: 250 });
@@ -157,5 +179,60 @@ describe('Ride workout and ERG', () => {
     push(ws, { state: 'riding', mode: 'interval', workout_id: 5, block_index: 1, block_count: 2, block_remaining_s: 5 });
     push(ws, { state: 'finished', mode: 'interval', workout_id: 5, block_index: 1, block_count: 2, block_remaining_s: 0 });
     await waitFor(() => expect(screen.getByText('Workout complete')).toBeInTheDocument());
+  });
+
+  describe('WorkoutView against a changed workout', () => {
+    async function mount() {
+      stubApi({ 'GET /api/riders': [200, [rider]], 'GET /api/workouts/5': [200, workout()] });
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const ticks = new TickStore();
+      render(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter>
+            <WorkoutView workoutId={5} ticks={ticks} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const set = (t: Partial<Tick>) =>
+        act(() => {
+          ticks.set(tickFixture({ state: 'riding', mode: 'interval', workout_id: 5, ...t }));
+          vi.runOnlyPendingTimers();
+        });
+      await screen.findByTestId('block-pos');
+      return { qc, set };
+    }
+
+    it('a refetch with edited blocks mid-ride does not change the displayed targets', async () => {
+      const { qc, set } = await mount();
+      set({ block_index: 0, block_count: 2, block_remaining_s: 40, level: 4 });
+      expect(screen.getByTestId('block-target')).toHaveTextContent('L4');
+      expect(screen.getByTestId('next-block')).toHaveTextContent('+2 → L7');
+      act(() => {
+        qc.setQueryData(
+          workoutKey(5),
+          workout({
+            blocks: [
+              { duration_s: 75, level: 12 },
+              { duration_s: 75, level: 14 },
+            ],
+          }),
+        );
+        vi.runOnlyPendingTimers();
+      });
+      set({ block_index: 0, block_count: 2, block_remaining_s: 39, level: 4 });
+      expect(screen.getByTestId('block-target')).toHaveTextContent('L4');
+      expect(screen.getByTestId('next-block')).toHaveTextContent('+2 → L7');
+      expect(screen.getByTestId('block-label')).toHaveTextContent('Warm up');
+    });
+
+    it('a block_count that disagrees with the blocks shows only position, countdown and the live target', async () => {
+      const { set } = await mount();
+      set({ block_index: 2, block_count: 3, block_remaining_s: 61, level: 8 });
+      expect(screen.getByTestId('block-pos')).toHaveTextContent('3/3');
+      expect(screen.getByTestId('block-countdown')).toHaveTextContent('1:01');
+      expect(screen.getByTestId('block-target')).toHaveTextContent('L8');
+      expect(screen.getByTestId('next-block')).toBeEmptyDOMElement();
+      expect(screen.queryByRole('img', { name: /Workout preview/ })).not.toBeInTheDocument();
+    });
   });
 });

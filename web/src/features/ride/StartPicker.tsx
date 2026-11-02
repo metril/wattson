@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Field } from '@/components/Field';
 import { Select } from '@/components/Select';
@@ -59,10 +59,17 @@ export function StartPicker({ value, onChange }: { value: StartChoice; onChange(
   const missing =
     (value.kind === 'route' && !!routes.data && !routes.isFetching && !routeList.some((r) => r.id === value.id)) ||
     (value.kind === 'workout' && !!workouts.data && !workouts.isFetching && !workoutList.some((w) => w.id === value.id));
+  // A list that failed to load before ever having data is unknown, not empty: do not keep an id we cannot check.
+  const unknown =
+    (value.kind === 'route' && routes.isError && !routes.data) || (value.kind === 'workout' && workouts.isError && !workouts.data);
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
-    if (missing) onChange({ kind: 'free' });
+    if (missing || unknown) {
+      if (unknown) setNotice(`Could not load the ${value.kind === 'route' ? 'routes' : 'workouts'}, so Free ride is selected.`);
+      onChange({ kind: 'free' });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missing]);
+  }, [missing, unknown]);
 
   function pick(v: string) {
     if (v === 'erg') onChange({ kind: 'erg', watts: DEFAULT_ERG_W });
@@ -73,7 +80,12 @@ export function StartPicker({ value, onChange }: { value: StartChoice; onChange(
 
   return (
     <div className="flex flex-col gap-3">
-      <Select label="Ride" value={missing ? 'free' : encode(value)} onChange={(e) => pick(e.target.value)}>
+      {notice && (
+        <p role="status" className="text-sm text-warn">
+          {notice}
+        </p>
+      )}
+      <Select label="Ride" value={missing || unknown ? 'free' : encode(value)} onChange={(e) => pick(e.target.value)}>
         <option value="free">Free ride</option>
         <option value="erg">Free ERG (hold a power)</option>
         {routeList.length > 0 && (

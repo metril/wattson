@@ -1,6 +1,6 @@
 import { expect, setupAdmin, test as base } from './fixtures';
 
-// A signed-in admin, in place before the page loads.
+// Runs in the tablet project only (see playwright.config.ts). A signed-in admin, in place before the page loads.
 const test = base.extend<{ env: void }>({
   env: [
     async ({ context, baseURL }, use) => {
@@ -11,8 +11,7 @@ const test = base.extend<{ env: void }>({
   ],
 });
 
-test('build an interval workout, ride it to the end', async ({ page }, info) => {
-  test.skip(info.project.name !== 'tablet', 'one project covers the flow');
+test('build an interval workout, ride it to the end', async ({ page }) => {
   test.setTimeout(90_000);
 
   // 1. Build: two 10 s blocks, level 4 then level 9.
@@ -58,8 +57,7 @@ test('build an interval workout, ride it to the end', async ({ page }, info) => 
   await expect(state).toHaveText(/ready|finished/);
 });
 
-test('free ERG: set a target and nudge it', async ({ page }, info) => {
-  test.skip(info.project.name !== 'tablet', 'one project covers the flow');
+test('free ERG: set a target and nudge it', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Connect' }).click();
   const state = page.getByTestId('ride-state');

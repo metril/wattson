@@ -124,7 +124,7 @@ export function RidePage() {
       {workoutId !== 0 && <WorkoutView workoutId={workoutId} ticks={socket.ticks} riderId={bike?.rider_id} />}
       <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} erg={ergMode} hr={bike?.hr}>
         {ergMode ? (
-          <ErgControls send={send} free={workoutId === 0} disabled={!connected || !active} onError={onError} />
+          <ErgControls send={send} ticks={socket.ticks} free={workoutId === 0} disabled={!connected || !active} onError={onError} />
         ) : (
           <LevelControls
             socket={levelSocket}

@@ -37,6 +37,7 @@ describe('PowerModelCard', () => {
     renderWithClient(<PowerModelCard />);
     await screen.findByText('42');
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.getByRole('status')).toHaveTextContent(/Tap Reset again/);
     expect(stub.calls.some((c) => c.key === 'DELETE /api/bike/power-model')).toBe(false);
     await userEvent.click(screen.getByRole('button', { name: /Tap again to reset/ }));
     await waitFor(() => expect(stub.calls.some((c) => c.key === 'DELETE /api/bike/power-model')).toBe(true));

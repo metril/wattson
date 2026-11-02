@@ -499,6 +499,9 @@ export function PowerModelCard() {
             ))}
           </dl>
           <div>
+            <span role="status" aria-live="polite" className="sr-only">
+              {armed ? 'Tap Reset again to discard the learned power model.' : ''}
+            </span>
             <Button
               variant={armed ? 'danger' : 'secondary'}
               disabled={reset.isPending}

@@ -37,7 +37,7 @@ type AuthOut struct {
 }
 
 type BikeOut struct {
-	Driver         string `json:"driver" doc:"Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity, FTMS bridges only)."`
+	Driver         string `json:"driver" doc:"Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and the three ha_*_entity fields, FTMS bridges only)."`
 	Transport      string `json:"transport" doc:"How the bike is reached: local (host Bluetooth) or esphome (Bluetooth proxy)."`
 	Address        string `json:"address" doc:"Bluetooth address of the bike, AA:BB:CC:DD:EE:FF; empty when unset."`
 	ESPHomeHost    string `json:"esphome_host" doc:"ESPHome Bluetooth proxy as host or host:port (default port 6053); empty when unset."`
@@ -46,15 +46,15 @@ type BikeOut struct {
 	SimCadenceRpm  int    `json:"sim_cadence_rpm" doc:"Cadence of the simulated bike, in revolutions per minute, 0 to 150."`
 
 	HAResistanceEntity string `json:"ha_resistance_entity" doc:"Home Assistant number.* entity the ha driver writes the resistance level to (number.set_value); required for driver ha, empty when unset."`
-	HAPowerEntity      string `json:"ha_power_entity" doc:"Home Assistant sensor.* entity read as power, in watts; empty when unset."`
-	HACadenceEntity    string `json:"ha_cadence_entity" doc:"Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty when unset."`
+	HAPowerEntity      string `json:"ha_power_entity" doc:"Home Assistant sensor.* entity read as power, in watts; required for driver ha, empty when unset."`
+	HACadenceEntity    string `json:"ha_cadence_entity" doc:"Home Assistant sensor.* entity read as cadence, in revolutions per minute; required for driver ha, empty when unset."`
 }
 
 type HeartRateOut struct {
 	Source   string `json:"source" doc:"Heart rate source: off, ble (Bluetooth strap or broadcaster at address) or ha (Home Assistant sensor)."`
 	Address  string `json:"address" doc:"Bluetooth address of the heart rate device, AA:BB:CC:DD:EE:FF; required for source ble, empty when unset."`
 	Name     string `json:"name" doc:"Advertised name of the heart rate device (at most 64 characters), shown in the UI; empty when unset."`
-	HAEntity string `json:"ha_entity" doc:"Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha, empty when unset."`
+	HAEntity string `json:"ha_entity" doc:"Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha (which also needs ha.url and ha.token), empty when unset."`
 }
 
 type HAOut struct {
@@ -144,7 +144,7 @@ type AuthPatch struct {
 }
 
 type BikePatch struct {
-	Driver         *string `json:"driver,omitempty" doc:"Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity)."`
+	Driver         *string `json:"driver,omitempty" doc:"Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and the three ha_*_entity fields)."`
 	Transport      *string `json:"transport,omitempty" doc:"local or esphome."`
 	Address        *string `json:"address,omitempty" doc:"Bluetooth address AA:BB:CC:DD:EE:FF; empty clears it."`
 	ESPHomeHost    *string `json:"esphome_host,omitempty" doc:"ESPHome proxy as host or host:port; empty clears it."`
@@ -153,15 +153,15 @@ type BikePatch struct {
 	SimCadenceRpm  *int    `json:"sim_cadence_rpm,omitempty" doc:"Simulated cadence in revolutions per minute, 0 to 150."`
 
 	HAResistanceEntity *string `json:"ha_resistance_entity,omitempty" doc:"Home Assistant number.* entity for the resistance level (required for driver ha); empty clears it."`
-	HAPowerEntity      *string `json:"ha_power_entity,omitempty" doc:"Home Assistant sensor.* entity read as power, in watts; empty clears it."`
-	HACadenceEntity    *string `json:"ha_cadence_entity,omitempty" doc:"Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty clears it."`
+	HAPowerEntity      *string `json:"ha_power_entity,omitempty" doc:"Home Assistant sensor.* entity read as power, in watts (required for driver ha); empty clears it."`
+	HACadenceEntity    *string `json:"ha_cadence_entity,omitempty" doc:"Home Assistant sensor.* entity read as cadence, in revolutions per minute (required for driver ha); empty clears it."`
 }
 
 type HeartRatePatch struct {
 	Source   *string `json:"source,omitempty" doc:"Heart rate source: off, ble or ha."`
 	Address  *string `json:"address,omitempty" doc:"Bluetooth address AA:BB:CC:DD:EE:FF (required for source ble); empty clears it."`
 	Name     *string `json:"name,omitempty" doc:"Advertised device name, at most 64 characters; empty clears it."`
-	HAEntity *string `json:"ha_entity,omitempty" doc:"Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha); empty clears it."`
+	HAEntity *string `json:"ha_entity,omitempty" doc:"Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha, which also needs ha.url and ha.token); empty clears it."`
 }
 
 type HAPatch struct {

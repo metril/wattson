@@ -126,7 +126,7 @@
             "type": "string"
           },
           "driver": {
-            "description": "Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity, FTMS bridges only).",
+            "description": "Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and the three ha_*_entity fields, FTMS bridges only).",
             "type": "string"
           },
           "esphome_host": {
@@ -138,11 +138,11 @@
             "type": "boolean"
           },
           "ha_cadence_entity": {
-            "description": "Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty when unset.",
+            "description": "Home Assistant sensor.* entity read as cadence, in revolutions per minute; required for driver ha, empty when unset.",
             "type": "string"
           },
           "ha_power_entity": {
-            "description": "Home Assistant sensor.* entity read as power, in watts; empty when unset.",
+            "description": "Home Assistant sensor.* entity read as power, in watts; required for driver ha, empty when unset.",
             "type": "string"
           },
           "ha_resistance_entity": {
@@ -186,7 +186,7 @@
             "type": "string"
           },
           "driver": {
-            "description": "Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity).",
+            "description": "Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and the three ha_*_entity fields).",
             "type": "string"
           },
           "esphome_host": {
@@ -198,11 +198,11 @@
             "type": "string"
           },
           "ha_cadence_entity": {
-            "description": "Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty clears it.",
+            "description": "Home Assistant sensor.* entity read as cadence, in revolutions per minute (required for driver ha); empty clears it.",
             "type": "string"
           },
           "ha_power_entity": {
-            "description": "Home Assistant sensor.* entity read as power, in watts; empty clears it.",
+            "description": "Home Assistant sensor.* entity read as power, in watts (required for driver ha); empty clears it.",
             "type": "string"
           },
           "ha_resistance_entity": {
@@ -820,7 +820,7 @@
             "type": "string"
           },
           "ha_entity": {
-            "description": "Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha, empty when unset.",
+            "description": "Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha (which also needs ha.url and ha.token), empty when unset.",
             "type": "string"
           },
           "name": {
@@ -848,7 +848,7 @@
             "type": "string"
           },
           "ha_entity": {
-            "description": "Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha); empty clears it.",
+            "description": "Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha, which also needs ha.url and ha.token); empty clears it.",
             "type": "string"
           },
           "name": {

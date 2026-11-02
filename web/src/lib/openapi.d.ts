@@ -1077,15 +1077,15 @@ export interface components {
         BikeOut: {
             /** @description Bluetooth address of the bike, AA:BB:CC:DD:EE:FF; empty when unset. */
             address: string;
-            /** @description Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity, FTMS bridges only). */
+            /** @description Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and the three ha_*_entity fields, FTMS bridges only). */
             driver: string;
             /** @description ESPHome Bluetooth proxy as host or host:port (default port 6053); empty when unset. */
             esphome_host: string;
             /** @description Whether an ESPHome API encryption key is stored. The key itself is never returned. */
             esphome_key_set: boolean;
-            /** @description Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty when unset. */
+            /** @description Home Assistant sensor.* entity read as cadence, in revolutions per minute; required for driver ha, empty when unset. */
             ha_cadence_entity: string;
-            /** @description Home Assistant sensor.* entity read as power, in watts; empty when unset. */
+            /** @description Home Assistant sensor.* entity read as power, in watts; required for driver ha, empty when unset. */
             ha_power_entity: string;
             /** @description Home Assistant number.* entity the ha driver writes the resistance level to (number.set_value); required for driver ha, empty when unset. */
             ha_resistance_entity: string;
@@ -1105,15 +1105,15 @@ export interface components {
         BikePatch: {
             /** @description Bluetooth address AA:BB:CC:DD:EE:FF; empty clears it. */
             address?: string;
-            /** @description Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity). */
+            /** @description Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and the three ha_*_entity fields). */
             driver?: string;
             /** @description ESPHome proxy as host or host:port; empty clears it. */
             esphome_host?: string;
             /** @description ESPHome API encryption key, base64 of 32 bytes. Omit to keep the stored key; an empty string clears it. */
             esphome_key?: string;
-            /** @description Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty clears it. */
+            /** @description Home Assistant sensor.* entity read as cadence, in revolutions per minute (required for driver ha); empty clears it. */
             ha_cadence_entity?: string;
-            /** @description Home Assistant sensor.* entity read as power, in watts; empty clears it. */
+            /** @description Home Assistant sensor.* entity read as power, in watts (required for driver ha); empty clears it. */
             ha_power_entity?: string;
             /** @description Home Assistant number.* entity for the resistance level (required for driver ha); empty clears it. */
             ha_resistance_entity?: string;
@@ -1378,7 +1378,7 @@ export interface components {
         HeartRateOut: {
             /** @description Bluetooth address of the heart rate device, AA:BB:CC:DD:EE:FF; required for source ble, empty when unset. */
             address: string;
-            /** @description Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha, empty when unset. */
+            /** @description Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha (which also needs ha.url and ha.token), empty when unset. */
             ha_entity: string;
             /** @description Advertised name of the heart rate device (at most 64 characters), shown in the UI; empty when unset. */
             name: string;
@@ -1388,7 +1388,7 @@ export interface components {
         HeartRatePatch: {
             /** @description Bluetooth address AA:BB:CC:DD:EE:FF (required for source ble); empty clears it. */
             address?: string;
-            /** @description Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha); empty clears it. */
+            /** @description Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha, which also needs ha.url and ha.token); empty clears it. */
             ha_entity?: string;
             /** @description Advertised device name, at most 64 characters; empty clears it. */
             name?: string;

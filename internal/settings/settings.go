@@ -196,11 +196,11 @@ func (s Settings) Validate() error {
 		required         bool
 	}{
 		{"bike.ha_resistance_entity", s.Bike.HAResistanceEntity, "number", s.Bike.Driver == "ha"},
-		{"bike.ha_power_entity", s.Bike.HAPowerEntity, "sensor", false},
-		{"bike.ha_cadence_entity", s.Bike.HACadenceEntity, "sensor", false},
+		{"bike.ha_power_entity", s.Bike.HAPowerEntity, "sensor", s.Bike.Driver == "ha"},
+		{"bike.ha_cadence_entity", s.Bike.HACadenceEntity, "sensor", s.Bike.Driver == "ha"},
 	} {
 		if e.v == "" && e.required {
-			return bad(e.field, "required when the driver is ha (a %s.* entity)", e.domain)
+			return bad(e.field, "required when the bike driver is ha (a %s.* entity)", e.domain)
 		}
 		if e.v != "" && !validEntity(e.v, e.domain) {
 			return bad(e.field, "must be a %s.* entity id such as %s.name", e.domain, e.domain)
@@ -230,6 +230,9 @@ func (s Settings) Validate() error {
 	case "ha":
 		if s.HA.URL == "" {
 			return bad("ha.url", "required when the heart rate source is ha")
+		}
+		if s.HA.Token == "" {
+			return bad("ha.token", "required when the heart rate source is ha")
 		}
 		if !validEntity(s.HeartRate.HAEntity, "sensor") {
 			return bad("heart_rate.ha_entity", "must be a sensor.* entity id when the source is ha")

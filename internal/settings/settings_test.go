@@ -421,11 +421,13 @@ func TestValidateM5(t *testing.T) {
 		{"ha no entities", func(s *settings.Settings) { s.Bike.Driver = "ha" }, "bike.ha_resistance_entity"},
 		{"ha no url", func(s *settings.Settings) { haOK(s); s.HA.URL = "" }, "ha.url"},
 		{"ha no token", func(s *settings.Settings) { haOK(s); s.HA.Token = "" }, "ha.token"},
+		{"ha no power", func(s *settings.Settings) { haOK(s); s.Bike.HAPowerEntity = "" }, "bike.ha_power_entity"},
+		{"ha no cadence", func(s *settings.Settings) { haOK(s); s.Bike.HACadenceEntity = "" }, "bike.ha_cadence_entity"},
 		{"ha power domain", func(s *settings.Settings) { haOK(s); s.Bike.HAPowerEntity = "light.x" }, "bike.ha_power_entity"},
 		{"ha cadence domain", func(s *settings.Settings) { haOK(s); s.Bike.HACadenceEntity = "number.c" }, "bike.ha_cadence_entity"},
 		{"ha resistance domain", func(s *settings.Settings) { haOK(s); s.Bike.HAResistanceEntity = "sensor.r" }, "bike.ha_resistance_entity"},
 		{"ha power uppercase", func(s *settings.Settings) { haOK(s); s.Bike.HAPowerEntity = "sensor.P" }, "bike.ha_power_entity"},
-		{"ha entities optional for other drivers", func(s *settings.Settings) { s.Bike.HAPowerEntity = "" }, ""},
+		{"ha entities optional for other drivers", func(s *settings.Settings) { s.Bike.Driver = "ftms" }, ""},
 		{"ha entity bad for other drivers", func(s *settings.Settings) { s.Bike.HAPowerEntity = "light.x" }, "bike.ha_power_entity"},
 		{"hr off", func(s *settings.Settings) {}, ""},
 		{"hr source", func(s *settings.Settings) { s.HeartRate.Source = "ant" }, "heart_rate.source"},
@@ -438,14 +440,21 @@ func TestValidateM5(t *testing.T) {
 			s.HeartRate.Source, s.HeartRate.Address, s.HeartRate.Name = "ble", "AA:BB:CC:DD:EE:01", strings.Repeat("x", 65)
 		}, "heart_rate.name"},
 		{"hr ha no url", func(s *settings.Settings) { s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "sensor.hr" }, "ha.url"},
-		{"hr ha no entity", func(s *settings.Settings) { s.HeartRate.Source = "ha"; s.HA.URL = "http://ha:8123" }, "heart_rate.ha_entity"},
+		{"hr ha no token", func(s *settings.Settings) {
+			s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "sensor.hr"
+			s.HA.URL = "http://ha:8123"
+		}, "ha.token"},
+		{"hr ha no entity", func(s *settings.Settings) {
+			s.HeartRate.Source = "ha"
+			s.HA.URL, s.HA.Token = "http://ha:8123", "t"
+		}, "heart_rate.ha_entity"},
 		{"hr ha bad entity", func(s *settings.Settings) {
 			s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "number.hr"
-			s.HA.URL = "http://ha:8123"
+			s.HA.URL, s.HA.Token = "http://ha:8123", "t"
 		}, "heart_rate.ha_entity"},
 		{"hr ha ok", func(s *settings.Settings) {
 			s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "sensor.hr"
-			s.HA.URL = "http://ha:8123"
+			s.HA.URL, s.HA.Token = "http://ha:8123", "t"
 		}, ""},
 		{"prefix wildcard", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "ha/#" }, "mqtt.discovery_prefix"},
 		{"prefix plus", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "a/+/b" }, "mqtt.discovery_prefix"},

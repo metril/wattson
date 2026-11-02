@@ -1,6 +1,81 @@
 {
   "components": {
     "schemas": {
+      "CreateTokenInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Label for the token, 1 to 100 characters.",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scopes": {
+            "description": "Scopes to grant, a non-empty subset of read, control, admin that the signed-in user holds.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "CreatedToken": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Token ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "description": "Last time the token authenticated a request, UTC; null if never. Updated at most once a minute.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Label chosen by the owner.",
+            "type": "string"
+          },
+          "prefix": {
+            "description": "First 12 characters of the token, to recognise it.",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "Scopes the token grants: read, control, admin.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "token": {
+            "description": "The API token. Shown only in this response; store it now.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "created_at",
+          "last_used_at"
+        ],
+        "type": "object"
+      },
       "ErrorBody": {
         "additionalProperties": false,
         "properties": {
@@ -218,6 +293,53 @@
         },
         "required": [
           "needs_setup"
+        ],
+        "type": "object"
+      },
+      "TokenOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Token ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "description": "Last time the token authenticated a request, UTC; null if never. Updated at most once a minute.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Label chosen by the owner.",
+            "type": "string"
+          },
+          "prefix": {
+            "description": "First 12 characters of the token, to recognise it.",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "Scopes the token grants: read, control, admin.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "created_at",
+          "last_used_at"
         ],
         "type": "object"
       },
@@ -701,6 +823,243 @@
         "summary": "Setup status",
         "tags": [
           "setup"
+        ]
+      }
+    },
+    "/api/tokens": {
+      "get": {
+        "description": "Returns the caller's own API tokens, without their secrets. Requires the `read` scope.",
+        "operationId": "listTokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TokenOut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List own API tokens",
+        "tags": [
+          "tokens"
+        ]
+      },
+      "post": {
+        "description": "Creates a token for the signed-in user and returns its plaintext exactly once. Session only: an API token gets 403 `session_required`. The scopes must be held by the caller, otherwise 403 `scope_exceeds`. Requires the `read` scope.",
+        "operationId": "createToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedToken"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create an API token",
+        "tags": [
+          "tokens"
+        ]
+      }
+    },
+    "/api/tokens/{id}": {
+      "delete": {
+        "description": "Deletes one of the caller's own tokens. Revocation takes effect immediately. A token owned by someone else returns 404. Requires the `read` scope.",
+        "operationId": "deleteToken",
+        "parameters": [
+          {
+            "description": "Token ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Token ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Revoke an API token",
+        "tags": [
+          "tokens"
         ]
       }
     },

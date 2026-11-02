@@ -156,3 +156,47 @@ func TestGzipAssets(t *testing.T) {
 		t.Errorf("HEAD: %v, %d body bytes", head.Header(), head.Body.Len())
 	}
 }
+
+func TestETagConditional(t *testing.T) {
+	t.Parallel()
+	js := strings.Repeat("console.log('wattson');\n", 400)
+	h := handlerFor(fstest.MapFS{
+		"index.html": {Data: []byte("<html>app</html>")},
+		"sw.js":      {Data: []byte(js)},
+	})
+	do := func(enc, inm string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+		if enc != "" {
+			req.Header.Set("Accept-Encoding", enc)
+		}
+		if inm != "" {
+			req.Header.Set("If-None-Match", inm)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, enc := range []string{"gzip", ""} {
+		first := do(enc, "")
+		tag := first.Header().Get("ETag")
+		if first.Code != http.StatusOK || tag == "" || first.Body.Len() == 0 {
+			t.Fatalf("enc=%q first: %d etag=%q", enc, first.Code, tag)
+		}
+		if rec := do(enc, tag); rec.Code != http.StatusNotModified || rec.Body.Len() != 0 || rec.Header().Get("Cache-Control") != "no-cache" || rec.Header().Get("ETag") != tag {
+			t.Errorf("enc=%q matching tag: %d %v %d body bytes", enc, rec.Code, rec.Header(), rec.Body.Len())
+		}
+		if rec := do(enc, `"nope", W/`+tag); rec.Code != http.StatusNotModified {
+			t.Errorf("enc=%q weak/list match: %d", enc, rec.Code)
+		}
+		if rec := do(enc, `"stale"`); rec.Code != http.StatusOK || rec.Body.Len() == 0 {
+			t.Errorf("enc=%q stale tag: %d", enc, rec.Code)
+		}
+	}
+	if do("gzip", "").Header().Get("ETag") == do("", "").Header().Get("ETag") {
+		t.Error("gzip and identity share an ETag")
+	}
+	// A tag from the identity form does not validate the gzip form.
+	if rec := do("gzip", do("", "").Header().Get("ETag")); rec.Code != http.StatusOK {
+		t.Errorf("cross-representation tag: %d", rec.Code)
+	}
+}

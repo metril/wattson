@@ -8,7 +8,9 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -98,9 +100,10 @@ type gzCache struct {
 type gzEntry struct {
 	once sync.Once
 	body []byte // nil: not worth compressing
+	tag  string // content hash of the uncompressed file
 }
 
-func (c *gzCache) bytes(upath string) []byte {
+func (c *gzCache) entry(upath string) *gzEntry {
 	v, _ := c.m.LoadOrStore(upath, &gzEntry{})
 	e := v.(*gzEntry)
 	e.once.Do(func() {
@@ -108,6 +111,8 @@ func (c *gzCache) bytes(upath string) []byte {
 		if err != nil {
 			return
 		}
+		sum := sha256.Sum256(raw)
+		e.tag = hex.EncodeToString(sum[:12])
 		var buf bytes.Buffer
 		zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
 		_, _ = zw.Write(raw)
@@ -115,7 +120,19 @@ func (c *gzCache) bytes(upath string) []byte {
 			e.body = buf.Bytes()
 		}
 	})
-	return e.body
+	return e
+}
+
+// notModified reports whether an If-None-Match header matches etag (weak
+// comparison, as for GET), or is "*".
+func notModified(inm, etag string) bool {
+	for _, part := range strings.Split(inm, ",") {
+		part = strings.TrimPrefix(strings.TrimSpace(part), "W/")
+		if part == "*" || part == etag {
+			return true
+		}
+	}
+	return false
 }
 
 // serve answers GET and HEAD for upath with the compressed copy and reports
@@ -126,14 +143,26 @@ func (c *gzCache) serve(w http.ResponseWriter, r *http.Request, upath string) bo
 		return false
 	}
 	w.Header().Add("Vary", "Accept-Encoding")
-	if !acceptsGzip(r.Header.Get("Accept-Encoding")) || r.Header.Get("Range") != "" {
+	e := c.entry(upath)
+	if e.tag == "" {
 		return false
 	}
-	body := c.bytes(upath)
-	if body == nil {
-		return false
+	gz := e.body != nil && acceptsGzip(r.Header.Get("Accept-Encoding")) && r.Header.Get("Range") == ""
+	// The gzip and identity forms are different representations, so they get different tags.
+	etag := `"` + e.tag + `"`
+	if gz {
+		etag = `"` + e.tag + `-gzip"`
 	}
 	h := w.Header()
+	h.Set("ETag", etag)
+	if notModified(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
+	if !gz {
+		return false // http.FileServer sends the file (and honours the ETag set above for Range / If-Range)
+	}
+	body := e.body
 	h.Set("Content-Encoding", "gzip")
 	if ct := mime.TypeByExtension(ext); ct != "" {
 		h.Set("Content-Type", ct)

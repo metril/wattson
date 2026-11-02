@@ -41,6 +41,8 @@ type WorkoutInfo interface{ WorkoutInfo() (id int64, blocks int) }
 type Targeted interface {
 	SetTarget(w float64) error
 	NudgeTarget(steps int)
+	// Target is the current target in rider watts, valid in any state.
+	Target() float64
 }
 
 const (

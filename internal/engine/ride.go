@@ -591,6 +591,9 @@ func (e *Engine) build(now time.Time) Tick {
 			tk.BlockIndex, tk.BlockRemainingS = e.lastOut.Block, e.lastOut.BlockLeft.Seconds()
 		}
 	}
+	if t, ok := e.mode.(Targeted); ok {
+		tk.TargetPowerW = t.Target() // current even while ready or paused
+	}
 	if r, ok := e.mode.(routedMode); ok {
 		tk.RouteID, tk.RouteLengthM = r.RouteInfo()
 	}

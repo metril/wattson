@@ -970,7 +970,13 @@ func (s *stubMode) SetTarget(w float64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.targets = append(s.targets, w)
+	s.out.TargetW = w
 	return nil
+}
+func (s *stubMode) Target() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.out.TargetW
 }
 func (s *stubMode) NudgeTarget(n int) {
 	s.mu.Lock()
@@ -1154,5 +1160,40 @@ func TestWorkoutTickFields(t *testing.T) {
 		if tk.WorkoutID != 0 || tk.BlockCount != 0 || tk.BlockIndex != 0 || tk.TargetPowerW != 200 {
 			t.Fatalf("non-workout tick: %+v", tk)
 		}
+	})
+}
+
+func TestSetTargetPowerShowsImmediately(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		m := &stubMode{out: ModeOutput{Level: 5, TargetW: 150}}
+		e := New(Config{Driver: f, Mode: m})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		check := func(state State, w int) {
+			t.Helper()
+			if err := do(t, e, CmdSetTargetPower, w); err != nil {
+				t.Fatal(err)
+			}
+			if tk := e.Snapshot(); tk.State != state || tk.TargetPowerW != float64(w) {
+				t.Fatalf("snapshot %+v, want %s target %d", tk, state, w)
+			}
+			if tk := lastTick(t, advance(time.Second, sub)); tk.TargetPowerW != float64(w) {
+				t.Fatalf("tick target %v, want %d", tk.TargetPowerW, w)
+			}
+		}
+		check(StateReady, 200)
+		if err := do(t, e, "start", 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := do(t, e, "pause", 0); err != nil {
+			t.Fatal(err)
+		}
+		check(StatePaused, 260)
 	})
 }

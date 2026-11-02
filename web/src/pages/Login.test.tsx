@@ -37,7 +37,10 @@ async function signIn() {
   await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('LoginPage', () => {
   it('links each provider with the return_to', async () => {
@@ -101,6 +104,26 @@ describe('LoginPage', () => {
     await signIn();
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts. Try again in 10 minutes');
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeDisabled();
+  });
+
+  it('429 countdown is exact even when the clock moves between reads', async () => {
+    // Every Date.now() call advances 1 ms, the worst case of a slow parallel run.
+    let t = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => t++);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (req: Request) =>
+        new URL(req.url).pathname === '/api/auth/providers'
+          ? new Response(JSON.stringify(info()[1]), { status: 200, headers: { 'content-type': 'application/json' } })
+          : new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'x' } }), {
+              status: 429,
+              headers: { 'content-type': 'application/json', 'Retry-After': '600' },
+            }),
+      ),
+    );
+    renderLogin('/login');
+    await signIn();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Try again in 10 minutes');
   });
 
   it('explains a disabled local login', async () => {

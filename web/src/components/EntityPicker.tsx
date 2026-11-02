@@ -86,7 +86,7 @@ export function EntityPicker({
           id={listId}
           role="listbox"
           aria-label={`${label} suggestions`}
-          className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-control border border-line bg-panel shadow-lg"
+          className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-control border border-line bg-panel shadow-lg"
         >
           {shown.map((e) => (
             <li

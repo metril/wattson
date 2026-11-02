@@ -98,8 +98,10 @@ export function LoginPage() {
       const r = await api.POST('/api/auth/login', { body: { username: username.trim(), password } });
       if (r.response.status === 429) {
         const secs = Math.max(1, Number(r.response.headers.get('Retry-After')) || 60);
-        setNow(Date.now());
-        setBlockedUntil(Date.now() + secs * 1000);
+        // One clock read: two reads straddling a millisecond would round the wait up a second.
+        const at = Date.now();
+        setNow(at);
+        setBlockedUntil(at + secs * 1000);
         return;
       }
       unwrap(r);

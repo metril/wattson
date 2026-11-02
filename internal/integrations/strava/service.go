@@ -244,6 +244,42 @@ func (s *Service) disconnectLocked(ctx context.Context, riderID int64) error {
 	return s.clearLocked(ctx, l)
 }
 
+// sharedChangeBudget bounds the whole SharedAppChanged sweep; riders reached
+// after it is spent are forgotten locally without telling Strava.
+const sharedChangeBudget = 20 * time.Second
+
+// SharedAppChanged disconnects every connected rider that uses the shared app
+// (no client ID of their own): their tokens belong to the old credentials.
+// Strava is told best effort within a bounded budget; the local link is
+// always cleared. Riders with their own app are untouched.
+func (s *Service) SharedAppChanged(ctx context.Context) error {
+	ids, err := s.d.Store.ConnectedSharedStravaRiders(ctx)
+	if err != nil {
+		return err
+	}
+	bctx, cancel := context.WithTimeout(ctx, sharedChangeBudget)
+	defer cancel()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var errs []error
+	for _, id := range ids {
+		if bctx.Err() != nil {
+			l, err := s.d.Store.StravaLink(ctx, id)
+			if err == nil && l.Connected() {
+				err = s.clearLocked(ctx, l)
+			}
+			if err != nil {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if err := s.disconnectLocked(bctx, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Forget clears the rider's connection locally, without telling Strava (it
 // has already revoked the grant). Prefer Revoked after a 401, which refuses
 // to clear a connection newer than the token that failed.
@@ -375,7 +411,7 @@ func (r *riderSource) Token() (*oauth2.Token, error) {
 	s := r.s
 	ctx, cancel := context.WithTimeout(context.Background(), exchangeBudget)
 	defer cancel()
-	// Two passes: the second runs when another writer changed the link while
+	// Up to three passes: the later ones run when another writer changed the link while
 	// this one was refreshing, and then trusts what the store holds.
 	for pass := 0; ; pass++ {
 		l, err := s.d.Store.StravaLink(ctx, r.riderID)

@@ -22,7 +22,7 @@ There are two places, and a rider's own app wins when both exist.
 - **Shared app** (admin): Settings, Integrations, Strava. Every rider can then connect to it.
 - **Per rider**: Riders, the rider's Strava section, **Use my own Strava app**. Enter that rider's client ID and secret.
 
-The client secret is stored encrypted (see Privacy) and is never shown again; the field only says whether one is set. Changing either credential disconnects the riders it affects, because their tokens belong to the old app.
+The client secret is stored encrypted (see Privacy) and is never shown again; the field only says whether one is set. Changing the shared app's client ID or secret disconnects every rider who is connected through it, and changing a rider's own credentials disconnects that rider, because the tokens belong to the old app. Riders with an app of their own are not affected by a change to the shared app. Reconnect afterwards from Riders.
 
 ### Capacity: one athlete per new app
 
@@ -39,13 +39,13 @@ A new Strava API application can connect **1 athlete** (the account that owns it
 
 Connecting needs a signed-in browser. A paired kiosk display cannot connect Strava ("Connect Strava from a signed-in browser"); do it from a phone or computer, then the display's rides upload like any other. The connect link works only for riders you own.
 
-**Disconnect** (two taps) forgets the tokens on Wattson's side. It does not delete anything on Strava. To also revoke access, remove Wattson under Strava, Settings, My Apps.
+**Disconnect** (two taps) revokes Wattson's access at Strava (best effort) and forgets the tokens. It doesn't delete any activities. If Strava could not be reached, you can also remove the app under Strava, Settings, My Apps.
 
 ## 4. Uploading
 
 - **By hand**: open the ride in History and select **Upload to Strava**. The button shows "Uploading…" while Strava processes the file (usually seconds; Wattson checks every 2 s for up to 2 minutes). When it finishes it becomes **View on Strava**. If the rider has not connected Strava, it says so and points to the Riders page. A failed upload shows the reason and a **Retry** button.
 - **Automatically**: on a connected rider, switch on **Upload rides automatically** (off by default, per rider). Each ride is uploaded as it finishes. Rides shorter than about 10 seconds are not kept at all, so they are never uploaded. A rider who switches this on later does not trigger uploads of old rides; use the button for those.
-- A ride is uploaded **once**. Pressing the button twice, or auto-upload racing a manual upload, still makes one Strava activity. If Strava reports the file as a duplicate of an existing activity, Wattson links that activity instead of failing. Rides that were mid-upload when the server restarted resume.
+- A ride is uploaded **once**. Pressing the button twice, or auto-upload racing a manual upload, still makes one Strava activity. If Strava reports the file as a duplicate of an existing activity, Wattson links that activity instead of failing. If the server restarts mid-upload, a ride that Strava had already accepted resumes checking; a ride interrupted before Strava accepted the file shows "interrupted; retry", unless the rider has auto-upload on, in which case Wattson sends it again on the next start.
 - Deleting a ride in Wattson never deletes the Strava activity.
 
 The activity is named after the route, or "Wattson ride" for a free ride, with the description "Recorded with Wattson", and is flagged as a trainer ride. Strava sets the type from the FIT file: route rides are written as virtual cycling, free rides as indoor cycling.
@@ -69,7 +69,7 @@ The activity is named after the route, or "Wattson ride" for a free ride, with t
 | "Strava rate limit reached; try again in 15 minutes" | Strava limits an app to 100 requests per 15 minutes (1000 per day). Wait, then use Retry. Each upload costs a few requests, so this normally only appears after many uploads at once or when several riders share one app. |
 | "Strava authorization expired; reconnect Strava for this rider" | Access was revoked at Strava or the refresh token was rejected. Wattson drops the link; connect again from Riders. |
 | "Strava isn't configured on this server — ask an admin" | The shared app was removed or its secret cleared while the rider had no app of their own. |
-| "Still uploading. Retry to check again." / "Strava is still processing; check again later" | Strava took longer than Wattson waits. Retry checks the existing upload first and does not create a second one. |
+| "Still uploading. Retry to check again." / "Strava is still processing; check again later" | Strava took longer than Wattson waits. Retry sends the FIT again and relies on Strava's duplicate detection (the same external ID), so the ride then shows as done with the existing activity, not as a second one. |
 | An activity exists on Strava but Wattson shows an error | Select Retry. If Strava says the file is a duplicate, Wattson links the existing activity. |
 | A duplicate appears when you upload by hand too | A hand upload of the downloaded FIT is independent of Wattson's record. Upload either one way or the other. |
 | Auto-upload does nothing | The rider must be connected with "Upload rides automatically" on, and the ride must reach the minimum length. The server log shows `strava auto-upload` warnings with the reason. |

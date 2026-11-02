@@ -394,3 +394,36 @@ func TestDisconnectExpiredTokenSkipsRefresh(t *testing.T) {
 		t.Error("still connected")
 	}
 }
+
+func TestSharedAppChangedDisconnectsOnlySharedRiders(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	ctx := context.Background()
+	e.shared(t, "123", "shh")
+	e.connect(t) // e.rid uses the shared app
+
+	r2, err := e.st.CreateRider(ctx, store.DefaultRider(e.user.ID, "Bob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A rider connected through an app of their own.
+	now := time.Now()
+	if err := e.st.PutStravaLink(ctx, store.StravaLink{RiderID: r2.ID, ClientID: "999", AthleteID: 7,
+		AccessEnc: "x", RefreshEnc: "y", ConnectedAt: &now}); err != nil {
+		t.Fatal(err)
+	}
+	own := r2.ID
+
+	if err := e.svc.SharedAppChanged(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := e.st.StravaLink(ctx, e.rid); l.Connected() {
+		t.Error("shared-app rider still connected")
+	}
+	if l, _ := e.st.StravaLink(ctx, own); !l.Connected() || l.ClientID != "999" {
+		t.Errorf("own-app rider was touched: %+v", l)
+	}
+	if got := e.fake.Deauthorized(); len(got) != 1 {
+		t.Errorf("deauthorized = %v, want only the shared rider's token", got)
+	}
+}

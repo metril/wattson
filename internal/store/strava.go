@@ -85,3 +85,22 @@ func (s *Store) PutStravaLink(ctx context.Context, l StravaLink) error {
 	}
 	return nil
 }
+
+// ConnectedSharedStravaRiders lists the riders that are connected to Strava
+// through the shared app (no client ID of their own).
+func (s *Store) ConnectedSharedStravaRiders(ctx context.Context) ([]int64, error) {
+	rows, err := s.Read.QueryContext(ctx, `SELECT rider_id FROM strava_links WHERE refresh_enc != '' AND client_id = '' ORDER BY rider_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list shared strava riders: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan shared strava rider: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

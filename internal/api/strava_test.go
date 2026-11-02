@@ -17,6 +17,7 @@ import (
 
 	"github.com/metril/wattson/internal/integrations/strava"
 	"github.com/metril/wattson/internal/integrations/strava/stravatest"
+	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
 )
 
@@ -304,6 +305,30 @@ func TestStravaPatchCredsDisconnects(t *testing.T) {
 	resp, b = ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"client_id": "998"})
 	if l := decode[StravaLinkOut](t, b); resp.StatusCode != 200 || l.Connected || l.ClientID != "998" || !l.AutoUpload {
 		t.Fatalf("creds patch = %d %s", resp.StatusCode, b)
+	}
+	if got := ts.Fake.Deauthorized(); len(got) != 1 || got[0] != "a1" {
+		t.Errorf("deauthorized = %v", got)
+	}
+}
+
+func TestStravaSharedAppChangeDisconnectsSharedRiders(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	ts.sharedApp(t, admin)
+	rider := ts.riderOf(t, admin)
+	ts.stravaConnectFlow(t, admin, rider)
+	// Unrelated settings, and the same credentials again, keep the connection.
+	ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"strava": map[string]any{"client_id": "123", "client_secret": "shh"}})
+	ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"general": map[string]any{"public_url": "https://w.example"}})
+	if l, _ := ts.stravaLink(t, admin, rider); !l.Connected {
+		t.Fatal("disconnected without a credential change")
+	}
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"strava": map[string]any{"client_secret": "new"}}); resp.StatusCode != 200 {
+		t.Fatalf("settings: %d %s", resp.StatusCode, b)
+	}
+	if l, _ := ts.stravaLink(t, admin, rider); l.Connected {
+		t.Error("shared-app rider still connected after the shared secret changed")
 	}
 	if got := ts.Fake.Deauthorized(); len(got) != 1 || got[0] != "a1" {
 		t.Errorf("deauthorized = %v", got)
@@ -911,8 +936,12 @@ func TestUploadNotConfiguredMessage(t *testing.T) {
 	if err := ts.Store.PutStravaLink(ctx, l); err != nil {
 		t.Fatal(err)
 	}
-	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"strava": map[string]any{"client_id": "", "client_secret": ""}}); resp.StatusCode != 200 {
-		t.Fatalf("settings: %d %s", resp.StatusCode, b)
+	// Cleared behind the API's back: the PATCH handler would disconnect the shared-app riders.
+	if _, err := ts.Settings.Update(ctx, func(s *settings.Settings) error {
+		s.Strava.ClientID, s.Strava.ClientSecret = "", ""
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	ts.postUpload(t, admin, r.ID)
 	if st := ts.settled(t, admin, r.ID); st.Status != "error" || st.Error != "Strava isn't configured on this server — ask an admin" {

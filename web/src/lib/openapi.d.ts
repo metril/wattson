@@ -751,7 +751,7 @@ export interface paths {
         head?: never;
         /**
          * Update settings
-         * @description Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `<section.field>: <problem>` and nothing is stored. Returns the new settings in the same shape as the GET. Requires the `admin` scope.
+         * @description Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `<section.field>: <problem>` and nothing is stored. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET. Requires the `admin` scope.
          */
         patch: operations["updateSettings"];
         trace?: never;

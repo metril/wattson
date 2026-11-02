@@ -531,8 +531,9 @@ html.ride-dark .ride-view .ride-viewbox {
     --view-h: calc(90dvh - 17rem);
     --val: 4rem;
     grid-template-columns: minmax(0, 1fr) var(--rail);
-    grid-template-rows: auto 1fr auto;
-    grid-template-areas: 'top top' 'view metrics' 'view controls';
+    /* The last row soaks up the slack, so Pause and Stop sit right under the numbers. */
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: 'top top' 'view metrics' 'view controls' 'view .';
     padding-bottom: 0;
   }
   .ride-screen:not(.ride-flat) .ride-metrics,

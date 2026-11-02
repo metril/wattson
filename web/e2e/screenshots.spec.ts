@@ -85,12 +85,22 @@ async function setView(page: Page, view: '2d' | '3d' | 'photo') {
 }
 
 test('ride-tv-3d: the TV with the 3D flyover', async ({ page, routeId }) => {
+  // Software rendering is far slower than a TV's GPU: report a steady 60 fps to the flyover's frame-rate
+  // check (it reads the rAF timestamp) so the picture is not taken after a fallback to 2D.
+  await page.addInitScript(() => {
+    const raf = window.requestAnimationFrame.bind(window);
+    let t = 0;
+    window.requestAnimationFrame = (cb) => raf(() => cb((t += 1000 / 60)));
+  });
   await page.setViewportSize({ width: 1920, height: 1080 });
   await setView(page, '3d');
   await ride(page, routeId);
   await expect(page.getByTestId('route-3d')).toBeVisible();
   await settle(page);
   await page.waitForTimeout(10_000); // software rendering draws the tiles a few at a time
+  const view = page.getByTestId('route-3d');
+  await expect(view).toBeVisible(); // still 3D: no fallback to the 2D map
+  await expect.poll(async () => Number((await view.getAttribute('data-pitch')) ?? 0)).toBeGreaterThan(50);
   await shoot(page, 'ride-tv-3d');
 });
 

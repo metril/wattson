@@ -1,0 +1,170 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/saira/standard.css';
+@import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
+
+/*
+ * Wattson theme: "velodrome at night".
+ *
+ * The ground is wet-tarmac teal-black. Chalk-white numerals do the talking
+ * (Saira, a variable-width sports face, so big readouts can run condensed
+ * and small labels run wide). The one brand colour is the velodrome's
+ * "sprinter's line" blue; the rest of the colour budget is the seven power
+ * zones, which later screens use to tint live readouts. Every later task
+ * reads these tokens; do not hard-code colours or sizes in components.
+ */
+
+/* Raw tokens. Dark is the default; light follows the OS preference. */
+:root {
+  color-scheme: dark;
+
+  /* surfaces */
+  --ground: #0a1215; /* tarmac */
+  --panel: #111c20; /* cards, rail */
+  --raised: #192830; /* inputs, hovered rows */
+  --line: #2a3d45; /* borders, dividers */
+
+  /* text */
+  --chalk: #eaf1ee; /* primary text, numerals */
+  --dim: #93a8ae; /* secondary text (AA on ground and panel) */
+  --faint: #6b8289; /* decorative only, never body text */
+
+  /* brand + status */
+  --accent: #54a9ff; /* sprinter's line */
+  --accent-ink: #04121f; /* text on accent */
+  --ok: #6fd36a;
+  --warn: #f1c232;
+  --danger: #ff6b63; /* stayer's line */
+  --danger-ink: #1f0604;
+
+  /* power zones, Z1 recovery to Z7 neuromuscular */
+  --zone-1: #7f9bb3;
+  --zone-2: #3fbfae;
+  --zone-3: #7fd05a;
+  --zone-4: #ecc93c;
+  --zone-5: #f5923d;
+  --zone-6: #f45b50;
+  --zone-7: #cc66e6;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --ground: #eef2ee;
+    --panel: #ffffff;
+    --raised: #e3eae6;
+    --line: #c3d0cb;
+    --chalk: #0e1a1e;
+    --dim: #43585f;
+    --faint: #6d8288;
+    --accent: #0a62c7;
+    --accent-ink: #ffffff;
+    --ok: #17803a;
+    --warn: #8a6500;
+    --danger: #c0281f;
+    --danger-ink: #ffffff;
+    --zone-1: #5f7d96;
+    --zone-2: #18877a;
+    --zone-3: #3f8f22;
+    --zone-4: #9a7a00;
+    --zone-5: #c2610c;
+    --zone-6: #d1342a;
+    --zone-7: #a22cc4;
+  }
+}
+
+/* Expose tokens as Tailwind utilities (bg-ground, text-chalk, ...). */
+@theme inline {
+  --color-ground: var(--ground);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-chalk: var(--chalk);
+  --color-dim: var(--dim);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-danger-ink: var(--danger-ink);
+  --color-zone-1: var(--zone-1);
+  --color-zone-2: var(--zone-2);
+  --color-zone-3: var(--zone-3);
+  --color-zone-4: var(--zone-4);
+  --color-zone-5: var(--zone-5);
+  --color-zone-6: var(--zone-6);
+  --color-zone-7: var(--zone-7);
+}
+
+@theme {
+  /* type families */
+  --font-display: 'Saira Variable', 'Arial Narrow', system-ui, sans-serif;
+  --font-sans: 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
+
+  /*
+   * Type scale. Body sizes are rem; the numeral sizes are fluid so the same
+   * markup reads at 360 px wide (phone) and from 3 m away on a 1080p TV.
+   *   text-numeral-xl  hero readout (power)
+   *   text-numeral-lg  secondary readouts (cadence, heart rate, speed)
+   *   text-numeral-md  tertiary readouts (time, distance)
+   */
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+  --text-base: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.625rem;
+  --text-2xl: 2.125rem;
+  --text-numeral-md: clamp(2rem, 1.2rem + 3.2vw, 4.5rem);
+  --text-numeral-lg: clamp(3rem, 1.6rem + 6vw, 8rem);
+  --text-numeral-xl: clamp(5rem, 2rem + 16vw, 16rem);
+  --text-numeral-xl--line-height: 0.85;
+  --text-numeral-lg--line-height: 0.9;
+  --text-numeral-md--line-height: 1;
+
+  /* radii: panels are squarer than controls, pills are full */
+  --radius-panel: 0.625rem;
+  --radius-control: 0.5rem;
+
+  /* spacing unit stays Tailwind's 0.25rem; touch targets are 3rem */
+  --spacing-touch: 3rem;
+}
+
+html {
+  background: var(--ground);
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--chalk);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+/* Readouts: Saira, tabular so digits never jitter as values change. */
+.numeral {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-stretch: 85%;
+}
+
+/* Keyboard and TV-remote focus must be unmistakable. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

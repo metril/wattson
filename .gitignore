@@ -6,3 +6,8 @@
 /esphome/.esphome/
 *.bin
 /data/
+/web/node_modules/
+/web/.vite/
+/web/*.tsbuildinfo
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep

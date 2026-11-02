@@ -44,12 +44,12 @@ type BikeOut struct {
 }
 
 type HAOut struct {
-	URL      string `json:"url" doc:"Home Assistant base URL; empty when unset."`
+	URL      string `json:"url" doc:"Home Assistant base URL (no user:pass@); empty when unset."`
 	TokenSet bool   `json:"token_set" doc:"Whether a long-lived access token is stored. The token itself is never returned."`
 }
 
 type MQTTOut struct {
-	URL         string `json:"url" doc:"MQTT broker URL (mqtt:// or mqtts://); empty when unset."`
+	URL         string `json:"url" doc:"MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty when unset."`
 	Username    string `json:"username" doc:"MQTT username; empty when unset."`
 	PasswordSet bool   `json:"password_set" doc:"Whether an MQTT password is stored. The password itself is never returned."`
 }
@@ -117,12 +117,12 @@ type BikePatch struct {
 }
 
 type HAPatch struct {
-	URL   *string `json:"url,omitempty" doc:"Home Assistant base URL; empty clears it."`
+	URL   *string `json:"url,omitempty" doc:"Home Assistant base URL (no user:pass@); empty clears it."`
 	Token *string `json:"token,omitempty" doc:"Long-lived access token. Omit to keep the stored token; an empty string clears it."`
 }
 
 type MQTTPatch struct {
-	URL      *string `json:"url,omitempty" doc:"MQTT broker URL (mqtt:// or mqtts://); empty clears it."`
+	URL      *string `json:"url,omitempty" doc:"MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty clears it."`
 	Username *string `json:"username,omitempty" doc:"MQTT username."`
 	Password *string `json:"password,omitempty" doc:"MQTT password. Omit to keep the stored password; an empty string clears it."`
 }

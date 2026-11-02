@@ -146,6 +146,9 @@ func TestValidate(t *testing.T) {
 		{"ha url", func(s *settings.Settings) { s.HA.URL = "ws://x" }, "ha.url"},
 		{"brouter url", func(s *settings.Settings) { s.BRouter.URL = "nope" }, "brouter.url"},
 		{"mqtt url", func(s *settings.Settings) { s.MQTT.URL = "http://x" }, "mqtt.url"},
+		{"ha url userinfo", func(s *settings.Settings) { s.HA.URL = "http://u:p@ha.local:8123" }, "ha.url"},
+		{"ha url user only", func(s *settings.Settings) { s.HA.URL = "https://tok@ha.local" }, "ha.url"},
+		{"mqtt url userinfo", func(s *settings.Settings) { s.MQTT.URL = "mqtt://u:p@broker:1883" }, "mqtt.url"},
 		{"mqtt url ok", func(s *settings.Settings) { s.MQTT.URL = "mqtts://x:8883" }, ""},
 	}
 	for _, tc := range tests {

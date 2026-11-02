@@ -538,7 +538,7 @@
             "type": "boolean"
           },
           "url": {
-            "description": "Home Assistant base URL; empty when unset.",
+            "description": "Home Assistant base URL (no user:pass@); empty when unset.",
             "type": "string"
           }
         },
@@ -556,7 +556,7 @@
             "type": "string"
           },
           "url": {
-            "description": "Home Assistant base URL; empty clears it.",
+            "description": "Home Assistant base URL (no user:pass@); empty clears it.",
             "type": "string"
           }
         },
@@ -607,7 +607,7 @@
             "type": "boolean"
           },
           "url": {
-            "description": "MQTT broker URL (mqtt:// or mqtts://); empty when unset.",
+            "description": "MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty when unset.",
             "type": "string"
           },
           "username": {
@@ -630,7 +630,7 @@
             "type": "string"
           },
           "url": {
-            "description": "MQTT broker URL (mqtt:// or mqtts://); empty clears it.",
+            "description": "MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty clears it.",
             "type": "string"
           },
           "username": {

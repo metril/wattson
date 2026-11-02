@@ -126,13 +126,17 @@ func (s Settings) Validate() error {
 		return bad("bike.sim_cadence_rpm", "must be between 0 and 150")
 	}
 	if v := s.HA.URL; v != "" {
-		if _, ok := parseURL(v, "http", "https"); !ok {
+		if u, ok := parseURL(v, "http", "https"); !ok {
 			return bad("ha.url", "must be an absolute http(s) URL")
+		} else if u.User != nil {
+			return bad("ha.url", "must not contain credentials (user:pass@); use the token field")
 		}
 	}
 	if v := s.MQTT.URL; v != "" {
-		if _, ok := parseURL(v, "mqtt", "mqtts"); !ok {
+		if u, ok := parseURL(v, "mqtt", "mqtts"); !ok {
 			return bad("mqtt.url", "must be an absolute mqtt(s) URL")
+		} else if u.User != nil {
+			return bad("mqtt.url", "must not contain credentials (user:pass@); use the username and password fields")
 		}
 	}
 	if v := s.BRouter.URL; v != "" {

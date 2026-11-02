@@ -1,0 +1,413 @@
+[
+  {
+    "topic": "homeassistant/sensor/wattson_power/config",
+    "payload": {
+      "name": "Power",
+      "unique_id": "wattson_power",
+      "object_id": "wattson_power",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.power_w }}",
+      "unit_of_measurement": "W",
+      "device_class": "power",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_cadence/config",
+    "payload": {
+      "name": "Cadence",
+      "unique_id": "wattson_cadence",
+      "object_id": "wattson_cadence",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.cadence_rpm }}",
+      "unit_of_measurement": "rpm",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_heart_rate/config",
+    "payload": {
+      "name": "Heart rate",
+      "unique_id": "wattson_heart_rate",
+      "object_id": "wattson_heart_rate",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.hr_bpm }}",
+      "unit_of_measurement": "bpm",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_speed/config",
+    "payload": {
+      "name": "Speed",
+      "unique_id": "wattson_speed",
+      "object_id": "wattson_speed",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.speed_kmh }}",
+      "unit_of_measurement": "km/h",
+      "device_class": "speed",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_grade/config",
+    "payload": {
+      "name": "Grade",
+      "unique_id": "wattson_grade",
+      "object_id": "wattson_grade",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.grade_pct }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_level/config",
+    "payload": {
+      "name": "Resistance level",
+      "unique_id": "wattson_level",
+      "object_id": "wattson_level",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.level }}",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_distance/config",
+    "payload": {
+      "name": "Distance",
+      "unique_id": "wattson_distance",
+      "object_id": "wattson_distance",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.distance_km }}",
+      "unit_of_measurement": "km",
+      "device_class": "distance",
+      "state_class": "total_increasing",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_progress/config",
+    "payload": {
+      "name": "Route progress",
+      "unique_id": "wattson_progress",
+      "object_id": "wattson_progress",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.progress_pct }}",
+      "unit_of_measurement": "%",
+      "state_class": "measurement",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/sensor/wattson_state/config",
+    "payload": {
+      "name": "Ride state",
+      "unique_id": "wattson_state",
+      "object_id": "wattson_state",
+      "availability_topic": "wattson/status",
+      "state_topic": "wattson/state",
+      "value_template": "{{ value_json.state }}",
+      "device_class": "enum",
+      "options": [
+        "idle",
+        "connecting",
+        "ready",
+        "riding",
+        "paused",
+        "finished"
+      ],
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_start/config",
+    "payload": {
+      "name": "Start ride",
+      "unique_id": "wattson_start",
+      "object_id": "wattson_start",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/start",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_pause/config",
+    "payload": {
+      "name": "Pause",
+      "unique_id": "wattson_pause",
+      "object_id": "wattson_pause",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/pause",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_resume/config",
+    "payload": {
+      "name": "Resume",
+      "unique_id": "wattson_resume",
+      "object_id": "wattson_resume",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/resume",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_stop/config",
+    "payload": {
+      "name": "Stop ride",
+      "unique_id": "wattson_stop",
+      "object_id": "wattson_stop",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/stop",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_level_up/config",
+    "payload": {
+      "name": "Harder",
+      "unique_id": "wattson_level_up",
+      "object_id": "wattson_level_up",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/level_up",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_level_down/config",
+    "payload": {
+      "name": "Easier",
+      "unique_id": "wattson_level_down",
+      "object_id": "wattson_level_down",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/level_down",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  },
+  {
+    "topic": "homeassistant/button/wattson_release_bike/config",
+    "payload": {
+      "name": "Release bike",
+      "unique_id": "wattson_release_bike",
+      "object_id": "wattson_release_bike",
+      "availability_topic": "wattson/status",
+      "command_topic": "wattson/command/release_bike",
+      "payload_press": "PRESS",
+      "device": {
+        "identifiers": [
+          "wattson"
+        ],
+        "name": "Wattson",
+        "manufacturer": "Wattson",
+        "model": "Wattson trainer controller",
+        "sw_version": "1.2.3"
+      },
+      "origin": {
+        "name": "Wattson",
+        "sw_version": "1.2.3"
+      }
+    }
+  }
+]

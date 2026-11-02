@@ -140,7 +140,9 @@ func (a *Authenticator) touchDue(id int64, now time.Time) bool {
 // Middleware attaches the caller's Identity to the request context when
 // credentials are valid; otherwise the request continues anonymously. A
 // cookie-authenticated, non-safe-method request whose Origin header names a
-// foreign host is refused with 403 "csrf". Bearer requests are exempt.
+// foreign host is refused with 403 "csrf". A request with no Origin header
+// falls back to Sec-Fetch-Site and is refused only when that is "cross-site".
+// Bearer requests are exempt.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := a.Identify(r)

@@ -49,6 +49,7 @@ func TestVerify(t *testing.T) {
 		"$argon2id$v=19x$m=8192,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAA",
 		"$argon2id$v=19$m=8192,t=1,p=1x$AAAAAAAAAAAAAAAAAAAAAA$AAAA",
 		"$argon2id$v=19$m=08192,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAA",
+		"$argon2id$v=19$m=8192,t=+1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAA",
 		"$argon2id$v=19$m=65537,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAA",
 		"$argon2id$v=19$m=8192,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAA$",
 		"$argon2id$v=19$m=8192,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAB$AAAA",
@@ -73,6 +74,14 @@ func TestVerifyHonoursParams(t *testing.T) {
 	}
 	if ok, _ := VerifyPassword(ctx, h, "hunter2hunter3"); ok {
 		t.Fatal("wrong password verified")
+	}
+	// The canonical encoding verifies; the same hash with a non-canonical
+	// "+" sign on t is refused as malformed.
+	if ok, err := VerifyPassword(ctx, h, "hunter2hunter2"); err != nil || !ok {
+		t.Fatalf("canonical hash: ok=%v err=%v", ok, err)
+	}
+	if ok, err := VerifyPassword(ctx, strings.Replace(h, "t=1", "t=+1", 1), "hunter2hunter2"); err == nil || ok {
+		t.Fatalf("t=+1 variant: ok=%v err=%v; want error", ok, err)
 	}
 }
 

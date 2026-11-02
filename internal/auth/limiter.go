@@ -33,7 +33,10 @@ func NewLimiter(maxFails int, window time.Duration) *Limiter {
 }
 
 // Reservation is one admitted attempt. Exactly one of Fail, Success or
-// Release should be called; later calls are no-ops.
+// Release should be called; later calls are no-ops. Callers must
+// `defer res.Release()` immediately after a successful Allow, so a panic or an
+// early return cannot leak the slot (Release is a no-op once Fail or Success
+// has run).
 type Reservation struct {
 	l    *Limiter
 	key  string

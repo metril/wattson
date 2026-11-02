@@ -1,0 +1,17 @@
+.git
+.github
+.superpowers
+docs
+esphome
+data
+wattson
+dist
+*.hexlog
+web/node_modules
+web/.vite
+web/*.tsbuildinfo
+web/test-results
+web/playwright-report
+web/e2e
+internal/web/dist/*
+!internal/web/dist/.gitkeep

@@ -1,0 +1,27 @@
+services:
+  wattson:
+    build: .
+    image: wattson:local
+    ports: ["8080:8080"]
+    volumes:
+      - wattson-data:/data
+      # BlueZ over D-Bus, for a bike on this host's adapter. Not needed for the
+      # simulator or the ESPHome proxy; remove the line if the host has no bluetoothd.
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+    # host bluetooth gid: getent group bluetooth | cut -d: -f3 (not needed for the simulator or the ESPHome proxy)
+    group_add: ["112"]
+    restart: unless-stopped
+    # A stop returns the bike to its minimum level first (up to 10 s), then drains HTTP (up to 10 s).
+    stop_grace_period: 25s
+
+  brouter:
+    profiles: ["routing"]
+    # M3: verify image, pin tag+digest, mount rd5 segments
+    image: nrenner/brouter
+    volumes:
+      - brouter-segments:/segments
+    restart: unless-stopped
+
+volumes:
+  wattson-data:
+  brouter-segments:

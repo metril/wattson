@@ -26,6 +26,18 @@ Everything else is configured through the API and stored in SQLite. Stop it with
 
 Docs: [authentication and OIDC](docs/auth.md), [API quick start](docs/api.md), [openapi.json](docs/openapi.json), [asyncapi.yaml](docs/asyncapi.yaml).
 
+## Docker
+
+```
+docker compose up -d --build        # http://localhost:8080 shows the setup wizard
+```
+
+The image is distroless (about 28 MB, runs as uid 65532) and needs no environment variables: state lives in the `wattson-data` volume, mounted at `/data`. The built-in simulator needs nothing else, so the web UI works at once with no bike.
+
+For a bike on this host's Bluetooth adapter, the container talks to the host's BlueZ over the D-Bus socket that `compose.yml` mounts, and needs the host's numeric `bluetooth` group id; see [Docker in the hardware runbook](docs/hardware-runbook.md#docker). An ESPHome proxy needs neither. The container never uses host networking.
+
+Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` sits behind the `routing` profile and is not started by default.
+
 ## Quick start (CLI)
 
 ```
@@ -73,5 +85,6 @@ Docs: [hardware runbook](docs/hardware-runbook.md), [ESPHome proxy](docs/esphome
 make build     # build ./wattson
 make go-test   # go vet + go test -race ./...
 make serve     # build and run the server on :8080 with ./data
-make lint      # gofmt check + go vet
+make lint      # gofmt check + go vet + web type-check
+make e2e       # Playwright smoke over the simulator (npx playwright install chromium once)
 ```

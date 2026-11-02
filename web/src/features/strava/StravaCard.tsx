@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
@@ -117,6 +117,8 @@ export function StravaCard({ riderId }: { riderId: number }) {
   });
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   const auto = useMutation({
     mutationFn: async (v: boolean) =>
@@ -162,8 +164,13 @@ export function StravaCard({ riderId }: { riderId: number }) {
               disabled={disconnect.isPending}
               onClick={() => {
                 setError(null);
-                if (confirm) disconnect.mutate();
-                else setConfirm(true);
+                if (confirm) {
+                  clearTimeout(timer.current);
+                  disconnect.mutate();
+                } else {
+                  setConfirm(true);
+                  timer.current = setTimeout(() => setConfirm(false), 4000);
+                }
               }}
             >
               {confirm ? 'Tap again to disconnect' : 'Disconnect'}

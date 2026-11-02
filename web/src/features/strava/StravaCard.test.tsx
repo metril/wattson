@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StravaCard, stravaReasonText } from './StravaCard';
 import { apiError, renderWithClient, stubApi, userFixture } from '@/test-utils';
@@ -112,6 +112,21 @@ describe('StravaCard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Tap again to disconnect' }));
     await waitFor(() => expect(api.bodies('POST /api/riders/1/strava/disconnect')).toHaveLength(1));
   });
+});
+
+it('drops the disconnect confirmation after a few seconds', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    stubApi({ 'GET /api/auth/me': me(), 'GET /api/riders/1/strava': [200, connected()] });
+    renderWithClient(<StravaCard riderId={1} />);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    expect(screen.getByRole('button', { name: 'Tap again to disconnect' })).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(4100));
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 describe('stravaReasonText', () => {

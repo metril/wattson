@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import type { components } from '@/lib/openapi';
 import { api, ApiError, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { rideDate } from '@/lib/format';
@@ -12,7 +13,7 @@ import { FitButton } from '@/features/history/FitButton';
 import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
 import { RideStats } from '@/features/history/RideStats';
 import { SeriesChart } from '@/features/history/SeriesChart';
-import { RIDES_KEY } from './History';
+import { RIDES_KEY } from '@/lib/rides';
 
 const rideKey = (id: number) => [...RIDES_KEY, 'detail', id] as const;
 
@@ -71,6 +72,11 @@ export function RideDetailPage() {
     mutationFn: async () => unwrap(await api.DELETE('/api/rides/{id}', { params: { path: { id } } })),
     onSuccess: () => {
       qc.removeQueries({ queryKey: rideKey(id) });
+      // Drop the ride from the cached list pages so the list never flashes it again.
+      qc.setQueriesData<InfiniteData<components['schemas']['RideList']>>(
+        { queryKey: RIDES_KEY, predicate: (q) => q.queryKey[1] !== 'detail' },
+        (old) => old && { ...old, pages: old.pages.map((p) => ({ ...p, rides: p.rides.filter((x) => x.id !== id) })) },
+      );
       void qc.invalidateQueries({ queryKey: RIDES_KEY });
       navigate('/history', { replace: true });
     },

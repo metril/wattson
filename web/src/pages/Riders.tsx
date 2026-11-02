@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus } from 'lucide-react';
@@ -220,8 +220,16 @@ export function RidersPage() {
   const [creating, setCreating] = useState(false);
   const [chosen, setChosen] = useState<number | null>(getSelectedRiderId);
 
-  const [params] = useSearchParams();
-  const stravaResult = params.get('strava');
+  const [params, setParams] = useSearchParams();
+  // Keep the Strava result for the banner, then drop it from the address so a reload does not repeat it.
+  const [strava] = useState(() => ({ result: params.get('strava'), reason: params.get('reason') ?? '' }));
+  useEffect(() => {
+    if (!params.has('strava') && !params.has('reason')) return;
+    const next = new URLSearchParams(params);
+    next.delete('strava');
+    next.delete('reason');
+    setParams(next, { replace: true });
+  }, [params, setParams]);
 
   const riders = q.data ?? [];
   // A stale or missing choice falls back to the first rider.
@@ -236,8 +244,8 @@ export function RidersPage() {
           New rider
         </Button>
       </div>
-      {stravaResult === 'connected' && <Banner tone="ok">{stravaReasonText('connected')}</Banner>}
-      {stravaResult === 'error' && <Banner tone="error">{stravaReasonText(params.get('reason') ?? '')}</Banner>}
+      {strava.result === 'connected' && <Banner tone="ok">{stravaReasonText('connected')}</Banner>}
+      {strava.result === 'error' && <Banner tone="error">{stravaReasonText(strava.reason)}</Banner>}
       {creating && (
         <Card>
           <h2 className="numeral mb-4 text-xl">New rider</h2>

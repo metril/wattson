@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
+import { RIDES_KEY } from '@/lib/rides';
 import { fixed0, hms, km, rideDate } from '@/lib/format';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
@@ -14,7 +15,6 @@ import { RIDERS_KEY } from './Riders';
 type Rider = components['schemas']['RiderOut'];
 type Ride = components['schemas']['RideOut'];
 
-export const RIDES_KEY = ['rides'] as const;
 const RIDER_KEY = 'wattson.history_rider';
 const PAGE = 20;
 
@@ -40,9 +40,9 @@ const COLS = 'md:grid-cols-[minmax(9rem,1.2fr)_minmax(5rem,0.8fr)_minmax(6rem,1.
 
 function Stat({ label, children }: { label: string; children: string }) {
   return (
-    <span className="flex items-baseline gap-1 md:block">
+    <span className="flex min-w-0 flex-col md:block">
       <span className="text-xs text-dim md:hidden">{label}</span>
-      <span className="numeral text-lg md:text-base">{children}</span>
+      <span className="numeral text-base">{children}</span>
     </span>
   );
 }
@@ -52,7 +52,7 @@ function Row({ r }: { r: Ride }) {
     <li>
       <Link
         to={`/history/${r.id}`}
-        className={`grid min-h-touch grid-cols-3 items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-raised md:grid-cols-none ${COLS}`}
+        className={`grid min-h-touch grid-cols-3 items-center gap-x-3 gap-y-2 px-4 py-3 hover:bg-raised md:grid-cols-none ${COLS}`}
       >
         <span className="col-span-2 min-w-0 md:col-span-1">
           <span className="block text-sm text-dim">{rideDate(r.started_at)}</span>

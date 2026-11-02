@@ -96,10 +96,11 @@ function renderKiosk(route: string) {
 describe('Layout kiosk mode', () => {
   afterEach(() => localStorage.clear());
 
-  it('shows only Ride and Unpair, and Unpair asks first then clears the token', async () => {
+  it('shows only Ride, History and Unpair, and Unpair asks first then clears the token', async () => {
     renderKiosk('/');
     const unpair = await screen.findByRole('button', { name: 'Unpair' });
     expect(screen.getByRole('link', { name: 'Ride' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'History' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Riders' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tokens' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
@@ -115,5 +116,11 @@ describe('Layout kiosk mode', () => {
     renderKiosk(route);
     await screen.findByRole('button', { name: 'Unpair' });
     expect(screen.getByTestId('loc').textContent).toBe('/');
+  });
+
+  it.each(['/history', '/history/7'])('keeps %s reachable', async (route) => {
+    renderKiosk(route);
+    await screen.findByRole('button', { name: 'Unpair' });
+    expect(screen.getByTestId('loc').textContent).toBe(route);
   });
 });

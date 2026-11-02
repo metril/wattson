@@ -8,7 +8,7 @@ import { api, setKioskToken, unwrap } from '@/lib/api';
 import { ME_KEY, useMe } from '@/lib/auth';
 
 const link =
-  'flex min-h-touch min-w-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-3 py-1 text-xs font-medium text-dim md:flex-none md:py-3 aria-[current=page]:bg-raised aria-[current=page]:text-chalk hover:text-chalk';
+  'flex min-h-touch min-w-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-0.5 py-1 text-[11px] font-medium sm:px-3 sm:text-xs text-dim md:flex-none md:py-3 aria-[current=page]:bg-raised aria-[current=page]:text-chalk hover:text-chalk';
 
 /**
  * App shell: bottom tab bar on phones, left rail from 768 px up.
@@ -51,14 +51,15 @@ export function Layout() {
     navigate('/login', { replace: true });
   }
 
-  // A paired display only ever shows the ride screen.
-  if (kiosk && loc.pathname !== '/') return <Navigate to="/" replace />;
+  // A paired display shows the ride screen and the ride history (its FIT download needs the token).
+  const kioskOk = loc.pathname === '/' || loc.pathname === '/history' || /^\/history\/\d+$/.test(loc.pathname);
+  if (kiosk && !kioskOk) return <Navigate to="/" replace />;
 
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-10 flex gap-1 border-t border-line bg-panel p-1 md:static md:inset-auto md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
+        className="fixed inset-x-0 bottom-0 z-10 flex gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
       >
         <span className="numeral hidden px-1 pt-2 pb-4 text-center text-lg tracking-wide md:block">
           Wattson
@@ -67,6 +68,10 @@ export function Layout() {
           <Bike aria-hidden className="size-6" />
           Ride
         </NavLink>
+        <NavLink to="/history" className={link}>
+          <History aria-hidden className="size-6" />
+          History
+        </NavLink>
         {kiosk ? (
           <button type="button" onClick={() => setUnpairing(true)} className={`${link} md:mt-auto`}>
             <Unlink aria-hidden className="size-6" />
@@ -74,10 +79,6 @@ export function Layout() {
           </button>
         ) : (
           <>
-            <NavLink to="/history" className={link}>
-              <History aria-hidden className="size-6" />
-              History
-            </NavLink>
             <NavLink to="/routes" className={link}>
               <Route aria-hidden className="size-6" />
               Routes

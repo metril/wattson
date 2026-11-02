@@ -9,6 +9,7 @@ const SIZES = [
 
 const ADMIN_PAGES = [
   '/riders',
+  '/history',
   '/settings/general',
   '/settings/bike',
   '/settings/integrations',

@@ -41,7 +41,8 @@ describe('FitButton', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/rides/7/fit');
     expect(create).toHaveBeenCalledTimes(1);
     expect(saved[0]).toEqual({ download: 'wattson-7-20261102-0505.fit', href: 'blob:x' });
-    await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:x'));
+    expect(revoke).not.toHaveBeenCalled();
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:x'), { timeout: 2500 });
   });
 
   it('shows the server error', async () => {

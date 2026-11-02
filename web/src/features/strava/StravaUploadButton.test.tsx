@@ -68,11 +68,26 @@ describe('StravaUploadButton', () => {
   it('shows the failure and retries', async () => {
     const api = stubApi({ 'POST /api/rides/7/strava': [202, uploading] });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(ui({ ...stravaNone, status: 'error', error: "Strava isn't configured" }));
-    expect(screen.getByText("Strava isn't configured")).toBeInTheDocument();
+    render(ui({ ...stravaNone, status: 'error', error: 'Strava rate limit hit' }));
+    expect(screen.getByText('Strava rate limit hit')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Uploading…')).toBeInTheDocument();
     expect(api.calls.filter((c) => c.key === 'POST /api/rides/7/strava')).toHaveLength(1);
+  });
+
+  it('words a configuration failure like the Riders card', () => {
+    stubApi({});
+    render(ui({ ...stravaNone, status: 'error', error: "Strava isn't configured on this server" }));
+    expect(screen.getByText("Strava isn't set up on this server — ask an admin.")).toBeInTheDocument();
+  });
+
+  it('turns a failed status poll into a Retry state', async () => {
+    stubApi({ 'GET /api/rides/7/strava': apiError(404, 'not_found', 'Ride not found') });
+    render(ui(uploading));
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(await screen.findByText('Ride not found')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText('Uploading…')).not.toBeInTheDocument();
   });
 
   it('shows an already uploaded ride as a link without a request', () => {

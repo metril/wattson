@@ -6,13 +6,21 @@ import { errMessage } from '@/lib/errors';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
-import { RIDES_KEY } from '@/pages/History';
+import { RIDES_KEY } from '@/lib/rides';
 
 type Status = components['schemas']['StravaStatusOut'];
 
 const POLL_MS = 2000;
 // About five minutes; Strava normally finishes in seconds.
 const MAX_POLLS = 150;
+
+const EMPTY: Status = { status: 'none', activity_id: 0, activity_url: '', error: '', upload_id: 0 };
+
+/** The server's configuration failure, in the wording the Riders card uses. */
+function failureText(msg: string): string {
+  if (!msg) return 'The Strava upload failed.';
+  return /(isn't|is not|not) (configured|set up)/i.test(msg) ? "Strava isn't set up on this server — ask an admin." : msg;
+}
 
 /** Uploads a ride to Strava and follows the background upload until it is done or fails. */
 export function StravaUploadButton({ rideId, initial }: { rideId: number; initial: Status }) {
@@ -40,12 +48,12 @@ export function StravaUploadButton({ rideId, initial }: { rideId: number; initia
           if (dead) return;
           // A dropped connection is retried; a definite answer from the server is not.
           if (e instanceof ApiError) {
-            setError(errMessage(e));
+            setSt({ ...EMPTY, status: 'error', error: errMessage(e) });
             return;
           }
         }
         if (++polls >= MAX_POLLS) {
-          setError('Still uploading. Check this ride again later.');
+          setSt({ ...EMPTY, status: 'error', error: 'Still uploading. Retry to check again.' });
           return;
         }
         schedule();
@@ -99,7 +107,7 @@ export function StravaUploadButton({ rideId, initial }: { rideId: number; initia
           {st.status === 'error' ? 'Retry' : 'Upload to Strava'}
         </Button>
       )}
-      {st.status === 'error' && !error && <Banner tone="error">{st.error || 'The Strava upload failed.'}</Banner>}
+      {st.status === 'error' && !error && <Banner tone="error">{failureText(st.error)}</Banner>}
       {error && <Banner tone="error">{error}</Banner>}
     </div>
   );

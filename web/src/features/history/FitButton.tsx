@@ -52,7 +52,7 @@ export function FitButton({ rideId }: { rideId: number }) {
       a.click();
       a.remove();
       const u = url;
-      setTimeout(() => URL.revokeObjectURL(u), 250);
+      setTimeout(() => URL.revokeObjectURL(u), 1500);
     } catch (e) {
       if (url) URL.revokeObjectURL(url);
       setError(errMessage(e));

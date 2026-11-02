@@ -38,16 +38,21 @@ describe('LevelControls', () => {
     ]);
   });
 
-  it('the arrows still tune the level with focus on a level button, but not on other controls', async () => {
+  it('the arrows tune the level on the page and on data-level buttons, but not on the - / + buttons or others', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     render(
       <>
         <button>elsewhere</button>
+        <button data-level>Start</button>
         <LevelControls socket={{ send, ticks: new TickStore() }} />
       </>,
     );
-    screen.getByRole('button', { name: 'Increase level' }).focus();
+    screen.getByRole('button', { name: 'Start' }).focus();
     await userEvent.keyboard('{ArrowUp}');
+    expect(send).toHaveBeenCalledTimes(1);
+    screen.getByRole('button', { name: 'elsewhere' }).focus();
+    screen.getByRole('button', { name: 'Increase level' }).focus();
+    await userEvent.keyboard('{ArrowUp}{ArrowDown}');
     expect(send).toHaveBeenCalledTimes(1);
     screen.getByRole('button', { name: 'elsewhere' }).focus();
     await userEvent.keyboard('{ArrowUp}{ArrowDown}');

@@ -58,13 +58,9 @@ describe('RidePage', () => {
     expect(ws.commands.at(-1)).toMatchObject({ command: 'stop' });
   });
 
-  it('ready: focus starts on Start; Enter sends start, ArrowUp moves focus', async () => {
+  it('ready: focus starts on Start; Enter sends start, ArrowUp tunes the level from there', async () => {
     const { ws } = await setup({ state: 'ready' }, { state: 'ready' });
     expect(screen.getByRole('button', { name: 'Start' })).toHaveFocus();
-    await userEvent.keyboard('{ArrowUp}');
-    expect(ws.commands.filter((c) => c.command === 'level_delta')).toHaveLength(0);
-    expect(screen.getByRole('button', { name: 'Start' })).not.toHaveFocus();
-    (document.activeElement as HTMLElement).blur();
     await userEvent.keyboard('{ArrowUp}');
     expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: 1 });
     await userEvent.keyboard('{Enter}');

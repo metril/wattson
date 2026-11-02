@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { MAX_TARGET_W, MIN_TARGET_W } from '@/lib/workout-math';
 import type { TickStore } from '@/lib/tick-store';
 import { Minus, Plus } from 'lucide-react';
@@ -14,7 +14,7 @@ const step =
 /**
  * ERG target controls. "−10 W" / "+10 W" send level_delta, which the engine
  * turns into a 10 W nudge (in a workout, an adjustment on top of the blocks).
- * Free ERG also takes a typed target. ArrowUp and ArrowDown nudge too (while focus is on the page or these buttons).
+ * Free ERG also takes a typed target. ArrowUp and ArrowDown nudge too (while focus is on the page or the ride control buttons).
  */
 export function ErgControls({
   send,
@@ -35,6 +35,7 @@ export function ErgControls({
     const w = ticks?.latest?.target_power_w ?? 0;
     return w > 0 ? String(Math.round(w)) : '';
   });
+  const setBtn = useRef<HTMLButtonElement>(null);
   const watts = Number(text);
   const invalid = text === '' || ergError(watts) !== null;
 
@@ -54,11 +55,11 @@ export function ErgControls({
   return (
     <div className="metric-wide m-wide flex flex-col gap-3 rounded-panel bg-panel p-3">
       <div className="flex items-center gap-3">
-        <button type="button" data-nav data-level className={step} disabled={disabled} onClick={() => bump(-1)}>
+        <button type="button" data-nav className={step} disabled={disabled} onClick={() => bump(-1)}>
           <Minus aria-hidden className="size-7" />
           <span>−10 W</span>
         </button>
-        <button type="button" data-nav data-level className={step} disabled={disabled} onClick={() => bump(1)}>
+        <button type="button" data-nav className={step} disabled={disabled} onClick={() => bump(1)}>
           <Plus aria-hidden className="size-7" />
           <span>+10 W</span>
         </button>
@@ -70,6 +71,7 @@ export function ErgControls({
             e.preventDefault();
             if (disabled || invalid) return;
             send('set_target_power', watts).catch((err) => onError?.(err));
+            setBtn.current?.focus(); // Enter commits and moves on to Set
           }}
         >
           <div className="min-w-0 flex-1">
@@ -85,7 +87,7 @@ export function ErgControls({
               error={text !== '' ? (ergError(watts) ?? undefined) : undefined}
             />
           </div>
-          <Button type="submit" variant="primary" disabled={disabled || invalid} className="mb-px">
+          <Button ref={setBtn} type="submit" variant="primary" disabled={disabled || invalid} className="mb-px">
             Set
           </Button>
         </form>

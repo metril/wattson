@@ -488,7 +488,33 @@ html.ride-dark .ride-view .ride-viewbox {
   .m-minus,
   .m-plus { grid-column: span 3; }
   .m-wide { grid-column: 1 / -1; }
+  /* Free ride has no profile strip, so Distance joins the HUD: seven tiles on a 14-column grid. */
   .ride-flat .metric-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(14, minmax(0, 1fr));
+  }
+  .ride-flat .m-power,
+  .ride-flat .m-speed,
+  .ride-flat .m-grade,
+  .ride-flat .m-level,
+  .ride-flat .m-time,
+  .ride-flat .m-hr,
+  .ride-flat .m-dist {
+    grid-column: span 2;
+  }
+  .ride-flat .m-dist {
+    display: flex;
+    order: 7;
+  }
+  .ride-flat .m-minus,
+  .ride-flat .m-plus,
+  .ride-flat .m-wide {
+    order: 8;
+  }
+  .ride-flat .m-minus,
+  .ride-flat .m-plus {
+    grid-column: span 7;
+  }
+  .ride-flat .m-wide {
+    grid-column: 1 / -1;
   }
 }

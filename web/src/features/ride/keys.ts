@@ -12,7 +12,9 @@ function ownsKey(el: EventTarget | null, key: string): boolean {
 
 /**
  * ArrowUp/ArrowDown change the level only while focus is on the page itself or on
- * a level control (marked `data-level`); everywhere else the arrows move focus.
+ * a ride control button (Start/Pause/Resume/Stop, marked `data-level`); everywhere
+ * else the arrows move focus. The - / + buttons are deliberately not marked: a
+ * button that swallowed Up/Down would trap the D-pad.
  */
 export function isLevelFocus(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return true;
@@ -20,7 +22,7 @@ export function isLevelFocus(target: EventTarget | null): boolean {
 }
 
 /**
- * Window-level key handler for the ride screen (arrows and Enter on a TV
+ * Window-level (capture) key handler for the ride screen (arrows and Enter on a TV
  * remote). Returns true from the handler when it used the key. `repeat` is
  * true for auto-repeat while a key is held.
  */
@@ -33,7 +35,8 @@ export function useRideKey(handler: (key: string, repeat: boolean, target: Event
       if (ownsKey(ev.target, ev.key)) return;
       if (ref.current(ev.key, ev.repeat, ev.target)) ev.preventDefault();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Capture phase: runs before the navigation handlers whatever the mount order.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 }

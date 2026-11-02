@@ -72,7 +72,13 @@ export function EntityPicker({
         aria-controls={listId}
         aria-autocomplete="list"
         onFocus={() => setOpen(true)}
-        onKeyDown={(ev) => ev.key === 'Escape' && setOpen(false)}
+        onKeyDown={(ev) => {
+          // An open list takes the first Escape; the next one leaves the field.
+          if (ev.key === 'Escape' && open) {
+            ev.preventDefault();
+            setOpen(false);
+          }
+        }}
         onChange={(ev) => {
           setText(ev.target.value);
           setOpen(true);

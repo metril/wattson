@@ -115,16 +115,25 @@ export function RidePage() {
   const { connected, state, bike } = status;
   // Stays mounted from picking the route into the ride, so pressing Start does not cancel the save.
   const pillRoute = routeMode ? routeId : state === 'ready' && choice.kind === 'route' ? choice.id : 0;
-  // Focus the primary action (Start, Pause, Resume) whenever focus is lost to the page, and when the
-  // bike becomes ready while focus is still on Connect (React reuses that button as Release).
-  useEffect(() => {
-    const a = document.activeElement;
-    const onConnect = state === 'ready' && a instanceof HTMLButtonElement && !!a.closest('.ride-top');
-    if (a && a !== document.body && document.contains(a) && !onConnect) return;
-    screen.current?.querySelector<HTMLElement>('[data-primary]:not(:disabled)')?.focus();
-  }, [state, connected]);
   const ergMode = mode === 'erg';
   const active = state === 'ready' || state === 'riding' || state === 'paused';
+
+  // On entering a ride (ready, riding, paused) focus the primary action once: when focus is on the page
+  // or still on Connect (React reuses that button as Release). Later focus moves are the user's own.
+  const focusDone = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      focusDone.current = false;
+      return;
+    }
+    if (focusDone.current) return;
+    const a = document.activeElement;
+    const lost = !a || a === document.body || !document.contains(a) || a.matches('[data-bike-toggle]');
+    const primary = screen.current?.querySelector<HTMLElement>('[data-primary]:not(:disabled)');
+    if (lost && !primary) return; // Start is disabled until the link is up: try again then
+    focusDone.current = true;
+    if (lost) primary?.focus();
+  }, [active, connected]);
 
   return (
     <div ref={screen} className={`ride-screen ${routeMode || workoutId !== 0 ? '' : 'ride-flat'}`}>

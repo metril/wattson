@@ -12,8 +12,9 @@ const pickReported = (t: { reported_level: number }) => `bike reports ${t.report
 /**
  * Resistance − / +. The number between them is the engine's level from the
  * latest tick, never a guess from the taps, so it can't drift from the bike.
- * ArrowUp raises it, ArrowDown lowers it (while focus is on the page or on these
- * buttons; ArrowLeft/Right move focus). In route mode the same
+ * ArrowUp raises it, ArrowDown lowers it (while focus is on the page or on the ride
+ * control buttons, see isLevelFocus; ArrowLeft/Right move focus). These buttons are
+ * plain navigation targets, so a D-pad can leave them in every direction. In route mode the same
  * level_delta nudges the bias on top of the route's own level, so the buttons
  * read Easier/Harder and the bias is shown.
  */
@@ -55,10 +56,10 @@ export function LevelControls({
         <span ref={bias} hidden={!route} className="numeral text-lg" />
         <span ref={reported} className="text-sm text-dim" />
       </div>
-      <button type="button" data-nav data-level className={`${step} m-minus`} aria-label={route ? 'Easier' : 'Decrease level'} disabled={disabled} onClick={() => bump(-1)}>
+      <button type="button" data-nav className={`${step} m-minus`} aria-label={route ? 'Easier' : 'Decrease level'} disabled={disabled} onClick={() => bump(-1)}>
         <Minus aria-hidden className="size-9" />
       </button>
-      <button type="button" data-nav data-level className={`${step} m-plus`} aria-label={route ? 'Harder' : 'Increase level'} disabled={disabled} onClick={() => bump(1)}>
+      <button type="button" data-nav className={`${step} m-plus`} aria-label={route ? 'Harder' : 'Increase level'} disabled={disabled} onClick={() => bump(1)}>
         <Plus aria-hidden className="size-9" />
       </button>
     </div>

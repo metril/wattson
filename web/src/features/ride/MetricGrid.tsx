@@ -121,7 +121,7 @@ export function MetricGrid({
       {rest && (
         <>
           {route && <Tile name="Cadence" unit="rpm" ticks={ticks} pick={pickCadence} cls="m-rest" />}
-          <Tile name="Distance" unit="km" ticks={ticks} pick={pickDistance} cls="m-rest" />
+          <Tile name="Distance" unit="km" ticks={ticks} pick={pickDistance} cls="m-rest m-dist" />
           <Tile name="Time" ticks={ticks} pick={pickTime} cls="m-time" />
           <Tile name="HR" unit="bpm" ticks={ticks} pick={pickHR} cls="m-hr">
             {hr && <p className="truncate text-xs text-dim">{hrStatus(hr)}</p>}

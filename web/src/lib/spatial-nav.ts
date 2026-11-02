@@ -61,8 +61,10 @@ function ownsArrows(el: EventTarget | null, dir: Dir): boolean {
   if (el.isContentEditable) return true;
   // A slider keeps left/right for its value; up/down still leave it.
   if (el instanceof HTMLInputElement && el.type === 'range') return dir === 'left' || dir === 'right';
+  // A select keeps up/down (its value); left/right leave it.
+  if (el instanceof HTMLSelectElement) return dir === 'up' || dir === 'down';
   if (el instanceof HTMLInputElement) return !BUTTON_LIKE.has(el.type);
-  return el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
+  return el instanceof HTMLTextAreaElement;
 }
 
 function isTextEntry(el: EventTarget | null): boolean {
@@ -100,6 +102,18 @@ export function useSpatialNav(root: RefObject<HTMLElement>, o: { enabled?: (e: K
       if (!box || (enabled.current && !enabled.current(e))) return;
 
       if (e.key === 'Escape' || e.key === 'Backspace') {
+        if (e.key === 'Escape' && e.target instanceof HTMLElement && isTextEntry(e.target) && !(e.target instanceof HTMLSelectElement)) {
+          // Leave a text/number field for the next navigable control (arrows stay native inside it).
+          const items = targets(box).filter((i) => i.el !== e.target);
+          const here = e.target;
+          const after = items.find((i) => here.compareDocumentPosition(i.el) & Node.DOCUMENT_POSITION_FOLLOWING);
+          const out = after?.el ?? items[items.length - 1]?.el;
+          if (out) {
+            e.preventDefault();
+            out.focus();
+          }
+          return;
+        }
         if (isTextEntry(e.target)) return;
         e.preventDefault();
         history.back();
@@ -111,6 +125,8 @@ export function useSpatialNav(root: RefObject<HTMLElement>, o: { enabled?: (e: K
       const items = targets(box);
       if (items.length === 0) return;
       const active = document.activeElement;
+      // Focus elsewhere in the app (nav bar, More menu) belongs to the enclosing instance.
+      if (active && active !== document.body && active !== document.documentElement && !box.contains(active)) return;
       const at = items.findIndex((i) => i.el === active);
       let next: Element | null = null;
       if (at < 0) {

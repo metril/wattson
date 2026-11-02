@@ -131,6 +131,45 @@ describe('Ride workout and ERG', () => {
     expect(ws.commands.at(-1)).toMatchObject({ command: 'start', target_power_w: 200 });
   });
 
+  it('the start picker is no D-pad trap: Right leaves the select, Escape leaves the field, Enter moves on to Start', async () => {
+    await setup('/');
+    const select = screen.getByLabelText('Ride');
+    await userEvent.selectOptions(select, 'erg');
+    const watts = screen.getByLabelText('Target power (W)');
+    select.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(select).not.toHaveFocus();
+    watts.focus();
+    await userEvent.keyboard('{ArrowLeft}'); // native caret movement: focus stays
+    expect(watts).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(watts).not.toHaveFocus();
+    expect(document.activeElement).not.toBe(document.body);
+    watts.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: 'Start' })).toHaveFocus();
+  });
+
+  it('erg ride (controls mount after the first tick): Up/Down nudge from the page and from the Pause button', async () => {
+    const { ws } = await setup('/');
+    push(ws, { state: 'riding', mode: 'erg', target_power_w: 250 });
+    await screen.findByRole('button', { name: '+10 W' });
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: 1 });
+    await userEvent.keyboard('{ArrowDown}');
+    expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: -1 });
+    screen.getByRole('button', { name: 'Pause' }).focus();
+    const n = ws.commands.length;
+    await userEvent.keyboard('{ArrowUp}');
+    expect(ws.commands).toHaveLength(n + 1);
+    expect(screen.getByRole('button', { name: 'Pause' })).toHaveFocus();
+    // the +/- buttons are plain targets: Up moves focus instead of nudging
+    screen.getByRole('button', { name: '+10 W' }).focus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(ws.commands).toHaveLength(n + 1);
+  });
+
   it('erg mode: +10 W nudges, the input sets the target, Target W is shown', async () => {
     const { ws } = await setup('/');
     push(ws, { state: 'riding', mode: 'erg', target_power_w: 250, power_w: 240 });

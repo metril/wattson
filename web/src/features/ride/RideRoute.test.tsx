@@ -158,6 +158,7 @@ describe('Ride route mode', () => {
     tick(ws, { distance_m: 5 });
     await userEvent.click(await screen.findByRole('button', { name: 'Harder' }));
     expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: 1 });
+    (document.activeElement as HTMLElement).blur(); // the buttons are plain targets; the page takes Up/Down
     await userEvent.keyboard('{ArrowDown}');
     expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: -1 });
     tick(ws, { bias: 1 });

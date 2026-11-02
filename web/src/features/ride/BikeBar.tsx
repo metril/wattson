@@ -115,13 +115,14 @@ export function BikeBar({
           {idle ? (
             <Button
               variant="primary"
+              data-bike-toggle
               disabled={typeof riderId !== 'number' || connect.isPending}
               onClick={() => typeof riderId === 'number' && connect.mutate(riderId)}
             >
               Connect
             </Button>
           ) : (
-            <Button variant="secondary" disabled={release.isPending} onClick={() => release.mutate()}>
+            <Button variant="secondary" data-bike-toggle disabled={release.isPending} onClick={() => release.mutate()}>
               Release
             </Button>
           )}

@@ -111,6 +111,7 @@ export function RideControls({
       <Button
         variant="primary"
         data-primary
+        data-level
         onFocus={remember}
         className={big}
         disabled={disabled || busy !== null}
@@ -122,6 +123,7 @@ export function RideControls({
       {canStop && (
         <Button
           variant={armed ? 'danger' : 'secondary'}
+          data-level
           onFocus={remember}
           className={big}
           disabled={disabled || busy !== null}

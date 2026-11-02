@@ -116,6 +116,12 @@ export function StartPicker({ value, onChange }: { value: StartChoice; onChange(
           max={MAX_TARGET_W}
           value={Number.isNaN(value.watts) ? '' : value.watts}
           onChange={(e) => onChange({ kind: 'erg', watts: e.target.value === '' ? NaN : Number(e.target.value) })}
+          onKeyDown={(e) => {
+            // Enter commits the value and moves on to Start (arrows stay with the number field).
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            document.querySelector<HTMLElement>('[data-primary]:not(:disabled)')?.focus();
+          }}
           error={ergError(value.watts) ?? undefined}
         />
       )}

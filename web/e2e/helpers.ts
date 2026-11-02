@@ -70,8 +70,8 @@ export async function layoutProblems(page: Page): Promise<string[]> {
     if (document.body.scrollWidth > de.clientWidth) out.push(`body overflows: ${document.body.scrollWidth} > ${de.clientWidth}`);
     const sel = 'button, a[href], select, input:not([type=hidden]), textarea, [role=button], [role=switch], [role=tab]';
     for (const el of document.querySelectorAll<HTMLElement>(sel)) {
-      // A checkbox/radio is hit through its label; measure that instead.
-      const target = el instanceof HTMLInputElement && /checkbox|radio/.test(el.type) ? (el.closest('label') ?? el) : el;
+      // A checkbox, radio or file input is hit through its label; measure that instead.
+      const target = el instanceof HTMLInputElement && /checkbox|radio|file/.test(el.type) ? (el.closest('label') ?? el) : el;
       const r = target.getBoundingClientRect();
       const cs = getComputedStyle(target);
       if (r.width === 0 || r.height === 0 || cs.visibility === 'hidden' || cs.display === 'none') continue;

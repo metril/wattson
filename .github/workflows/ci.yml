@@ -125,13 +125,13 @@ jobs:
         run: git diff --exit-code -- docs/openapi.json docs/asyncapi.yaml web/src/lib/openapi.d.ts
 
   e2e:
-    name: E2E (shard ${{ matrix.shard }}/2)
+    name: E2E (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -150,7 +150,7 @@ jobs:
       - name: playwright
         working-directory: web
         # Every worker runs its own server (own port and data dir).
-        run: npm run e2e -- --shard=${{ matrix.shard }}/2
+        run: npm run e2e -- --shard=${{ matrix.shard }}/3
       - name: upload report
         if: failure()
         uses: actions/upload-artifact@v7

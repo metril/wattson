@@ -13,14 +13,16 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    // MapLibre needs WebGL; headless CI has no GPU, so use the software rasteriser.
-    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
+    // The service worker caches map tiles; only sw.spec.ts opts in, so no other test sees a cached tile.
+    serviceWorkers: 'block',
+    // MapLibre needs WebGL2; headless CI has no GPU, so use the software rasteriser (and ignore the blocklist that hides it).
+    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
   },
   projects: [
-    // workouts.spec.ts is one flow on the tablet project only.
+    // workouts.spec.ts is one flow on the tablet project only; the 3D, photo and service worker specs need room.
     {
       name: 'phone',
-      testIgnore: /workouts\.spec/,
+      testIgnore: /workouts\.spec|visuals\.spec|sw\.spec/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, hasTouch: true },
     },
     // layout.spec.ts sets its own viewports, so only the phone project runs it.
@@ -29,6 +31,6 @@ export default defineConfig({
       testIgnore: /layout\.spec/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1024, height: 768 }, hasTouch: true },
     },
-    { name: 'tv', testIgnore: /layout\.spec|workouts\.spec/, use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } } },
+    { name: 'tv', testIgnore: /layout\.spec|workouts\.spec|sw\.spec/, use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } } },
   ],
 });

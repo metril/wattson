@@ -1,12 +1,13 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { startFakeBRouter, type FakeBRouter } from './fake-brouter';
+import { startFakeMapillary, type FakeMapillary } from './fake-mapillary';
 import { ADMIN } from './helpers';
 
 const BINARY = resolve(import.meta.dirname, '../../wattson');
@@ -72,7 +73,70 @@ export async function apiAs(baseURL: string, cookies: Cookie[], method: string, 
   return res;
 }
 
-export const test = base.extend<{ baseURL: string }, { server: Server; fakeBRouter: FakeBRouter; segmentsDir: string }>({
+const RAMP = resolve(import.meta.dirname, '../../internal/route/testdata/ramp.gpx');
+const STYLE = readFileSync(resolve(import.meta.dirname, 'fixtures/blank-style.json'), 'utf8');
+const FLAT_DEM = readFileSync(resolve(import.meta.dirname, 'fixtures/flat-terrarium.png'));
+/** A vector tile body is never decoded (the blank style has no vector source); a few bytes will do. */
+const EMPTY_TILE = Buffer.from([0x1a, 0x00]);
+
+/** Imports the ramp GPX (1.1 km due north from 45.0N 7.0E, 100 to 150 m) through the API; returns the route id. */
+export async function importRamp(baseURL: string, cookies: Cookie[]): Promise<number> {
+  const fd = new FormData();
+  fd.append('file', new Blob([readFileSync(RAMP)]), 'ramp.gpx');
+  const res = await fetch(`${baseURL}/api/routes/import`, {
+    method: 'POST',
+    headers: { cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
+    body: fd,
+  });
+  if (!res.ok) throw new Error(`import failed: ${res.status} ${await res.text()}`);
+  return (await res.json()).id;
+}
+
+/** Points the server's Mapillary settings at a worker's fake. */
+export function useFakeMapillary(baseURL: string, cookies: Cookie[], fake: FakeMapillary) {
+  return apiAs(baseURL, cookies, 'PATCH', '/api/settings', {
+    mapillary: { token: 'e2e', graph_url: fake.graphUrl, tiles_url: fake.tilesUrl },
+  });
+}
+
+/**
+ * Local stand-ins for the hosted map (the suite never touches the network):
+ * the OpenFreeMap style is the blank style, its TileJSON names a tile URL,
+ * tiles are empty, and every Terrarium tile is flat (0 m). Pass a context to
+ * also cover a service worker's fetches.
+ */
+export async function stubMapNetwork(target: Pick<Page, 'route'> | Pick<BrowserContext, 'route'>) {
+  await target.route('https://tiles.openfreemap.org/**', (route) => {
+    const u = new URL(route.request().url());
+    if (u.pathname === '/styles/liberty') return route.fulfill({ status: 200, contentType: 'application/json', body: STYLE });
+    if (u.pathname === '/planet')
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ tiles: ['https://tiles.openfreemap.org/planet/e2e/{z}/{x}/{y}.pbf'] }),
+      });
+    return route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: EMPTY_TILE });
+  });
+  await target.route('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: FLAT_DEM }),
+  );
+}
+
+export const test = base.extend<
+  { baseURL: string },
+  { server: Server; fakeBRouter: FakeBRouter; fakeMapillary: FakeMapillary; segmentsDir: string }
+>({
+  // One fake Mapillary per worker, in this process.
+  fakeMapillary: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const m = await startFakeMapillary();
+      await use(m);
+      await m.close();
+    },
+    { scope: 'worker' },
+  ],
+
   // One fake BRouter per worker, in this process.
   fakeBRouter: [
     // eslint-disable-next-line no-empty-pattern

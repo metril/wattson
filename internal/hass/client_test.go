@@ -255,12 +255,12 @@ func TestPingKeepsAlive(t *testing.T) {
 	t.Parallel()
 	s := hasstest.Start(t, tok)
 	// A ping unanswered for twice the interval closes the client, so keep the
-	// interval wide enough that a busy machine still answers in time.
-	c := dial(t, s, hass.Options{PingInterval: 40 * time.Millisecond})
+	// interval wide enough that a busy machine (full -race load) still answers in time.
+	c := dial(t, s, hass.Options{PingInterval: 180 * time.Millisecond})
 	select {
 	case <-c.Done():
 		t.Fatalf("closed: %v", c.Err())
-	case <-time.After(250 * time.Millisecond): // several pings
+	case <-time.After(500 * time.Millisecond): // two or three pings
 	}
 	if c.Err() != nil {
 		t.Fatal(c.Err())

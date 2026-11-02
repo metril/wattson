@@ -15,18 +15,38 @@ import {
 } from '@/lib/view-prefs';
 import type { MapApi } from '@/features/map/MapView';
 import { ProfileCanvas } from '@/features/routes/ProfileCanvas';
-import { profileKey, routeKey } from '@/features/routes/queries';
+import { photosKey, profileKey, routeKey } from '@/features/routes/queries';
+import type { components } from '@/lib/openapi';
 import { ViewMenu } from './ViewMenu';
+
+type PhotosOut = components['schemas']['RoutePhotosOut'];
 
 // MapLibre must stay out of the entry bundle; the ride screen is eager.
 const MapView = lazy(() => import('@/features/map/MapView'));
 const Ride3D = lazy(() => import('./Ride3D'));
+const PhotoView = lazy(() => import('./PhotoView'));
 
 const FALLBACK_NOTE = {
   slow: '3D was too slow on this display, so the ride switched to 2D. Choose 3D in View to try again.',
   context_lost: 'The 3D view stopped responding, so the ride switched to 2D.',
   webgl: "3D isn't supported on this display, so the ride switched to 2D.",
 } as const;
+
+function photoNote(d: PhotosOut | undefined): string | null {
+  switch (d?.status) {
+    case 'building':
+      return 'Finding street photos…';
+    case 'ready':
+      return d.photos.length === 0 ? 'No street photos along this route' : null;
+    case 'error':
+    case 'unavailable':
+      return d.message || 'Street photos are unavailable right now';
+    case 'disabled':
+      return 'Add a Mapillary token in Settings to see street photos';
+    default:
+      return null;
+  }
+}
 
 function probeWebgl(): boolean {
   try {
@@ -94,6 +114,14 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const r = route.data;
   const prof = profile.data;
   const hasMap = !!r && r.source !== 'synthetic';
+  const photoQuery = useQuery({
+    queryKey: photosKey(routeId),
+    enabled: hasMap,
+    retry: false,
+    staleTime: 60_000,
+    refetchInterval: (q) => (q.state.data?.status === 'building' ? 3000 : false),
+    queryFn: async () => unwrap(await api.GET('/api/routes/{id}/mapillary', { params: { path: { id: routeId } } })),
+  });
 
   const [prefs] = useState(loadPrefs);
   const [want, setWant] = useState<ViewMode>(prefs.view);
@@ -103,8 +131,15 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const [webgl] = useState(probeWebgl);
   const reducedMotion = useMedia('(prefers-reduced-motion: reduce)');
   const wide = useMedia('(min-width: 768px)'); // Tailwind md: the map panel is always shown
-  // Street photos arrive with PhotoView; until then the option reports no photos.
-  const caps: Caps = { webgl, reducedMotion, photos: false, map: hasMap };
+  const photoData = photoQuery.data;
+  const photoList = photoData?.status === 'ready' ? photoData.photos : [];
+  const caps: Caps = {
+    webgl,
+    reducedMotion,
+    photos: photoList.length > 0,
+    map: hasMap,
+    photoNote: photoNote(photoData),
+  };
   const view = effectiveView(want, caps);
   // The 2D map's API is only valid while its MapView is mounted.
   const map = view === '2d' ? mapApi : null;
@@ -191,7 +226,11 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
         {hasMap && (
           <div ref={wrap} data-testid="route-map" className={showMap ? 'block' : 'hidden md:block'}>
             <Suspense fallback={<div className="h-64 rounded-panel border border-line bg-panel" />}>
-              {view === '3d' ? (
+              {view === 'photo' ? (
+                showMap || wide ? (
+                  <PhotoView routeId={routeId} photos={photoList} ticks={ticks} reducedMotion={reducedMotion} />
+                ) : null
+              ) : view === '3d' ? (
                 // A flyover in a hidden phone panel would still run WebGL, so it mounts only when shown.
                 r && prof && (showMap || wide) ? (
                   <Ride3D

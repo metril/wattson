@@ -187,3 +187,32 @@ function renderStrava() {
   stubApi({ 'GET /api/settings': [200, settingsFixture()] });
   renderWithClient(<IntegrationsForm />);
 }
+
+describe('IntegrationsForm Mapillary', () => {
+  it('tests the stored token with an empty body and explains where photos come from', async () => {
+    const api = stubApi({
+      'GET /api/settings': [200, settingsFixture()],
+      'POST /api/settings/test/mapillary': [200, { ok: true, message: 'Mapillary token accepted', latency_ms: 40 }],
+    });
+    renderWithClient(<IntegrationsForm />);
+    await screen.findByLabelText('Mapillary access token');
+    expect(
+      screen.getByText(/Street photos are fetched by the Wattson server; the token never reaches viewers' browsers\. Photos are CC BY-SA 4\.0 and credited on screen\./),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /test mapillary/i }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Mapillary token accepted');
+    expect(api.bodies('POST /api/settings/test/mapillary')).toEqual([{}]);
+  });
+
+  it('tests a typed token', async () => {
+    const api = stubApi({
+      'GET /api/settings': [200, settingsFixture()],
+      'POST /api/settings/test/mapillary': [200, { ok: true, message: 'ok', latency_ms: 1 }],
+    });
+    renderWithClient(<IntegrationsForm />);
+    await userEvent.type(await screen.findByLabelText('Mapillary access token'), 'MLY|abc');
+    await userEvent.click(screen.getByRole('button', { name: /test mapillary/i }));
+    await screen.findByRole('status');
+    expect(api.bodies('POST /api/settings/test/mapillary')).toEqual([{ token: 'MLY|abc' }]);
+  });
+});

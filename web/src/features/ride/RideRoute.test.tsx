@@ -39,6 +39,12 @@ vi.mock('@/features/ride/Ride3D', () => ({
   ),
 }));
 
+vi.mock('@/features/ride/PhotoView', () => ({
+  default: (p: { photos: unknown[]; reducedMotion: boolean }) => (
+    <div data-testid="photoview" data-n={p.photos.length} data-reduced={String(p.reducedMotion)} />
+  ),
+}));
+
 /** matchMedia for the two queries RouteView watches; the returned setter fires change events. */
 function mockMedia(init: { wide: boolean; reduced: boolean }) {
   const on = { ...init };
@@ -291,6 +297,54 @@ describe('Ride route mode', () => {
       await userEvent.click(screen.getByRole('button', { name: 'View' }));
       expect(screen.getByRole('radio', { name: /3D flyover/ })).toBeDisabled();
       expect(screen.getByText("3D isn't supported on this display")).toBeInTheDocument();
+    });
+
+    describe('street photos', () => {
+      const photo = { id: '1', d_m: 0, bearing_deg: 0, captured_at: 0, lat: 45, lon: 7, pano: false };
+      const photos = (over: Record<string, unknown>) => ({ 'GET /api/routes/3/mapillary': [200, { photos: [], ...over }] as [number, unknown] });
+      const open = async () => {
+        await screen.findByTestId('mapview');
+        await userEvent.click(screen.getByRole('button', { name: 'View' }));
+      };
+
+      it('ready photos enable the option and a saved photo view renders PhotoView', async () => {
+        localStorage.setItem('wattson.view', 'photo');
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [photo] }));
+        tick(ws, { distance_m: 1 });
+        const pv = await screen.findByTestId('photoview');
+        expect(pv).toHaveAttribute('data-n', '1');
+        expect(screen.queryByTestId('mapview')).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'View' }));
+        expect(screen.getByRole('radio', { name: 'Street photos' })).toBeEnabled();
+      });
+
+      it('building says so, then flips to photos once ready', async () => {
+        localStorage.setItem('wattson.view', 'photo');
+        let status = 'building';
+        const { ws } = await setup('/?route=3', {
+          'GET /api/routes/3/mapillary': () => [200, status === 'building' ? { status, photos: [] } : { status, photos: [photo] }],
+        });
+        tick(ws, { distance_m: 1 });
+        await open();
+        expect(screen.getByRole('radio', { name: /Street photos/ })).toBeDisabled();
+        expect(screen.getByText('Finding street photos…')).toBeInTheDocument();
+        status = 'ready';
+        await waitFor(() => expect(screen.getByTestId('photoview')).toBeInTheDocument(), { timeout: 5000 });
+      }, 10_000);
+
+      it('shows the server message on error and the empty text when there is no coverage', async () => {
+        const a = await setup('/?route=3', photos({ status: 'error', message: 'Mapillary rejected the token' }));
+        tick(a.ws, { distance_m: 1 });
+        await open();
+        expect(screen.getByText('Mapillary rejected the token')).toBeInTheDocument();
+      });
+
+      it('no coverage says so', async () => {
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [] }));
+        tick(ws, { distance_m: 1 });
+        await open();
+        expect(screen.getByText('No street photos along this route')).toBeInTheDocument();
+      });
     });
 
     it('a synthetic route has no View button', async () => {

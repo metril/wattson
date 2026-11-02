@@ -66,6 +66,7 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('/node_modules/maplibre-gl/')) return 'maplibre';
           if (id.includes('/src/features/ride/Ride3D')) return 'ride3d';
+          if (id.includes('/src/features/ride/PhotoView')) return 'photo';
         },
       },
     },

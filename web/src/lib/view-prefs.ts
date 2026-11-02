@@ -1,6 +1,13 @@
 export type ViewMode = '2d' | '3d' | 'photo';
 /** map is false for synthetic routes (no geography). */
-export type Caps = { webgl: boolean; reducedMotion: boolean; photos: boolean; map: boolean };
+export type Caps = {
+  webgl: boolean;
+  reducedMotion: boolean;
+  photos: boolean;
+  map: boolean;
+  /** Why photos are unavailable, when the server said (building, error, no coverage). */
+  photoNote?: string | null;
+};
 export type Tier = 'full' | 'lite';
 export type Prefs = { view: ViewMode; exaggeration: number; tier: Tier; fellBack: boolean };
 
@@ -63,7 +70,7 @@ export function unavailableReason(v: ViewMode, c: Caps): string | null {
     if (c.reducedMotion) return 'Off because reduced motion is on';
     if (!c.map) return '3D needs a route with a map';
   }
-  if (v === 'photo' && !c.photos) return 'No street photos for this route';
+  if (v === 'photo' && !c.photos) return c.photoNote || 'No street photos for this route';
   return null;
 }
 

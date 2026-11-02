@@ -92,6 +92,7 @@ function Body({ s }: { s: SettingsOut }) {
   const remoteWithRegions = brouterUrl.trim() !== '' && brouterUrl.trim().replace(/\/+$/, '') !== BUNDLED_BROUTER && segmentsDir.trim() !== '';
   const haUrl = f.value<string>('ha.url');
   const haToken = f.value<string | undefined>('ha.token');
+  const mapillaryToken = f.value<string | undefined>('mapillary.token');
 
   return (
     <form
@@ -223,7 +224,11 @@ function Body({ s }: { s: SettingsOut }) {
           isSet={s.mapillary.token_set}
           onChange={f.secret('mapillary.token')}
           error={f.fieldError('mapillary.token')}
-          hint="Street-level imagery along a route."
+          hint="Street photos are fetched by the Wattson server; the token never reaches viewers' browsers. Photos are CC BY-SA 4.0 and credited on screen."
+        />
+        <TestButton
+          label="Test Mapillary"
+          run={async () => unwrap(await api.POST('/api/settings/test/mapillary', { body: mapillaryToken ? { token: mapillaryToken } : {} }))}
         />
       </FormCard>
       <FormCard title="Strava">

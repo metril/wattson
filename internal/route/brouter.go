@@ -58,6 +58,8 @@ func (e *BRouterError) Unwrap() error {
 	return &MissingTilesError{Tiles: e.MissingTiles}
 }
 
+var profileRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
 var rd5RE = regexp.MustCompile(`([EW]\d+_[NS]\d+)\.rd5`)
 
 // Route asks BRouter for a route through the waypoints with the profile.
@@ -65,8 +67,8 @@ func (b BRouter) Route(ctx context.Context, wps []LonLat, profile string) ([]Poi
 	if len(wps) < 2 || len(wps) > maxWaypoints {
 		return nil, fmt.Errorf("brouter: need 2..%d waypoints, got %d", maxWaypoints, len(wps))
 	}
-	if profile == "" {
-		return nil, errors.New("brouter: empty profile")
+	if !profileRE.MatchString(profile) {
+		return nil, errors.New("brouter: invalid profile name")
 	}
 	parts := make([]string, len(wps))
 	for i, w := range wps {

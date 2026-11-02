@@ -8,10 +8,13 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // northTrack is a due-north track of n points spaced stepM apart with no elevation.
@@ -64,24 +67,75 @@ func TestOpenTopoDataFill(t *testing.T) {
 
 func TestOpenTopoDataNullElevations(t *testing.T) {
 	t.Parallel()
+	// Samples at 0,100,200,300 m: known, null, known, known.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := len(strings.Split(r.URL.Query().Get("locations"), "|"))
-		parts := make([]string, n)
-		for i := range parts {
-			parts[i] = `{"elevation":null}`
-			if i == 0 || i == n-1 {
-				parts[i] = fmt.Sprintf(`{"elevation":%d}`, 100+i*10)
-			}
-		}
-		fmt.Fprintf(w, `{"status":"OK","results":[%s]}`, strings.Join(parts, ","))
+		fmt.Fprint(w, `{"status":"OK","results":[{"elevation":100},{"elevation":null},{"elevation":120},{"elevation":130}]}`)
 	}))
 	defer srv.Close()
-	pts := northTrack(31, 10, 10) // 300 m -> samples at 0,100,200,300
+	pts := northTrack(31, 10, 10)
 	if err := (OpenTopoData{BaseURL: srv.URL}).Fill(context.Background(), pts); err != nil {
 		t.Fatal(err)
 	}
-	if pts[0].Ele != 100 || math.Abs(pts[30].Ele-130) > 1e-6 || math.Abs(pts[15].Ele-115) > 0.1 {
-		t.Fatalf("ele %v %v %v", pts[0].Ele, pts[15].Ele, pts[30].Ele)
+	if pts[0].Ele != 100 || !math.IsNaN(pts[5].Ele) || !math.IsNaN(pts[15].Ele) {
+		t.Fatalf("null-bracketed points must stay NaN: %v %v %v", pts[0].Ele, pts[5].Ele, pts[15].Ele)
+	}
+	if math.Abs(pts[25].Ele-125) > 1 || pts[30].Ele != 130 {
+		t.Fatalf("known span: %v", pts[30].Ele)
+	}
+}
+
+func TestOpenTopoDataMostlyNull(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"status":"OK","results":[{"elevation":100},{"elevation":null},{"elevation":null},{"elevation":null}]}`)
+	}))
+	defer srv.Close()
+	pts := northTrack(31, 10, 10)
+	err := PrepareElevation(context.Background(), pts, OpenTopoData{BaseURL: srv.URL})
+	if !errors.Is(err, ErrNoElevation) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestOpenTopoDataSharedLimiter(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var times []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		times = append(times, time.Now())
+		mu.Unlock()
+		fmt.Fprint(w, `{"status":"OK","results":[{"elevation":1},{"elevation":2}]}`)
+	}))
+	defer srv.Close()
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			o := OpenTopoData{BaseURL: srv.URL, Interval: 30 * time.Millisecond}
+			if err := o.Fill(context.Background(), northTrack(3, 10, 10)); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	slices.SortFunc(times, func(a, b time.Time) int { return a.Compare(b) })
+	if len(times) != 3 || times[1].Sub(times[0]) < 25*time.Millisecond || times[2].Sub(times[1]) < 25*time.Millisecond {
+		t.Fatalf("requests not spaced: %v", times)
+	}
+}
+
+type failFiller struct{ err error }
+
+func (f failFiller) Fill(context.Context, []Point) error { return f.err }
+
+func TestPrepareElevationFillerError(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("boom")
+	err := PrepareElevation(context.Background(), []Point{{64, 10, 5}, {64.1, 10, 6}}, failFiller{cause})
+	if !errors.Is(err, ErrElevationUnavailable) || !errors.Is(err, cause) {
+		t.Fatalf("err=%v", err)
 	}
 }
 

@@ -91,6 +91,11 @@ func TestBRouterBadInput(t *testing.T) {
 	if _, err := b.Route(context.Background(), []LonLat{{7, 45}, {7, 95}}, "p"); err == nil {
 		t.Fatal("want error for bad lat")
 	}
+	for _, p := range []string{"", "a&b", "../x", "tre kking", strings.Repeat("a", 65)} {
+		if _, err := b.Route(context.Background(), []LonLat{{7, 45}, {7.1, 45}}, p); err == nil || strings.Contains(err.Error(), "dial") {
+			t.Errorf("profile %q: err=%v", p, err)
+		}
+	}
 }
 
 func TestBRouterTransportErrorHidesURL(t *testing.T) {

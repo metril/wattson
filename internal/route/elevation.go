@@ -10,8 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
+
+// ErrElevationUnavailable wraps a failure of the elevation service (the cause
+// stays reachable through errors.Is/As).
+var ErrElevationUnavailable = errors.New("route: elevation service unavailable")
 
 // ElevationFiller supplies elevations for points that lack trustworthy ones.
 type ElevationFiller interface {
@@ -21,12 +26,12 @@ type ElevationFiller interface {
 const (
 	otdBatch      = 100
 	maxOTDBody    = 1 << 20
-	maxOTDSamples = 5000
+	maxOTDSamples = 6000
 	otdTimeout    = 30 * time.Second
 )
 
 // OpenTopoData fills elevations from an OpenTopoData API (BaseURL includes the
-// dataset, e.g. https://api.opentopodata.org/v1/srtm90m).
+// dataset, e.g. https://api.opentopodata.org/v1/mapzen).
 type OpenTopoData struct {
 	BaseURL  string
 	Client   *http.Client  // nil = bounded timeout
@@ -40,8 +45,10 @@ func NewOpenTopoData(baseURL string) OpenTopoData {
 }
 
 // Fill samples the track every SampleM (plus the last point), looks the samples
-// up, then sets every point's Ele by linear interpolation over distance. pts is
-// left untouched on error, and when no sample has an elevation.
+// up, then sets every point's Ele by linear interpolation between the two
+// adjacent samples; a point whose bracketing samples include a null stays NaN,
+// so PrepareElevation's missing-data check still fires. pts is left untouched
+// on error. Requests are rate limited process-wide per BaseURL (Interval).
 func (o OpenTopoData) Fill(ctx context.Context, pts []Point) error {
 	if len(pts) == 0 {
 		return nil
@@ -75,14 +82,8 @@ func (o OpenTopoData) Fill(ctx context.Context, pts []Point) error {
 	}
 	ele := make([]float64, 0, len(idx))
 	for from := 0; from < len(idx); from += otdBatch {
-		if from > 0 && o.Interval > 0 {
-			t := time.NewTimer(o.Interval)
-			select {
-			case <-ctx.Done():
-				t.Stop()
-				return ctx.Err()
-			case <-t.C:
-			}
+		if err := limiterFor(o.BaseURL).wait(ctx, o.Interval); err != nil {
+			return err
 		}
 		to := min(from+otdBatch, len(idx))
 		locs := make([]string, 0, to-from)
@@ -96,32 +97,74 @@ func (o OpenTopoData) Fill(ctx context.Context, pts []Point) error {
 		ele = append(ele, got...)
 	}
 
-	// Known samples only; null elevations are skipped by the interpolation.
-	var kd, ke []float64
-	for k, i := range idx {
-		if !math.IsNaN(ele[k]) {
-			kd, ke = append(kd, dist[i]), append(ke, ele[k])
-		}
-	}
-	if len(kd) == 0 {
-		return nil
-	}
+	// Interpolate only between adjacent samples that both have an elevation.
 	j := 0
 	for i := range pts {
-		for j+1 < len(kd) && kd[j+1] <= dist[i] {
+		for j+1 < len(idx)-1 && dist[idx[j+1]] <= dist[i] {
 			j++
 		}
+		lo, hi := idx[j], idx[min(j+1, len(idx)-1)]
+		el, eh := ele[j], ele[min(j+1, len(idx)-1)]
 		switch {
-		case dist[i] <= kd[0]:
-			pts[i].Ele = ke[0]
-		case j+1 >= len(kd):
-			pts[i].Ele = ke[len(ke)-1]
+		case i == lo:
+			pts[i].Ele = el
+		case i == hi:
+			pts[i].Ele = eh
+		case math.IsNaN(el) || math.IsNaN(eh):
+			pts[i].Ele = math.NaN()
 		default:
-			t := (dist[i] - kd[j]) / (kd[j+1] - kd[j])
-			pts[i].Ele = ke[j] + (ke[j+1]-ke[j])*t
+			t := (dist[i] - dist[lo]) / (dist[hi] - dist[lo])
+			pts[i].Ele = el + (eh-el)*t
 		}
 	}
 	return nil
+}
+
+// limiter spaces request starts at least one interval apart.
+type limiter struct {
+	mu   sync.Mutex
+	next time.Time
+}
+
+var (
+	limitersMu sync.Mutex
+	limiters   = map[string]*limiter{}
+)
+
+func limiterFor(baseURL string) *limiter {
+	limitersMu.Lock()
+	defer limitersMu.Unlock()
+	l := limiters[baseURL]
+	if l == nil {
+		l = &limiter{}
+		limiters[baseURL] = l
+	}
+	return l
+}
+
+func (l *limiter) wait(ctx context.Context, interval time.Duration) error {
+	if interval <= 0 {
+		return ctx.Err()
+	}
+	l.mu.Lock()
+	slot := time.Now()
+	if l.next.After(slot) {
+		slot = l.next
+	}
+	l.next = slot.Add(interval)
+	l.mu.Unlock()
+	d := time.Until(slot)
+	if d <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 func (o OpenTopoData) fetch(ctx context.Context, c *http.Client, locs []string) ([]float64, error) {
@@ -207,7 +250,7 @@ func PrepareElevation(ctx context.Context, pts []Point, f ElevationFiller) error
 	}
 	if f != nil {
 		if err := f.Fill(ctx, pts); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrElevationUnavailable, err)
 		}
 	}
 	if nanFraction(pts) > 0.1 {

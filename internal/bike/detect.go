@@ -8,6 +8,7 @@ const (
 	ProtoUnknown Protocol = iota
 	ProtoFitPlus
 	ProtoFTMS
+	ProtoSim // simulator; never produced by Detect
 )
 
 func (p Protocol) String() string {
@@ -16,6 +17,8 @@ func (p Protocol) String() string {
 		return "fitplus"
 	case ProtoFTMS:
 		return "ftms"
+	case ProtoSim:
+		return "sim"
 	}
 	return "unknown"
 }

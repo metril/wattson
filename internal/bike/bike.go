@@ -423,6 +423,16 @@ func (b *Bike) Telemetry() <-chan Telemetry { return b.tel }
 // SetLevel clamps level into [MinLevel, MaxLevel] (never below 1) and sends it
 // unless it equals the last level sent. It returns the clamped level.
 func (b *Bike) SetLevel(ctx context.Context, level int) (sent int, err error) {
+	return b.set(ctx, level, false)
+}
+
+// Resend is SetLevel without the dedup: the clamped level is always written.
+// The driver uses it to re-assert a level after a suspected silent drop.
+func (b *Bike) Resend(ctx context.Context, level int) (sent int, err error) {
+	return b.set(ctx, level, true)
+}
+
+func (b *Bike) set(ctx context.Context, level int, force bool) (sent int, err error) {
 	// Abort promptly when Close cancels the session, even mid-write.
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -439,7 +449,7 @@ func (b *Bike) SetLevel(ctx context.Context, level int) (sent int, err error) {
 		return 0, err
 	}
 	level = ClampLevel(level, b.min, b.max)
-	if level == b.last {
+	if !force && level == b.last {
 		return level, nil
 	}
 	if err := b.sendLevel(ctx, level); err != nil {

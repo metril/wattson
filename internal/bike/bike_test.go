@@ -547,3 +547,50 @@ func TestCloseAbortsStuckSetLevel(t *testing.T) {
 		t.Fatalf("Close did not send min level last: % x", w[len(w)-1])
 	}
 }
+
+func TestResendBypassesDedup(t *testing.T) {
+	t.Parallel()
+	f, c := connect(t, fitPlusDevice())
+	b, err := Open(context.Background(), c, Options{Keepalive: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(context.Background())
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := b.SetLevel(ctx, 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := b.Resend(ctx, 5); err != nil || got != 5 {
+		t.Fatalf("resend %d %v", got, err)
+	}
+	n := 0
+	for _, w := range f.Writes(testAddr) {
+		if bytes.Equal(w, lvl(t, 5)) {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("level-5 frames %d, want 2", n)
+	}
+	if got, err := b.Resend(ctx, 0); err != nil || got != 1 {
+		t.Fatalf("resend(0) = %d %v, want 1", got, err)
+	}
+	w := f.Writes(testAddr)
+	if !bytes.Equal(w[len(w)-1], lvl(t, 1)) {
+		t.Fatalf("last write % x", w[len(w)-1])
+	}
+}
+
+func TestBikeIsSession(t *testing.T) {
+	t.Parallel()
+	var _ Session = (*Bike)(nil)
+}
+
+func TestProtoSimString(t *testing.T) {
+	t.Parallel()
+	if got := ProtoSim.String(); got != "sim" {
+		t.Fatalf("got %q", got)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -63,22 +64,24 @@ func nonNil(l []string) []string {
 // else the request's own origin.
 func (d Deps) redirectURI(ctx context.Context, r *http.Request, slug string) string {
 	pub := ""
+	var trusted []netip.Prefix
 	if s, err := d.Settings.Get(ctx); err == nil {
-		pub = s.General.PublicURL
+		pub, trusted = s.General.PublicURL, trustedProxies(s)
 	}
-	return externalBaseURL(r, pub) + "/api/auth/oidc/" + slug + "/callback"
+	return externalBaseURL(r, pub, trusted) + "/api/auth/oidc/" + slug + "/callback"
 }
 
 // externalBaseURL is the origin browsers use to reach this server: the
-// configured public URL, else the request's scheme and Host. X-Forwarded-Host
-// is ignored (any client can set it); behind a proxy that rewrites Host, set
-// the public URL.
-func externalBaseURL(r *http.Request, publicURL string) string {
+// configured public URL, else the request's scheme and Host. The scheme is
+// https for TLS or a trusted proxy's X-Forwarded-Proto. X-Forwarded-Host is
+// ignored (any client can set it); behind a proxy that rewrites Host, set the
+// public URL.
+func externalBaseURL(r *http.Request, publicURL string, trusted []netip.Prefix) string {
 	if publicURL != "" {
 		return strings.TrimRight(publicURL, "/")
 	}
 	scheme := "http"
-	if secureCookie(r, "") {
+	if requestIsHTTPS(r, trusted) {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host

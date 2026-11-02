@@ -137,6 +137,7 @@ func TestSessionCookieAttributes(t *testing.T) {
 	if !ck.HttpOnly || ck.SameSite != http.SameSiteLaxMode || ck.Path != "/" || ck.MaxAge != 604800 || ck.Secure {
 		t.Errorf("cookie = %+v", ck)
 	}
+	ts.trustLoopback(t)
 	resp, _ = ts.do(t, nil, "POST", "/api/auth/login", body, "X-Forwarded-Proto", "https")
 	if ck = sessionCookie(t, resp); !ck.Secure {
 		t.Errorf("cookie not Secure behind https proxy: %+v", ck)

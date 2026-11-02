@@ -12,11 +12,19 @@
             "description": "Session lifetime in hours, 1 to 8760. Applies to sessions created after the change.",
             "format": "int64",
             "type": "integer"
+          },
+          "trusted_proxies": {
+            "description": "Reverse proxies (CIDRs or single IPs, at most 64) whose X-Forwarded-For and X-Forwarded-Proto headers are trusted for the client address and the https scheme. Empty (the default) ignores those headers.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "allow_local_login",
-          "session_ttl_hours"
+          "session_ttl_hours",
+          "trusted_proxies"
         ],
         "type": "object"
       },
@@ -31,6 +39,13 @@
             "description": "Session lifetime in hours, 1 to 8760.",
             "format": "int64",
             "type": "integer"
+          },
+          "trusted_proxies": {
+            "description": "Replaces the list of trusted reverse proxies: CIDRs or single IPs, at most 64. An empty list trusts none.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -2215,7 +2230,7 @@
     },
     "/api/auth/login": {
       "post": {
-        "description": "Verifies a local username and password and sets the session cookie. Attempts are rate limited per remote IP address (the connection's address; X-Forwarded-For is ignored): after 10 failures in 10 minutes every attempt from that address, whatever the username, returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 `local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. No authentication required.",
+        "description": "Verifies a local username and password and sets the session cookie. Attempts are rate limited per remote IP address (the connection's address; X-Forwarded-For counts only when the connection comes from a proxy listed in `auth.trusted_proxies`, and then the rightmost address that is not a trusted proxy is used): after 10 failures in 10 minutes every attempt from that address, whatever the username, returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 `local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. No authentication required.",
         "operationId": "login",
         "requestBody": {
           "content": {

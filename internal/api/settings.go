@@ -29,8 +29,9 @@ type GeneralOut struct {
 }
 
 type AuthOut struct {
-	AllowLocalLogin bool `json:"allow_local_login" doc:"Whether username and password sign-in is enabled. The bootstrap admin can always sign in with a password."`
-	SessionTTLHours int  `json:"session_ttl_hours" doc:"Session lifetime in hours, 1 to 8760. Applies to sessions created after the change."`
+	AllowLocalLogin bool     `json:"allow_local_login" doc:"Whether username and password sign-in is enabled. The bootstrap admin can always sign in with a password."`
+	SessionTTLHours int      `json:"session_ttl_hours" doc:"Session lifetime in hours, 1 to 8760. Applies to sessions created after the change."`
+	TrustedProxies  []string `json:"trusted_proxies" doc:"Reverse proxies (CIDRs or single IPs, at most 64) whose X-Forwarded-For and X-Forwarded-Proto headers are trusted for the client address and the https scheme. Empty (the default) ignores those headers."`
 }
 
 type BikeOut struct {
@@ -70,7 +71,8 @@ type StravaOut struct {
 func settingsOut(s settings.Settings) SettingsOut {
 	return SettingsOut{
 		General: GeneralOut{PublicURL: s.General.PublicURL},
-		Auth:    AuthOut{AllowLocalLogin: s.Auth.AllowLocalLogin, SessionTTLHours: s.Auth.SessionTTLHours},
+		Auth: AuthOut{AllowLocalLogin: s.Auth.AllowLocalLogin, SessionTTLHours: s.Auth.SessionTTLHours,
+			TrustedProxies: append([]string{}, s.Auth.TrustedProxies...)},
 		Bike: BikeOut{Driver: s.Bike.Driver, Transport: s.Bike.Transport, Address: s.Bike.Address,
 			ESPHomeHost: s.Bike.ESPHomeHost, ESPHomeKeySet: s.Bike.ESPHomeKey != "",
 			IdleReleaseMin: s.Bike.IdleReleaseMin, SimCadenceRpm: s.Bike.SimCadenceRpm},
@@ -102,8 +104,9 @@ type GeneralPatch struct {
 }
 
 type AuthPatch struct {
-	AllowLocalLogin *bool `json:"allow_local_login,omitempty" doc:"Enable or disable username and password sign-in."`
-	SessionTTLHours *int  `json:"session_ttl_hours,omitempty" doc:"Session lifetime in hours, 1 to 8760."`
+	AllowLocalLogin *bool     `json:"allow_local_login,omitempty" doc:"Enable or disable username and password sign-in."`
+	SessionTTLHours *int      `json:"session_ttl_hours,omitempty" doc:"Session lifetime in hours, 1 to 8760."`
+	TrustedProxies  *[]string `json:"trusted_proxies,omitempty" doc:"Replaces the list of trusted reverse proxies: CIDRs or single IPs, at most 64. An empty list trusts none."`
 }
 
 type BikePatch struct {
@@ -154,6 +157,9 @@ func (p SettingsPatch) apply(s *settings.Settings) {
 	if a := p.Auth; a != nil {
 		set(&s.Auth.AllowLocalLogin, a.AllowLocalLogin)
 		set(&s.Auth.SessionTTLHours, a.SessionTTLHours)
+		if a.TrustedProxies != nil {
+			s.Auth.TrustedProxies = append([]string{}, *a.TrustedProxies...)
+		}
 	}
 	if b := p.Bike; b != nil {
 		set(&s.Bike.Driver, b.Driver)

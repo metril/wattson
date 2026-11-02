@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"math"
-	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -71,16 +71,6 @@ type providersOut struct {
 	Body ProvidersOut
 }
 
-// clientIP is the host of r.RemoteAddr. X-Forwarded-For is never consulted:
-// it is client-controlled unless a trusted proxy rewrites it, and Wattson has
-// no trusted-proxy setting.
-func clientIP(r *http.Request) string {
-	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return h
-	}
-	return r.RemoteAddr
-}
-
 // newDummyHash returns a valid argon2 hash that is verified for unknown
 // users so that both outcomes cost one argon2 run.
 func newDummyHash() (string, error) {
@@ -98,22 +88,19 @@ func errInvalidCreds() error {
 }
 
 // secureCookie reports whether the session cookie must carry Secure.
-func secureCookie(r *http.Request, publicURL string) bool {
-	if r != nil {
-		if r.TLS != nil {
-			return true
-		}
-		if strings.EqualFold(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]), "https") {
-			return true
-		}
+// The request counts as https when it arrived over TLS or a trusted proxy
+// says so; otherwise the public URL decides.
+func secureCookie(r *http.Request, publicURL string, trusted []netip.Prefix) bool {
+	if r != nil && requestIsHTTPS(r, trusted) {
+		return true
 	}
 	u, err := url.Parse(publicURL)
 	return err == nil && strings.EqualFold(u.Scheme, "https")
 }
 
-func sessionCookieFor(r *http.Request, publicURL, value string, maxAge int) http.Cookie {
+func sessionCookieFor(r *http.Request, publicURL string, trusted []netip.Prefix, value string, maxAge int) http.Cookie {
 	return http.Cookie{Name: auth.SessionCookie, Value: value, Path: "/", MaxAge: maxAge,
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureCookie(r, publicURL)}
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureCookie(r, publicURL, trusted)}
 }
 
 // startSession creates a session for userID with a fixed expiry and returns
@@ -129,7 +116,7 @@ func (d Deps) startSession(ctx context.Context, r *http.Request, userID int64) (
 	if err := d.Store.CreateSession(ctx, hash, userID, now, now.Add(ttl)); err != nil {
 		return http.Cookie{}, err
 	}
-	return sessionCookieFor(r, s.General.PublicURL, plain, int(ttl/time.Second)), nil
+	return sessionCookieFor(r, s.General.PublicURL, trustedProxies(s), plain, int(ttl/time.Second)), nil
 }
 
 func (d Deps) registerAuthn(api huma.API) {
@@ -148,7 +135,7 @@ func (d Deps) registerAuthn(api huma.API) {
 	register(api, route{Method: http.MethodPost, Path: "/api/auth/login", ID: "login", Tag: "auth",
 		Summary: "Sign in with a password",
 		Description: "Verifies a local username and password and sets the session cookie. Attempts are rate limited per " +
-			"remote IP address (the connection's address; X-Forwarded-For is ignored): after 10 failures in 10 minutes " +
+			"remote IP address (the connection's address; X-Forwarded-For counts only when the connection comes from a proxy listed in `auth.trusted_proxies`, and then the rightmost address that is not a trusted proxy is used): after 10 failures in 10 minutes " +
 			"every attempt from that address, whatever the username, returns 429 `rate_limited` with a `Retry-After` " +
 			"header in seconds. Unknown user, wrong password, " +
 			"disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 " +
@@ -157,7 +144,7 @@ func (d Deps) registerAuthn(api huma.API) {
 		Status: http.StatusNoContent, Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests}},
 		func(ctx context.Context, in *loginIn) (*cookieOut, error) {
 			r := httpRequest(ctx)
-			res, retry := limiter.Allow(clientIP(r))
+			res, retry := limiter.Allow(clientIP(r, d.proxies(ctx)))
 			if res == nil {
 				return nil, rateLimited(ctx, retry)
 			}
@@ -207,10 +194,11 @@ func (d Deps) registerAuthn(api huma.API) {
 				}
 			}
 			pub := ""
+			var trusted []netip.Prefix
 			if s, err := d.Settings.Get(ctx); err == nil {
-				pub = s.General.PublicURL
+				pub, trusted = s.General.PublicURL, trustedProxies(s)
 			}
-			return &cookieOut{SetCookie: sessionCookieFor(r, pub, "", -1)}, nil
+			return &cookieOut{SetCookie: sessionCookieFor(r, pub, trusted, "", -1)}, nil
 		})
 
 	register(api, route{Method: http.MethodGet, Path: "/api/auth/me", ID: "getMe", Tag: "auth",

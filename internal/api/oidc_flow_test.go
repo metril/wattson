@@ -96,6 +96,7 @@ func TestOIDCLoginCreatesUser(t *testing.T) {
 func TestOIDCLoginCookieAttributes(t *testing.T) {
 	t.Parallel()
 	e := newFlow(t, nil)
+	e.ts.trustLoopback(t)
 	resp, _ := e.ts.do(t, e.ts.client(t), "GET", "/api/auth/oidc/authentik/login?return_to=/x", nil, "X-Forwarded-Proto", "https")
 	var ck *http.Cookie
 	for _, c := range resp.Cookies() {

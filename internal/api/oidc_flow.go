@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -126,11 +127,12 @@ func loginError(w http.ResponseWriter, r *http.Request, code string) {
 
 func (d Deps) oidcCookie(r *http.Request, value string, maxAge int) *http.Cookie {
 	pub := ""
+	var trusted []netip.Prefix
 	if s, err := d.Settings.Get(r.Context()); err == nil {
-		pub = s.General.PublicURL
+		pub, trusted = s.General.PublicURL, trustedProxies(s)
 	}
 	return &http.Cookie{Name: oidcCookie, Value: value, Path: oidcCookiePath, MaxAge: maxAge,
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureCookie(r, pub)}
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureCookie(r, pub, trusted)}
 }
 
 // oidcFail logs the reason, clears the state cookie and redirects to the

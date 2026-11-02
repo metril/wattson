@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestGetDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != settings.Defaults() {
+	if !reflect.DeepEqual(got, settings.Defaults()) {
 		t.Fatalf("got %+v, want defaults", got)
 	}
 	d := settings.Defaults()
@@ -149,6 +150,13 @@ func TestValidate(t *testing.T) {
 		{"ha url userinfo", func(s *settings.Settings) { s.HA.URL = "http://u:p@ha.local:8123" }, "ha.url"},
 		{"ha url user only", func(s *settings.Settings) { s.HA.URL = "https://tok@ha.local" }, "ha.url"},
 		{"mqtt url userinfo", func(s *settings.Settings) { s.MQTT.URL = "mqtt://u:p@broker:1883" }, "mqtt.url"},
+		{"proxies ok", func(s *settings.Settings) {
+			s.Auth.TrustedProxies = []string{"10.0.0.0/8", "172.18.0.2", "fd00::/8", "::1"}
+		}, ""},
+		{"proxies bad", func(s *settings.Settings) { s.Auth.TrustedProxies = []string{"10.0.0.0/8", "proxy.local"} }, "auth.trusted_proxies"},
+		{"proxies bad mask", func(s *settings.Settings) { s.Auth.TrustedProxies = []string{"10.0.0.0/33"} }, "auth.trusted_proxies"},
+		{"proxies blank", func(s *settings.Settings) { s.Auth.TrustedProxies = []string{""} }, "auth.trusted_proxies"},
+		{"proxies too many", func(s *settings.Settings) { s.Auth.TrustedProxies = make([]string, settings.MaxTrustedProxies+1) }, "auth.trusted_proxies"},
 		{"mqtt url ok", func(s *settings.Settings) { s.MQTT.URL = "mqtts://x:8883" }, ""},
 	}
 	for _, tc := range tests {

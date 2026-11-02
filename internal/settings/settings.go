@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 
@@ -31,6 +32,27 @@ type General struct {
 type Auth struct {
 	AllowLocalLogin bool `json:"allow_local_login"`
 	SessionTTLHours int  `json:"session_ttl_hours"`
+	// TrustedProxies are the CIDRs (or bare IPs) of reverse proxies whose
+	// X-Forwarded-For and X-Forwarded-Proto headers are believed. Empty means
+	// those headers are ignored.
+	TrustedProxies []string `json:"trusted_proxies"`
+}
+
+// MaxTrustedProxies bounds auth.trusted_proxies.
+const MaxTrustedProxies = 64
+
+// ParseProxy parses one auth.trusted_proxies entry: a CIDR such as
+// 10.0.0.0/8 or a bare IP address (a /32 or /128). The result is masked.
+func ParseProxy(v string) (netip.Prefix, error) {
+	if p, err := netip.ParsePrefix(v); err == nil {
+		return p.Masked(), nil
+	}
+	a, err := netip.ParseAddr(v)
+	if err != nil || a.Zone() != "" {
+		return netip.Prefix{}, fmt.Errorf("%q is not an IP address or CIDR", v)
+	}
+	a = a.Unmap()
+	return netip.PrefixFrom(a, a.BitLen()), nil
 }
 
 type Bike struct {
@@ -95,6 +117,14 @@ func (s Settings) Validate() error {
 	}
 	if v := s.Auth.SessionTTLHours; v < 1 || v > 8760 {
 		return bad("auth.session_ttl_hours", "must be between 1 and 8760")
+	}
+	if len(s.Auth.TrustedProxies) > MaxTrustedProxies {
+		return bad("auth.trusted_proxies", "at most %d entries", MaxTrustedProxies)
+	}
+	for _, v := range s.Auth.TrustedProxies {
+		if _, err := ParseProxy(v); err != nil {
+			return bad("auth.trusted_proxies", "%v (use a CIDR like 10.0.0.0/8 or a single IP)", err)
+		}
 	}
 	switch s.Bike.Driver {
 	case "auto", "fitplus", "ftms", "sim":

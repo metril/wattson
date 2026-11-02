@@ -76,6 +76,13 @@ describe('LoginPage', () => {
     await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/'));
   });
 
+  it.each(['/\t/evil.example', '/\\evil.example', 'https://evil.example/'])('rejects return_to %j', async (rt) => {
+    stubApi({ 'GET /api/auth/providers': info(), 'POST /api/auth/login': [200, {}] });
+    renderLogin(`/login?return_to=${encodeURIComponent(rt)}`);
+    await signIn();
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/'));
+  });
+
   it('shows a retry countdown on 429', async () => {
     vi.stubGlobal(
       'fetch',

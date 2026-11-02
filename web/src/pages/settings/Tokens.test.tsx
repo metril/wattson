@@ -3,10 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { TokensPage } from './Tokens';
 import { apiError, renderWithClient, stubApi, userFixture } from '@/test-utils';
 
-const meOut = (admin: boolean) => [
-  200,
-  { user: userFixture({ is_admin: admin }), scopes: admin ? ['read', 'control', 'admin'] : ['read', 'control'], via: 'session' },
-] as [number, unknown];
+const qrFail = vi.hoisted(() => ({ on: false }));
+vi.mock('qrcode', async (orig) => {
+  const m = await orig<typeof import('qrcode')>();
+  return { ...m, toDataURL: (...a: Parameters<typeof m.toDataURL>) => (qrFail.on ? Promise.reject(new Error('boom')) : (m.toDataURL as (...x: unknown[]) => Promise<string>)(...a)) };
+});
+
+const meOut = (admin: boolean, via = 'session', scopes = admin ? ['read', 'control', 'admin'] : ['read', 'control']) =>
+  [200, { user: userFixture({ is_admin: admin }), scopes, via }] as [number, unknown];
 
 const tok = (over = {}) => ({
   id: 7,
@@ -29,12 +33,16 @@ function setup(admin = false) {
       return [201, { ...t, token: 'wat_secretvalue123' }];
     },
     'DELETE /api/tokens/7': () => [204],
+    'DELETE /api/tokens/8': () => [204],
     'GET /api/settings': () => [200, { general: { public_url: 'https://w.example' } }],
   });
   return { stub, list };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  qrFail.on = false;
+  vi.unstubAllGlobals();
+});
 
 describe('TokensPage', () => {
   it('shows the plaintext once, copies it, then only the prefix remains', async () => {
@@ -106,5 +114,37 @@ describe('TokensPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Revoke old' }));
     await userEvent.click(screen.getByRole('button', { name: /click again to confirm/i }));
     expect(await screen.findByText('needs control')).toBeInTheDocument();
+  });
+
+  it('hides Revoke without the control scope', async () => {
+    stubApi({
+      'GET /api/auth/me': meOut(false, 'session', ['read']),
+      'GET /api/tokens': () => [200, [tok()]],
+    });
+    renderWithClient(<TokensPage />);
+    await screen.findByText('wat_oldprefix…');
+    expect(screen.getByRole('button', { name: 'Pair a display' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Revoke/ })).not.toBeInTheDocument();
+  });
+
+  it('tells token callers to sign in with an account', async () => {
+    stubApi({
+      'GET /api/auth/me': meOut(false, 'token'),
+      'GET /api/tokens': () => [200, [tok()]],
+    });
+    renderWithClient(<TokensPage />);
+    expect(await screen.findByText('Sign in with an account to manage tokens.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pair a display' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create token' })).not.toBeInTheDocument();
+  });
+
+  it('deletes the token again when the QR cannot be made', async () => {
+    const stub = setup().stub;
+    qrFail.on = true;
+    renderWithClient(<TokensPage />);
+    await screen.findByText('wat_oldprefix…');
+    await userEvent.click(screen.getByRole('button', { name: 'Pair a display' }));
+    expect(await screen.findByText('boom')).toBeInTheDocument();
+    expect(stub.calls.some((c) => c.key === 'DELETE /api/tokens/8')).toBe(true);
   });
 });

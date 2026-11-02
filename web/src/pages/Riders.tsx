@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus } from 'lucide-react';
 import { api, ApiError, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
-import { getSelectedRiderId, setSelectedRiderId } from '@/lib/rider';
+import { clearSelectedRiderId, getSelectedRiderId, setSelectedRiderId } from '@/lib/rider';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
@@ -156,13 +156,7 @@ function RiderCard({
   const del = useMutation({
     mutationFn: async () => unwrap(await api.DELETE('/api/riders/{id}', { params: { path: { id: r.id } } })),
     onSuccess: () => {
-      if (getSelectedRiderId() === r.id) {
-        try {
-          localStorage.removeItem('wattson.rider_id');
-        } catch {
-          // storage unavailable
-        }
-      }
+      if (getSelectedRiderId() === r.id) clearSelectedRiderId();
       void qc.invalidateQueries({ queryKey: RIDERS_KEY });
     },
     onError: (e) => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, unwrap } from '@/lib/api';
@@ -42,6 +42,21 @@ export function SetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
 
+  const created = useRef(false);
+  // Setup is one-shot: once an admin exists this screen has nothing to do.
+  useEffect(() => {
+    let live = true;
+    api
+      .GET('/api/setup/status')
+      .then((r) => {
+        if (live && !created.current && r.data && !r.data.needs_setup) navigate('/login', { replace: true });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [navigate]);
+
   const next = () => setStep((s) => s + 1);
   const mismatch = confirm !== '' && password !== confirm;
   const tooShort = password !== '' && password.length < MIN_PASSWORD;
@@ -52,6 +67,7 @@ export function SetupPage() {
     setError(null);
     try {
       unwrap(await api.POST('/api/setup', { body: { username: username.trim(), password } }));
+      created.current = true;
       // The new admin is signed in; drop cached "anonymous / needs setup" answers.
       qc.removeQueries({ queryKey: ME_KEY });
       qc.removeQueries({ queryKey: AUTH_INFO_KEY });

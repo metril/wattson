@@ -37,7 +37,7 @@ describe('SetupPage', () => {
     await fillAdmin('something-else-1');
     expect(screen.getByText("Passwords don't match.")).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    expect(stub.calls).toHaveLength(0);
+    expect(stub.bodies('POST /api/setup')).toHaveLength(0);
   });
 
   it('requires at least 10 characters', async () => {
@@ -82,6 +82,12 @@ describe('SetupPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Skip' }));
     expect(await screen.findByRole('heading', { name: 'Bike connection' })).toBeInTheDocument();
     expect(stub.bodies('PATCH /api/settings')).toHaveLength(0);
+  });
+
+  it('redirects to /login on load when an admin already exists', async () => {
+    stubApi({ 'GET /api/setup/status': [200, { needs_setup: false }] });
+    renderSetup();
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/login'));
   });
 
   it('goes to /login when setup already ran', async () => {

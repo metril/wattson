@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
 import { KioskPage } from './Kiosk';
@@ -52,5 +53,31 @@ describe('KioskPage', () => {
     localStorage.setItem('wattson.kiosk_token', 'wat_old');
     renderKiosk();
     await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/'));
+  });
+
+  it('rejects a fragment without the wat_ prefix and stores nothing', () => {
+    window.history.replaceState(null, '', '/kiosk#token=evil');
+    renderKiosk();
+    expect(screen.getByRole('alert')).toHaveTextContent(/not valid/);
+    expect(localStorage.getItem('wattson.kiosk_token')).toBeNull();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('asks before replacing an existing pairing', async () => {
+    localStorage.setItem('wattson.kiosk_token', 'wat_old');
+    window.history.replaceState(null, '', '/kiosk#token=wat_new');
+    renderKiosk();
+    await userEvent.click(await screen.findByRole('button', { name: 'Keep current' }));
+    expect(localStorage.getItem('wattson.kiosk_token')).toBe('wat_old');
+    expect(screen.getByTestId('loc').textContent).toBe('/');
+  });
+
+  it('replaces the pairing when confirmed', async () => {
+    localStorage.setItem('wattson.kiosk_token', 'wat_old');
+    window.history.replaceState(null, '', '/kiosk#token=wat_new');
+    renderKiosk();
+    expect(localStorage.getItem('wattson.kiosk_token')).toBe('wat_old');
+    await userEvent.click(await screen.findByRole('button', { name: 'Replace pairing' }));
+    expect(localStorage.getItem('wattson.kiosk_token')).toBe('wat_new');
   });
 });

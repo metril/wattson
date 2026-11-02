@@ -43,7 +43,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function Row({ t, onError }: { t: Token; onError: (m: string | null) => void }) {
+function Row({ t, canRevoke, onError }: { t: Token; canRevoke: boolean; onError: (m: string | null) => void }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
   const del = useMutation({
@@ -63,18 +63,20 @@ function Row({ t, onError }: { t: Token; onError: (m: string | null) => void }) 
           {t.scopes.join(', ')} · created {when(t.created_at)} · last used {when(t.last_used_at)}
         </p>
       </div>
-      <Button
-        variant={confirm ? 'danger' : 'secondary'}
-        disabled={del.isPending}
-        aria-label={confirm ? undefined : `Revoke ${t.name}`}
-        onClick={() => {
-          onError(null);
-          if (confirm) del.mutate();
-          else setConfirm(true);
-        }}
-      >
-        {confirm ? 'Click again to confirm' : 'Revoke'}
-      </Button>
+      {canRevoke && (
+        <Button
+          variant={confirm ? 'danger' : 'secondary'}
+          disabled={del.isPending}
+          aria-label={confirm ? undefined : `Revoke ${t.name}`}
+          onClick={() => {
+            onError(null);
+            if (confirm) del.mutate();
+            else setConfirm(true);
+          }}
+        >
+          {confirm ? 'Click again to confirm' : 'Revoke'}
+        </Button>
+      )}
     </li>
   );
 }
@@ -83,6 +85,9 @@ export function TokensPage() {
   const qc = useQueryClient();
   const me = useMe();
   const isAdmin = !!me.data?.user.is_admin;
+  // API tokens cannot mint tokens (403 session_required) and revoking needs control.
+  const sessionCaller = me.data?.via === 'session';
+  const canControl = !!me.data?.scopes.includes('control');
   const list = useQuery<Token[]>({
     queryKey: TOKENS_KEY,
     queryFn: async () => unwrap(await api.GET('/api/tokens')),
@@ -118,9 +123,17 @@ export function TokensPage() {
       );
       const base = (pub.data || window.location.origin).replace(/\/+$/, '');
       const url = `${base}/kiosk#token=${token.token}`;
-      // Lazy: the QR encoder stays out of the main bundle.
-      const QR = await import('qrcode');
-      const qr = await QR.toDataURL(url, { margin: 2, width: 320, color: { dark: '#000000', light: '#ffffff' } });
+      let qr: string;
+      try {
+        // Lazy: the QR encoder stays out of the main bundle.
+        const QR = await import('qrcode');
+        qr = await QR.toDataURL(url, { margin: 2, width: 320, color: { dark: '#000000', light: '#ffffff' } });
+      } catch (e) {
+        // Nobody can see this token now; do not leave it valid.
+        await api.DELETE('/api/tokens/{id}', { params: { path: { id: token.id } } }).catch(() => {});
+        void qc.invalidateQueries({ queryKey: TOKENS_KEY });
+        throw e;
+      }
       void qc.invalidateQueries({ queryKey: TOKENS_KEY });
       return { kind: 'pair', token, url, qr };
     },
@@ -165,13 +178,23 @@ export function TokensPage() {
         </Card>
       )}
 
+      {me.data && !sessionCaller ? (
+        <Banner tone="info">Sign in with an account to manage tokens.</Banner>
+      ) : (
+        <>
       <Card className="flex flex-col gap-4">
         <h2 className="numeral text-xl">Pair a display</h2>
         <p className="text-sm text-dim">
           Creates a token with read and control access and shows a QR code that signs a wall display or TV in.
         </p>
         <div>
-          <Button onClick={() => { setError(null); pair.mutate(); }} disabled={pair.isPending}>
+          <Button
+            onClick={() => {
+              setError(null);
+              pair.mutate();
+            }}
+            disabled={pair.isPending || me.isPending || (isAdmin && pub.isPending)}
+          >
             <MonitorSmartphone aria-hidden className="size-5" />
             Pair a display
           </Button>
@@ -211,6 +234,9 @@ export function TokensPage() {
         </form>
       </Card>
 
+        </>
+      )}
+
       <Card>
         <h2 className="numeral mb-2 text-xl">Your tokens</h2>
         {list.isPending ? (
@@ -224,7 +250,7 @@ export function TokensPage() {
         ) : (
           <ul>
             {list.data.map((t) => (
-              <Row key={t.id} t={t} onError={setError} />
+              <Row key={t.id} t={t} canRevoke={canControl} onError={setError} />
             ))}
           </ul>
         )}

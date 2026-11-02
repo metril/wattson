@@ -17,3 +17,11 @@ export function setSelectedRiderId(id: number): void {
     // storage unavailable; the choice just does not persist
   }
 }
+
+export function clearSelectedRiderId(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // storage unavailable
+  }
+}

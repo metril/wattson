@@ -21,9 +21,20 @@ const OIDC_ERRORS: Record<string, string> = {
   provider_unavailable: 'The identity provider is unreachable.',
 };
 
-/** Only same-origin paths: starts with "/" but not "//" or "/\". */
+/** Only same-origin paths: starts with "/", no whitespace/control/backslash, and resolves to this origin. */
 export function safeReturn(rt: string | null): string {
-  return rt && /^\/(?![/\\])/.test(rt) ? rt : '/';
+  if (!rt || !rt.startsWith('/') || /[\u0000-\u0020\u007f\\]/.test(rt)) return '/';
+  try {
+    return new URL(rt, window.location.origin).origin === window.location.origin ? rt : '/';
+  } catch {
+    return '/';
+  }
+}
+
+function providerHref(loginUrl: string, returnTo: string): string {
+  const u = new URL(loginUrl, window.location.origin);
+  u.searchParams.set('return_to', returnTo);
+  return u.origin === window.location.origin ? u.pathname + u.search : u.href;
 }
 
 export function formatRetry(seconds: number): string {
@@ -120,7 +131,7 @@ export function LoginPage() {
         {providers.map((p) => (
           <a
             key={p.slug}
-            href={`${p.login_url}?return_to=${encodeURIComponent(returnTo)}`}
+            href={providerHref(p.login_url, returnTo)}
             className="inline-flex min-h-touch items-center justify-center gap-2 rounded-control bg-accent px-4 font-medium text-accent-ink hover:brightness-110"
           >
             <KeyRound aria-hidden className="size-5" />

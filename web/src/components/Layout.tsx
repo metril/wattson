@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Bike, KeyRound, LogOut, Settings, Unlink, Users } from 'lucide-react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
+import { Button } from '@/components/Button';
 import { api, setKioskToken, unwrap } from '@/lib/api';
 import { ME_KEY, useMe } from '@/lib/auth';
 
@@ -17,9 +18,12 @@ export function Layout() {
   const me = useMe();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const loc = useLocation();
   const isAdmin = !!me.data?.user.is_admin;
   // A paired display (API token) sees the ride screen only.
   const kiosk = me.data?.via === 'token';
+
+  const [unpairing, setUnpairing] = useState(false);
 
   function unpair() {
     setKioskToken(null);
@@ -47,6 +51,9 @@ export function Layout() {
     navigate('/login', { replace: true });
   }
 
+  // A paired display only ever shows the ride screen.
+  if (kiosk && loc.pathname !== '/') return <Navigate to="/" replace />;
+
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
       <nav
@@ -61,7 +68,7 @@ export function Layout() {
           Ride
         </NavLink>
         {kiosk ? (
-          <button type="button" onClick={unpair} className={`${link} md:mt-auto`}>
+          <button type="button" onClick={() => setUnpairing(true)} className={`${link} md:mt-auto`}>
             <Unlink aria-hidden className="size-6" />
             Unpair
           </button>
@@ -89,6 +96,23 @@ export function Layout() {
         )}
       </nav>
       <main className="min-w-0 flex-1 p-4 pb-24 md:p-8 md:pb-8">
+        {unpairing && (
+          <div className="mx-auto mb-4 max-w-3xl">
+            <Banner
+              tone="warn"
+              action={
+                <div className="flex gap-2">
+                  <Button variant="danger" onClick={unpair}>
+                    Confirm unpair
+                  </Button>
+                  <Button onClick={() => setUnpairing(false)}>Cancel</Button>
+                </div>
+              }
+            >
+              This display forgets its token. The token stays valid until you revoke it in Settings → Tokens.
+            </Banner>
+          </div>
+        )}
         {signOutError && (
           <div className="mx-auto mb-4 max-w-3xl">
             <Banner tone="error">{signOutError}</Banner>

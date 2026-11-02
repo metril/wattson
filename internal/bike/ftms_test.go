@@ -58,10 +58,30 @@ func TestFTMSSimpleFrames(t *testing.T) {
 	chk("start", FTMSStart(), []byte{0x07})
 	chk("stop", FTMSStop(false), []byte{0x08, 0x01})
 	chk("pause", FTMSStop(true), []byte{0x08, 0x02})
-	chk("power200", FTMSSetPower(200), []byte{0x05, 0xc8, 0x00})
-	chk("power-1", FTMSSetPower(-1), []byte{0x05, 0xff, 0xff})
-	chk("power-sat-hi", FTMSSetPower(1<<40), []byte{0x05, 0xff, 0x7f})
-	chk("power-sat-lo", FTMSSetPower(-1<<40), []byte{0x05, 0x00, 0x80})
+	p200, err := FTMSSetPower(200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chk("power200", p200, []byte{0x05, 0xc8, 0x00})
+	p1, err := FTMSSetPower(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chk("power1", p1, []byte{0x05, 0x01, 0x00})
+	phi, err := FTMSSetPower(1 << 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chk("power-sat-hi", phi, []byte{0x05, 0xff, 0x7f})
+}
+
+func TestFTMSSetPowerRejectsNonPositive(t *testing.T) {
+	t.Parallel()
+	for _, w := range []int{0, -1, math.MinInt} {
+		if b, err := FTMSSetPower(w); !errors.Is(err, ErrPowerRange) || b != nil {
+			t.Errorf("w %d: % x %v", w, b, err)
+		}
+	}
 }
 
 func TestFTMSFrameRejectsReset(t *testing.T) {

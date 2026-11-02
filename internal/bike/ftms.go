@@ -58,10 +58,17 @@ func FTMSSetResistance(level int, enc ResistanceEncoding) ([]byte, error) {
 	return nil, errors.New("bike: unknown resistance encoding")
 }
 
-// FTMSSetPower encodes a target power in watts as sint16 LE, saturating.
-func FTMSSetPower(w int) []byte {
-	w = max(math.MinInt16, min(math.MaxInt16, w))
-	return ftmsFrame(0x05, binary.LittleEndian.AppendUint16(nil, uint16(int16(w)))...)
+// ErrPowerRange means the target power is below 1 W (0 W could unload the bike).
+var ErrPowerRange = errors.New("bike: power out of range")
+
+// FTMSSetPower encodes a target power in watts as sint16 LE, saturating high.
+// w<1 is ErrPowerRange.
+func FTMSSetPower(w int) ([]byte, error) {
+	if w < 1 {
+		return nil, ErrPowerRange
+	}
+	w = min(math.MaxInt16, w)
+	return ftmsFrame(0x05, binary.LittleEndian.AppendUint16(nil, uint16(int16(w)))...), nil
 }
 
 func FTMSStart() []byte { return ftmsFrame(0x07) }

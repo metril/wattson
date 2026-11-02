@@ -205,7 +205,7 @@
             "type": "string"
           },
           "offset_level": {
-            "description": "Resistance level at 0 percent grade and free-ride start level, 1 to 32. Default 5.",
+            "description": "Resistance level at 0 percent grade and free-ride start level, 1 to 32, between min_level and max_level. Default 5.",
             "format": "double",
             "maximum": 32,
             "minimum": 1,
@@ -607,7 +607,7 @@
             "type": "string"
           },
           "offset_level": {
-            "description": "Resistance level at 0 percent grade and free-ride start level, 1 to 32. Default 5.",
+            "description": "Resistance level at 0 percent grade and free-ride start level, 1 to 32, between min_level and max_level. Default 5.",
             "format": "double",
             "maximum": 32,
             "minimum": 1,

@@ -48,7 +48,7 @@ type RiderParams struct {
 	MinLevel        *int     `json:"min_level,omitempty" minimum:"1" maximum:"32" doc:"Lowest resistance level, 1 to 32 and at most max_level. Default 1."`
 	MaxLevel        *int     `json:"max_level,omitempty" minimum:"1" maximum:"32" doc:"Highest resistance level, 1 to 32 and at least min_level. Default 16."`
 	Gain            *float64 `json:"gain,omitempty" minimum:"0" maximum:"5" doc:"Resistance levels per 1 percent grade, 0 to 5. Default 1.0."`
-	OffsetLevel     *float64 `json:"offset_level,omitempty" minimum:"1" maximum:"32" doc:"Resistance level at 0 percent grade and free-ride start level, 1 to 32. Default 5."`
+	OffsetLevel     *float64 `json:"offset_level,omitempty" minimum:"1" maximum:"32" doc:"Resistance level at 0 percent grade and free-ride start level, 1 to 32, between min_level and max_level. Default 5."`
 	DownhillScale   *float64 `json:"downhill_scale,omitempty" minimum:"0" maximum:"1" doc:"Factor on negative grades, 0 to 1. Default 0.5."`
 	CdA             *float64 `json:"cda,omitempty" minimum:"0.15" maximum:"0.8" doc:"Drag area in square metres, 0.15 to 0.8. Default 0.32."`
 	Crr             *float64 `json:"crr,omitempty" minimum:"0.001" maximum:"0.02" doc:"Rolling resistance coefficient, 0.001 to 0.02. Default 0.004."`
@@ -78,6 +78,9 @@ func checkRider(r *store.Rider) error {
 	}
 	if r.MinLevel > r.MaxLevel {
 		return apiErr(http.StatusBadRequest, "invalid_request", "min_level: must not exceed max_level")
+	}
+	if o := r.OffsetLevel; o < float64(r.MinLevel) || o > float64(r.MaxLevel) {
+		return apiErr(http.StatusBadRequest, "invalid_request", "offset_level: must be between min_level and max_level")
 	}
 	return nil
 }

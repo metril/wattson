@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/metril/wattson/internal/esphomeapi"
@@ -51,6 +52,43 @@ func TestHAPing(t *testing.T) {
 	}
 	if r := post(map[string]any{}); !r.OK {
 		t.Errorf("stored = %+v", r)
+	}
+}
+
+func TestHAStoredTokenNotSentElsewhere(t *testing.T) {
+	t.Parallel()
+	var got atomic.Value
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.Header.Get("Authorization"))
+	}))
+	t.Cleanup(other.Close)
+	stored := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer good" {
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(stored.Close)
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"ha": map[string]any{"url": stored.URL, "token": "good"}}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	post := func(body map[string]any) TestResult {
+		t.Helper()
+		_, b := ts.do(t, admin, "POST", "/api/settings/test/ha", body)
+		return decode[TestResult](t, b)
+	}
+	r := post(map[string]any{"url": other.URL})
+	if r.OK || r.Message != "token required when testing a different URL" {
+		t.Errorf("other url = %+v", r)
+	}
+	if v, _ := got.Load().(string); v != "" {
+		t.Errorf("other server received %q", v)
+	}
+	// Same URL (case, trailing slash) may use the stored token.
+	if r := post(map[string]any{"url": strings.ToUpper(stored.URL[:7]) + stored.URL[7:] + "/"}); !r.OK {
+		t.Errorf("same url = %+v", r)
 	}
 }
 

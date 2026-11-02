@@ -52,6 +52,18 @@ func result(start time.Time, ok bool, format string, a ...any) *testOut {
 		LatencyMS: int(time.Since(start).Milliseconds())}}
 }
 
+// sameURL reports whether a and b name the same base URL, ignoring the
+// case of scheme and host and a trailing slash.
+func sameURL(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return strings.EqualFold(ua.Scheme, ub.Scheme) && strings.EqualFold(ua.Host, ub.Host) &&
+		strings.TrimRight(ua.Path, "/") == strings.TrimRight(ub.Path, "/") && ua.RawQuery == ub.RawQuery
+}
+
 func orStored(v, stored string) string {
 	if v != "" {
 		return v
@@ -73,7 +85,14 @@ func (d Deps) registerConnTests(api huma.API) {
 				return nil, err
 			}
 			base := orStored(in.Body.URL, s.HA.URL)
-			token := orStored(in.Body.Token, s.HA.Token)
+			token := in.Body.Token
+			if token == "" {
+				// The stored token goes only to the stored URL, never to a URL from the body.
+				if in.Body.URL != "" && !sameURL(in.Body.URL, s.HA.URL) {
+					return result(start, false, "token required when testing a different URL"), nil
+				}
+				token = s.HA.Token
+			}
 			u, err := url.Parse(base)
 			if base == "" || err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 				return result(start, false, "Home Assistant URL is missing or not an absolute http(s) URL"), nil
@@ -94,7 +113,11 @@ func (d Deps) registerConnTests(api huma.API) {
 			}
 			resp, err := client.Do(req)
 			if err != nil {
-				return result(start, false, "%s", strings.ReplaceAll(err.Error(), token, "[redacted]")), nil
+				msg := err.Error()
+				if len(token) >= 8 { // a short token would mangle unrelated text
+					msg = strings.ReplaceAll(msg, token, "[redacted]")
+				}
+				return result(start, false, "%s", msg), nil
 			}
 			_ = resp.Body.Close()
 			switch {

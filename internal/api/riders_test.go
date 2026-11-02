@@ -87,6 +87,18 @@ func TestRiderValidation(t *testing.T) {
 	if resp.StatusCode != 400 || !strings.Contains(string(b), "min_level") {
 		t.Errorf("patch min 20: %d %s", resp.StatusCode, b)
 	}
+	resp, b = ts.do(t, admin, "PATCH", path, map[string]any{"offset_level": 20})
+	if resp.StatusCode != 400 || !strings.Contains(string(b), "offset_level") {
+		t.Errorf("patch offset 20: %d %s", resp.StatusCode, b)
+	}
+	resp, b = ts.do(t, admin, "PATCH", path, map[string]any{"min_level": 8})
+	if resp.StatusCode != 400 || !strings.Contains(string(b), "offset_level") {
+		t.Errorf("patch min 8 above offset 5: %d %s", resp.StatusCode, b)
+	}
+	resp, b = ts.do(t, admin, "POST", "/api/riders", map[string]any{"name": "A", "offset_level": 30})
+	if resp.StatusCode != 400 || !strings.Contains(string(b), "offset_level") {
+		t.Errorf("create offset 30: %d %s", resp.StatusCode, b)
+	}
 	resp, b = ts.do(t, admin, "PATCH", path, map[string]any{"cda": 5})
 	if resp.StatusCode != 400 || !strings.Contains(string(b), "cda") {
 		t.Errorf("patch cda: %d %s", resp.StatusCode, b)

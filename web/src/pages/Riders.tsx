@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus } from 'lucide-react';
 import { api, ApiError, unwrap } from '@/lib/api';
@@ -9,6 +10,7 @@ import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Field } from '@/components/Field';
+import { StravaCard, stravaReasonText } from '@/features/strava/StravaCard';
 
 type Rider = components['schemas']['RiderOut'];
 type Num = Exclude<keyof components['schemas']['PatchRiderInBody'], 'name'>;
@@ -205,6 +207,7 @@ function RiderCard({
       </div>
       {delError && <Banner tone="error">{delError}</Banner>}
       {editing && <RiderForm rider={r} onDone={() => setEditing(false)} />}
+      <StravaCard riderId={r.id} />
     </Card>
   );
 }
@@ -216,6 +219,9 @@ export function RidersPage() {
   });
   const [creating, setCreating] = useState(false);
   const [chosen, setChosen] = useState<number | null>(getSelectedRiderId);
+
+  const [params] = useSearchParams();
+  const stravaResult = params.get('strava');
 
   const riders = q.data ?? [];
   // A stale or missing choice falls back to the first rider.
@@ -230,6 +236,8 @@ export function RidersPage() {
           New rider
         </Button>
       </div>
+      {stravaResult === 'connected' && <Banner tone="ok">{stravaReasonText('connected')}</Banner>}
+      {stravaResult === 'error' && <Banner tone="error">{stravaReasonText(params.get('reason') ?? '')}</Banner>}
       {creating && (
         <Card>
           <h2 className="numeral mb-4 text-xl">New rider</h2>

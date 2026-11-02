@@ -9,6 +9,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import MapView, { type MapApi } from '@/features/map/MapView';
 import { FitButton } from '@/features/history/FitButton';
+import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
 import { RideStats } from '@/features/history/RideStats';
 import { SeriesChart } from '@/features/history/SeriesChart';
 import { RIDES_KEY } from './History';
@@ -112,6 +113,7 @@ export function RideDetailPage() {
           </p>
         </div>
         <FitButton rideId={r.id} />
+        <StravaUploadButton key={r.id} rideId={r.id} initial={r.strava} />
         <Button
           variant={confirm ? 'danger' : 'secondary'}
           disabled={del.isPending}

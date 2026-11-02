@@ -10,6 +10,15 @@ import { FormCard, SaveBar, SettingsGate, useSettingsForm, type SettingsOut } fr
 const BUNDLED_BROUTER = 'http://brouter:17777';
 const NO_CREDS = 'Put credentials in the fields below, not in the URL (no user:pass@).';
 
+/** Host (no port) Strava wants as the Authorization Callback Domain. */
+function callbackDomain(publicUrl: string): string {
+  try {
+    return new URL(publicUrl).hostname;
+  } catch {
+    return location.hostname;
+  }
+}
+
 function Body({ s }: { s: SettingsOut }) {
   const f = useSettingsForm({
     'ha.url': s.ha.url,
@@ -159,6 +168,11 @@ function Body({ s }: { s: SettingsOut }) {
         />
       </FormCard>
       <FormCard title="Strava">
+        <p className="text-sm text-dim">
+          Each new Strava API app can connect 1 athlete until Strava raises its capacity. Riders can add their own app
+          on the Riders page. Manual FIT download always works.
+        </p>
+        <p className="text-sm text-dim">Authorization Callback Domain: {callbackDomain(s.general.public_url)}</p>
         {text('strava.client_id', 'Strava client ID')}
         <SecretInput
           key={`strava-${f.version}`}

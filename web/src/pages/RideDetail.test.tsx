@@ -45,6 +45,7 @@ describe('RideDetailPage', () => {
     expect(screen.getByText('Speed')).toBeInTheDocument();
     expect(screen.getByText('Cadence')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download FIT' })).toHaveAttribute('href', '/api/rides/7/fit');
+    expect(screen.getByRole('button', { name: 'Upload to Strava' })).toBeInTheDocument();
   });
 
   it('a route ride draws its trace and elevation', async () => {

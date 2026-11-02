@@ -32,6 +32,24 @@ afterEach(() => {
   localStorage.clear();
 });
 
+describe('RidersPage Strava return', () => {
+  it('explains a rejected connection', async () => {
+    stubApi({ 'GET /api/riders': [200, [rider()]] });
+    renderWithClient(<RidersPage />, '/riders?strava=error&reason=scope');
+    expect(
+      await screen.findByText(
+        'Strava was connected without upload permission. Connect again and keep “Upload your activities” ticked.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('confirms a connection', async () => {
+    stubApi({ 'GET /api/riders': [200, [rider()]] });
+    renderWithClient(<RidersPage />, '/riders?strava=connected');
+    expect(await screen.findByText('Strava connected.')).toBeInTheDocument();
+  });
+});
+
 describe('RidersPage', () => {
   it('PATCHes only the changed field', async () => {
     const stub = stubApi({

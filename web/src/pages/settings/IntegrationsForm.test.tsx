@@ -131,4 +131,15 @@ describe('IntegrationsForm', () => {
     await screen.findByLabelText('BRouter URL');
     expect(screen.queryByText(hint)).not.toBeInTheDocument();
   });
+
+  it('explains the Strava athlete limit and the callback domain', async () => {
+    renderStrava();
+    expect(await screen.findByText(/can connect 1 athlete/)).toBeInTheDocument();
+    expect(screen.getByText('Authorization Callback Domain: w.example')).toBeInTheDocument();
+  });
 });
+
+function renderStrava() {
+  stubApi({ 'GET /api/settings': [200, settingsFixture()] });
+  renderWithClient(<IntegrationsForm />);
+}

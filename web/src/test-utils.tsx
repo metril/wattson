@@ -29,7 +29,12 @@ export function stubApi(routes: Record<string, Handler>) {
     vi.fn(async (req: Request) => {
       const key = `${req.method} ${new URL(req.url).pathname}`;
       const text = await req.clone().text();
-      const body = text ? JSON.parse(text) : undefined;
+      let body: unknown;
+      try {
+        body = text ? JSON.parse(text) : undefined;
+      } catch {
+        body = text; // multipart uploads are not JSON
+      }
       calls.push({ key, body });
       const h = routes[key];
       if (!h) return json(404, { error: { code: 'not_found', message: `no stub for ${key}` } });
@@ -130,6 +135,42 @@ export function userFixture(
     disabled: false,
     oidc: false,
     created_at: '2026-01-01T00:00:00Z',
+    ...over,
+  };
+}
+
+export function routeFixture(
+  over: Partial<components['schemas']['RouteDetail']> = {},
+): components['schemas']['RouteDetail'] {
+  return {
+    id: 1,
+    name: 'Ramp',
+    source: 'gpx',
+    owner_id: 1,
+    distance_m: 1000,
+    ascent_m: 50,
+    descent_m: 0,
+    max_grade_pct: 6,
+    min_grade_pct: 0,
+    bbox: [7, 45, 7.1, 45.1],
+    geojson: { type: 'LineString', coordinates: [[7, 45], [7.1, 45.1]] },
+    spec: {},
+    created_at: '2026-01-01T00:00:00Z',
+    ...over,
+  };
+}
+
+export function profileFixture(
+  over: Partial<components['schemas']['ProfileOut']> = {},
+): components['schemas']['ProfileOut'] {
+  return {
+    route_id: 1,
+    step_m: 10,
+    length_m: 20,
+    lon: [7, 7.05, 7.1],
+    lat: [45, 45.05, 45.1],
+    ele_m: [100, 101, 102],
+    grade_pct: [6, 6, 6],
     ...over,
   };
 }

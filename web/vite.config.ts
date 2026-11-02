@@ -33,6 +33,8 @@ export default defineConfig({
     // The Go binary embeds internal/web/dist via go:embed.
     outDir: '../internal/web/dist',
     emptyOutDir: true,
+    // MapLibre is its own lazy chunk (~1 MB); the entry bundle is gated by npm run size.
+    chunkSizeWarningLimit: 1200,
   },
   server: {
     port: 5173,

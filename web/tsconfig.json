@@ -11,7 +11,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom", "node"],
+    "types": ["geojson", "vitest/globals", "@testing-library/jest-dom", "node"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

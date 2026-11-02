@@ -26,3 +26,14 @@ if (typeof globalThis.matchMedia === 'undefined') {
     dispatchEvent: () => false,
   });
 }
+
+// jsdom has no canvas; draw code skips a null context instead of logging "not implemented".
+HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}

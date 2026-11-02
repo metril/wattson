@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Layout } from '@/components/Layout';
@@ -16,6 +16,25 @@ import { BikeForm } from '@/pages/settings/Bike';
 import { IntegrationsForm } from '@/pages/settings/Integrations';
 import { AuthPage } from '@/pages/settings/Auth';
 import { UsersPage } from '@/pages/settings/Users';
+
+// Route pages (and MapLibre behind them) load on demand to keep the entry bundle small.
+const RoutesPage = lazy(() => import('@/pages/Routes').then((m) => ({ default: m.RoutesPage })));
+const RouteDetailPage = lazy(() => import('@/pages/RouteDetail').then((m) => ({ default: m.RouteDetailPage })));
+const RouteSyntheticPage = lazy(() =>
+  import('@/pages/RouteSynthetic').then((m) => ({ default: m.RouteSyntheticPage })),
+);
+
+const lazyPage = (el: JSX.Element) => (
+  <Suspense
+    fallback={
+      <p role="status" className="text-dim">
+        Loading…
+      </p>
+    }
+  >
+    {el}
+  </Suspense>
+);
 
 export function AppRoutes() {
   const qc = useQueryClient();
@@ -50,6 +69,9 @@ export function AppRoutes() {
       >
         <Route index element={<RidePage />} />
         <Route path="riders" element={<RidersPage />} />
+        <Route path="routes" element={lazyPage(<RoutesPage />)} />
+        <Route path="routes/new/synthetic" element={lazyPage(<RouteSyntheticPage />)} />
+        <Route path="routes/:id" element={lazyPage(<RouteDetailPage />)} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings"

@@ -97,7 +97,7 @@ Flags: `--level` start level (5), `--min`/`--max` (1/16), `--mass` rider+bike kg
 
 Pass the ADDR column from `scan` to `--addr` exactly as shown (random addresses already include `/random`). Every command has `-h`.
 
-Docs: [hardware runbook](docs/hardware-runbook.md), [ESPHome proxy](docs/esphome-proxy.md), [S29R2 report](docs/s29r2.md). The proxy config is in [`esphome/`](esphome/).
+Docs: [hardware runbook](docs/hardware-runbook.md), [ESPHome proxy](docs/esphome-proxy.md), [S29R2 report](docs/s29r2.md), [Home Assistant bike driver](docs/home-assistant.md). The proxy config is in [`esphome/`](esphome/).
 
 ## Safety
 

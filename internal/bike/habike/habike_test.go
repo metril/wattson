@@ -55,6 +55,13 @@ func values(s *hasstest.Server) []float64 {
 	return out
 }
 
+func dialCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestHADialReadsRange(t *testing.T) {
 	t.Parallel()
 	s := newServer(t)
@@ -157,14 +164,14 @@ func TestHAResistanceUnavailable(t *testing.T) {
 	for _, st := range []string{"unavailable", "unknown"} {
 		s := newServer(t)
 		s.SetState("number.r", st, nil)
-		_, err := habike.Dial(cfgFor(s, token))(context.Background())
+		_, err := habike.Dial(cfgFor(s, token))(dialCtx(t))
 		if !errors.Is(err, habike.ErrEntityUnavailable) || !strings.Contains(err.Error(), "number.r") {
 			t.Fatalf("%s: %v", st, err)
 		}
 	}
 	s := newServer(t)
 	s.RemoveState("number.r")
-	if _, err := habike.Dial(cfgFor(s, token))(context.Background()); !errors.Is(err, habike.ErrEntityUnavailable) {
+	if _, err := habike.Dial(cfgFor(s, token))(dialCtx(t)); !errors.Is(err, habike.ErrEntityUnavailable) {
 		t.Fatalf("missing: %v", err)
 	}
 }
@@ -172,7 +179,7 @@ func TestHAResistanceUnavailable(t *testing.T) {
 func TestHAAuth(t *testing.T) {
 	t.Parallel()
 	s := newServer(t)
-	_, err := habike.Dial(cfgFor(s, "wrong"))(context.Background())
+	_, err := habike.Dial(cfgFor(s, "wrong"))(dialCtx(t))
 	if !errors.Is(err, hass.ErrAuth) {
 		t.Fatalf("got %v", err)
 	}
@@ -224,6 +231,60 @@ func TestHALinkLoss(t *testing.T) {
 	}
 	if _, err := sess.SetLevel(context.Background(), 5); !errors.Is(err, blue.ErrDisconnected) {
 		t.Fatalf("set after loss: %v", err)
+	}
+}
+
+func TestHAStepSnapsLevel(t *testing.T) {
+	t.Parallel()
+	s := newServer(t)
+	s.SetState("number.r", "7", map[string]any{"min": 1.0, "max": 24.0, "step": 2.0})
+	sess := open(t, s, cfgFor(s, token))
+	for in, want := range map[int]int{4: 5, 5: 5, 24: 23, 0: 1, 99: 23} {
+		got, err := sess.Resend(context.Background(), in)
+		if err != nil || got != want {
+			t.Errorf("level %d -> %d (%v), want %d", in, got, err, want)
+		}
+	}
+	for _, v := range values(s) {
+		if v < 1 {
+			t.Fatalf("value %v", v)
+		}
+	}
+}
+
+func TestHAEntityUnavailableMidSession(t *testing.T) {
+	t.Parallel()
+	s := newServer(t)
+	sess := open(t, s, cfgFor(s, token))
+	s.SetState("number.r", "unavailable", nil)
+	select {
+	case <-sess.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done not closed")
+	}
+	if err := sess.Err(); !errors.Is(err, blue.ErrDisconnected) || !errors.Is(err, habike.ErrEntityUnavailable) || !strings.Contains(err.Error(), "number.r") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestHASupervisorReassertsAfterEntityRecovers(t *testing.T) {
+	t.Parallel()
+	s := newServer(t)
+	sup := bike.NewSupervisor(habike.Dial(cfgFor(s, token)), bike.SupervisorOptions{MinLevel: 1, MaxLevel: 24, BackoffMin: 20 * time.Millisecond})
+	ctx := context.Background()
+	_, _ = sup.SetLevel(ctx, 9)
+	if err := sup.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sup.Close(context.Background()) })
+	waitFor(t, func() bool { return len(s.Calls()) >= 1 })
+	n := len(s.Calls())
+	s.SetState("number.r", "unavailable", nil)
+	time.Sleep(40 * time.Millisecond) // redials fail while the entity is unavailable
+	s.SetState("number.r", "3", nil)  // the bridge is back, at a different level
+	waitFor(t, func() bool { return len(s.Calls()) > n })
+	if v := values(s)[n]; v != 9 {
+		t.Fatalf("first write after recovery %v, want 9", v)
 	}
 }
 

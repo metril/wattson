@@ -72,7 +72,7 @@ func Dial(c Config) bike.Dial {
 			return nil, err
 		}
 		s := &Session{
-			cl: cl, cfg: c, states: map[string]hass.State{},
+			cl: cl, cfg: c, states: map[string]hass.State{}, bad: make(chan struct{}, 1),
 			tel: make(chan bike.Telemetry, telemetryBuf), done: make(chan struct{}), exited: make(chan struct{}),
 		}
 		if s.cfg.Period <= 0 {
@@ -118,6 +118,8 @@ type Session struct {
 	done   chan struct{}
 	exited chan struct{}
 
+	bad chan struct{} // the resistance entity went non-numeric; run ends the session
+
 	mu      sync.Mutex // guards states
 	states  map[string]hass.State
 	smu     sync.Mutex // serialises writes; guards last and closed
@@ -135,6 +137,12 @@ func (s *Session) store(st hass.State) {
 	s.mu.Lock()
 	s.states[st.EntityID] = st
 	s.mu.Unlock()
+	if st.EntityID == s.cfg.Resistance && !numeric(st.State) {
+		select {
+		case s.bad <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func numeric(v string) bool {
@@ -189,6 +197,25 @@ func (s *Session) bounds() (lo, hi int) {
 	return lo, max(hi, lo)
 }
 
+// snap rounds level to the nearest multiple of the entity's step (counted from
+// its min, or 0 when it has none) and keeps it within [lo, hi]. Steps below 1
+// are ignored: levels are whole numbers.
+func (s *Session) snap(level, lo, hi int) int {
+	step, ok := s.attr("step")
+	if !ok || step < 1 {
+		return level
+	}
+	origin, _ := s.attr("min")
+	v := origin + math.Round((float64(level)-origin)/step)*step
+	for v > float64(hi)+1e-9 {
+		v -= step
+	}
+	for v < float64(lo)-1e-9 {
+		v += step
+	}
+	return bike.ClampLevel(int(math.Round(v)), lo, hi)
+}
+
 func (s *Session) Protocol() bike.Protocol          { return bike.ProtoHA }
 func (s *Session) MaxLevel() int                    { _, hi := s.bounds(); return hi }
 func (s *Session) Telemetry() <-chan bike.Telemetry { return s.tel }
@@ -231,7 +258,7 @@ func (s *Session) set(ctx context.Context, level int, force bool) (int, error) {
 	default:
 	}
 	lo, hi := s.bounds()
-	level = bike.ClampLevel(level, lo, hi)
+	level = s.snap(bike.ClampLevel(level, lo, hi), lo, hi)
 	if !force && level == s.last {
 		return level, nil
 	}
@@ -288,6 +315,11 @@ func (s *Session) run() {
 	for {
 		select {
 		case <-s.done:
+			return
+		case <-s.bad:
+			// The bridge lost the bike: end the session so the supervisor
+			// redials and re-asserts the target once the entity is back.
+			s.end(fmt.Errorf("habike: %w: %w", blue.ErrDisconnected, unavailable(s.cfg.Resistance)))
 			return
 		case <-s.cl.Done():
 			err := s.cl.Err()

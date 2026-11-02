@@ -3,12 +3,15 @@ module github.com/metril/wattson
 go 1.26.0
 
 require (
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/flynn/noise v1.1.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/godbus/dbus/v5 v5.1.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/oauth2 v0.30.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.58.0
 	tinygo.org/x/bluetooth v0.17.0

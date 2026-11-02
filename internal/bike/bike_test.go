@@ -57,7 +57,12 @@ func connect(t *testing.T, d *bluetest.Device) (*bluetest.Fake, blue.Conn) {
 
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	waitWithin(t, 2*time.Second, what, cond)
+}
+
+func waitWithin(t *testing.T, d time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timeout waiting for %s", what)
@@ -86,7 +91,7 @@ func TestOpenFitPlusSendsInitThenKeepalive(t *testing.T) {
 	if b.Protocol() != ProtoFitPlus || b.MaxLevel() != 16 {
 		t.Fatalf("proto %v max %d", b.Protocol(), b.MaxLevel())
 	}
-	waitFor(t, "4 writes", func() bool { return len(f.Writes(testAddr)) >= 4 })
+	waitWithin(t, 100*time.Millisecond, "init + 3 keepalives", func() bool { return len(f.Writes(testAddr)) >= 4 })
 	w := f.Writes(testAddr)
 	if !bytes.Equal(w[0], []byte{0xaa, 0x01, 0x00, 0x01, 0x55}) {
 		t.Fatalf("first write % x", w[0])
@@ -254,7 +259,12 @@ func TestTelemetryFTMS(t *testing.T) {
 	}
 	defer b.Close(context.Background())
 	f.Notify(testAddr, FTMSIndoorBikeData, []byte{0x44, 0x00, 0xe8, 0x03, 0xa0, 0x00, 0xc8, 0x00})
-	tel := <-b.Telemetry()
+	var tel Telemetry
+	select {
+	case tel = <-b.Telemetry():
+	case <-time.After(time.Second):
+		t.Fatal("no telemetry")
+	}
 	if tel.PowerW != 200 || tel.Cadence != 80 || tel.At.IsZero() {
 		t.Fatalf("%+v", tel)
 	}
@@ -318,8 +328,13 @@ func TestCloseSendsMinLevelFirst(t *testing.T) {
 func TestCloseSendsLevelOneEvenWhenMinZero(t *testing.T) {
 	t.Parallel()
 	f, c := connect(t, fitPlusDevice())
-	b, _ := Open(context.Background(), c, Options{Keepalive: time.Hour})
-	_ = b.Close(context.Background())
+	b, err := Open(context.Background(), c, Options{Keepalive: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	w := f.Writes(testAddr)
 	if !bytes.Equal(w[len(w)-1], lvl(t, 1)) {
 		t.Fatalf("% x", w[len(w)-1])
@@ -415,5 +430,120 @@ func TestOpenContextCanceled(t *testing.T) {
 	cancel()
 	if _, err := Open(ctx, c, Options{}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// flakyConn wraps a Conn to simulate stuck or failing writes.
+type flakyConn struct {
+	blue.Conn
+	mu        sync.Mutex
+	blockNext int  // number of upcoming writes that block until ctx is done
+	failNext  bool // next write is delivered, then reports an error
+}
+
+func (c *flakyConn) Write(ctx context.Context, ch blue.UUID, data []byte, resp bool) error {
+	c.mu.Lock()
+	block, fail := c.blockNext > 0, c.failNext
+	if block {
+		c.blockNext--
+	}
+	c.failNext = false
+	c.mu.Unlock()
+	if block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	err := c.Conn.Write(ctx, ch, data, resp)
+	if err == nil && fail {
+		return errors.New("simulated ack loss")
+	}
+	return err
+}
+
+func (c *flakyConn) set(f func()) { c.mu.Lock(); f(); c.mu.Unlock() }
+
+func openFlaky(t *testing.T, o Options) (*bluetest.Fake, *flakyConn, *Bike) {
+	t.Helper()
+	f, c := connect(t, fitPlusDevice())
+	fc := &flakyConn{Conn: c}
+	o.Keepalive = time.Hour
+	b, err := Open(context.Background(), fc, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f, fc, b
+}
+
+func TestFailedWriteInvalidatesDedup(t *testing.T) {
+	t.Parallel()
+	f, fc, b := openFlaky(t, Options{})
+	ctx := context.Background()
+	if _, err := b.SetLevel(ctx, 5); err != nil {
+		t.Fatal(err)
+	}
+	fc.set(func() { fc.failNext = true }) // frame for 9 is delivered, but the write errors
+	if _, err := b.SetLevel(ctx, 9); err == nil {
+		t.Fatal("expected error")
+	}
+	n := len(f.Writes(testAddr))
+	if sent, err := b.SetLevel(ctx, 5); err != nil || sent != 5 {
+		t.Fatalf("sent %d err %v", sent, err)
+	}
+	w := f.Writes(testAddr)
+	if len(w) != n+1 || !bytes.Equal(w[n], lvl(t, 5)) {
+		t.Fatalf("level 5 was wrongly deduped after failed write (writes %d -> %d)", n, len(w))
+	}
+	_ = b.Close(ctx)
+}
+
+func TestWriteTimeoutBoundsSetLevelAndClose(t *testing.T) {
+	t.Parallel()
+	_, fc, b := openFlaky(t, Options{WriteTimeout: 20 * time.Millisecond})
+	fc.set(func() { fc.blockNext = 2 })
+	start := time.Now()
+	if _, err := b.SetLevel(context.Background(), 5); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SetLevel: %v", err)
+	}
+	if err := b.Close(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close: %v", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("took %v", d)
+	}
+}
+
+func TestCloseAbortsStuckSetLevel(t *testing.T) {
+	t.Parallel()
+	// WriteTimeout is huge: only Close's cancel can release the stuck write.
+	f, fc, b := openFlaky(t, Options{WriteTimeout: time.Minute})
+	fc.set(func() { fc.blockNext = 1 })
+	errc := make(chan error, 1)
+	go func() { _, err := b.SetLevel(context.Background(), 5); errc <- err }()
+	waitFor(t, "SetLevel to block", func() bool {
+		fc.mu.Lock()
+		defer fc.mu.Unlock()
+		return fc.blockNext == 0
+	})
+	done := make(chan error, 1)
+	go func() { done <- b.Close(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close queued behind a stuck write")
+	}
+	select {
+	case err := <-errc:
+		if err == nil {
+			t.Fatal("stuck SetLevel should fail")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SetLevel not released")
+	}
+	w := f.Writes(testAddr)
+	if !bytes.Equal(w[len(w)-1], lvl(t, 1)) {
+		t.Fatalf("Close did not send min level last: % x", w[len(w)-1])
 	}
 }

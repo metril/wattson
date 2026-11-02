@@ -23,6 +23,7 @@ var (
 const (
 	defaultKeepalive      = 200 * time.Millisecond
 	defaultControlTimeout = time.Second
+	defaultWriteTimeout   = 2 * time.Second
 	defaultMaxLevel       = 16 // S29M cap; also the FitPlus default (never above 32)
 	telemetryBuf          = 16
 	ftmsU8MaxLevel        = 25
@@ -39,6 +40,7 @@ type Options struct {
 	Keepalive      time.Duration    // FitPlus keepalive period; default 200ms
 	Now            func() time.Time // Telemetry.At clock; default time.Now
 	ControlTimeout time.Duration    // FTMS: wait for a control response to SetLevel; default 1s
+	WriteTimeout   time.Duration    // bound on every post-Open write; default 2s
 }
 
 // Bike is a live session with one bike. It is safe for concurrent use. It has
@@ -52,6 +54,7 @@ type Bike struct {
 	now   func() time.Time
 	ka    time.Duration
 	ctlTO time.Duration
+	wt    time.Duration
 
 	writeCh   blue.UUID
 	writeResp bool
@@ -72,7 +75,9 @@ type Bike struct {
 }
 
 // Open detects the protocol, subscribes, performs the init handshake and
-// starts the session goroutine. On error the caller still owns c. After a
+// starts the session goroutine. The FTMS Request Control result is not checked
+// (control responses are ignored at Open); a rejected SetLevel surfaces later.
+// On error the caller still owns c. After a
 // successful Open, Close releases c.
 func Open(ctx context.Context, c blue.Conn, o Options) (*Bike, error) {
 	proto := o.Protocol
@@ -109,6 +114,10 @@ func Open(ctx context.Context, c blue.Conn, o Options) (*Bike, error) {
 	}
 	if b.ctlTO <= 0 {
 		b.ctlTO = defaultControlTimeout
+	}
+	b.wt = o.WriteTimeout
+	if b.wt <= 0 {
+		b.wt = defaultWriteTimeout
 	}
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 
@@ -267,7 +276,9 @@ func (b *Bike) keepalive(i int) {
 	if b.closed || b.linkDown() {
 		return
 	}
-	_ = b.conn.Write(b.ctx, FitPlusWrite, FitPlusKeepalive(i), b.writeResp)
+	ctx, cancel := context.WithTimeout(b.ctx, b.wt)
+	defer cancel()
+	_ = b.conn.Write(ctx, FitPlusWrite, FitPlusKeepalive(i), b.writeResp)
 }
 
 func (b *Bike) linkDown() bool {
@@ -298,9 +309,13 @@ func (b *Bike) Telemetry() <-chan Telemetry { return b.tel }
 // SetLevel clamps level into [MinLevel, MaxLevel] (never below 1) and sends it
 // unless it equals the last level sent. It returns the clamped level.
 func (b *Bike) SetLevel(ctx context.Context, level int) (sent int, err error) {
+	// Abort promptly when Close cancels the session, even mid-write.
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	defer context.AfterFunc(b.ctx, stop)()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closed {
+	if b.closed || b.ctx.Err() != nil {
 		return 0, ErrClosed
 	}
 	if b.linkDown() {
@@ -316,7 +331,10 @@ func (b *Bike) SetLevel(ctx context.Context, level int) (sent int, err error) {
 	return level, nil
 }
 
-// sendLevel writes a clamped level; b.mu must be held.
+// sendLevel writes a clamped level; b.mu must be held. last is invalidated
+// before the write: on any failure the bike may or may not have applied the
+// frame, so the next request for any level must be sent. The write itself is
+// bounded by WriteTimeout.
 func (b *Bike) sendLevel(ctx context.Context, level int) error {
 	var frame []byte
 	var err error
@@ -333,12 +351,15 @@ func (b *Bike) sendLevel(ctx context.Context, level int) error {
 			<-b.ctl
 		}
 	}
-	if err := b.conn.Write(ctx, b.writeCh, frame, b.writeResp); err != nil {
+	b.last = 0
+	wctx, cancel := context.WithTimeout(ctx, b.wt)
+	err = b.conn.Write(wctx, b.writeCh, frame, b.writeResp)
+	cancel()
+	if err != nil {
 		return err
 	}
 	if b.proto == ProtoFTMS {
 		if err := b.awaitResponse(ctx); err != nil {
-			b.last = 0 // unknown state: allow a retry
 			return err
 		}
 	}
@@ -347,7 +368,9 @@ func (b *Bike) sendLevel(ctx context.Context, level int) error {
 }
 
 // awaitResponse waits up to ctlTO for the Set Target Resistance response. No
-// response is not an error; a non-success result is.
+// response is not an error; a non-success result is. Known limit: a response
+// arriving after the wait is discarded as stale by the next SetLevel, so a
+// late rejection goes unnoticed.
 func (b *Bike) awaitResponse(ctx context.Context) error {
 	timer := time.NewTimer(b.ctlTO)
 	defer timer.Stop()
@@ -375,6 +398,9 @@ func (b *Bike) awaitResponse(ctx context.Context) error {
 // session goroutine and closes the connection. It is idempotent. If the link
 // already dropped nothing is written and the result is nil.
 func (b *Bike) Close(ctx context.Context) error {
+	// Cancel first so a write stuck under mu (e.g. a dead link) is aborted
+	// instead of making Close queue behind it.
+	b.cancel()
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
@@ -386,7 +412,6 @@ func (b *Bike) Close(ctx context.Context) error {
 		werr = b.sendLevel(ctx, ClampLevel(b.min, b.min, b.max))
 	}
 	b.mu.Unlock()
-	b.cancel()
 	<-b.exited
 	return errors.Join(werr, b.conn.Close())
 }

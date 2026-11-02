@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"math"
 	"slices"
 	"testing"
@@ -120,7 +121,10 @@ func TestSampleNullRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	f := newRideFix(t)
-	r, _ := f.s.CreateRide(ctx, store.Ride{RiderID: f.a1.ID, Mode: "free", StartedAt: t0})
+	r, err := f.s.CreateRide(ctx, store.Ride{RiderID: f.a1.ID, Mode: "free", StartedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
 	in := store.Sample{Seq: 0, At: t0.Add(1234 * time.Millisecond), Level: 3, Lat: math.NaN(), Lon: 1.5, EleM: 20}
 	if err := f.s.AppendSamples(ctx, r.ID, []store.Sample{in}); err != nil {
 		t.Fatal(err)
@@ -176,8 +180,13 @@ func TestRideCascade(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	f := newRideFix(t)
-	r, _ := f.s.CreateRide(ctx, store.Ride{RiderID: f.a1.ID, RouteID: f.route.ID, RouteName: "Loop", Mode: "route", StartedAt: t0})
-	_ = f.s.AppendSamples(ctx, r.ID, mkSamples(0, 3))
+	r, err := f.s.CreateRide(ctx, store.Ride{RiderID: f.a1.ID, RouteID: f.route.ID, RouteName: "Loop", Mode: "route", StartedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.AppendSamples(ctx, r.ID, mkSamples(0, 3)); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.s.PutStravaLink(ctx, store.StravaLink{RiderID: f.a1.ID, ClientID: "x"}); err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +287,10 @@ func TestOpenAndUploadingRides(t *testing.T) {
 	ctx := t.Context()
 	f := newRideFix(t)
 	done := finished(t, ctx, f, f.a1.ID)
-	open, _ := f.s.CreateRide(ctx, store.Ride{RiderID: f.a2.ID, Mode: "free", StartedAt: t0})
+	open, err := f.s.CreateRide(ctx, store.Ride{RiderID: f.a2.ID, Mode: "free", StartedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
 	up := finished(t, ctx, f, f.b1.ID)
 	if ok, err := f.s.ClaimStravaUpload(ctx, up.ID, t0); !ok || err != nil {
 		t.Fatal(ok, err)
@@ -299,5 +311,35 @@ func TestOpenAndUploadingRides(t *testing.T) {
 	}
 	if got := ids(f.s.RidesUploading(ctx)); !slices.Equal(got, []int64{up.ID}) {
 		t.Errorf("uploading = %v (done=%d)", got, done.ID)
+	}
+}
+
+func TestFinishRideOnlyOnce(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	f := newRideFix(t)
+	r := finished(t, ctx, f, f.a1.ID)
+	if _, err := f.s.FinishRide(ctx, r.ID, t0.Add(time.Hour), store.Summary{DurationS: 999}, 5); !errors.Is(err, store.ErrAlreadyFinished) {
+		t.Fatalf("second finish err = %v", err)
+	}
+	got, _ := f.s.Ride(ctx, r.ID)
+	if got.Summary.DurationS != 60 || got.EndedAt == nil || !got.EndedAt.Equal(t0.Add(time.Minute)) {
+		t.Errorf("ride changed: %+v", got)
+	}
+	if _, err := f.s.FinishRide(ctx, 9999, t0, store.Summary{}, 0); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("missing ride err = %v", err)
+	}
+}
+
+func TestClaimStravaUploadNeedsFinished(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	f := newRideFix(t)
+	open, err := f.s.CreateRide(ctx, store.Ride{RiderID: f.a1.ID, Mode: "free", StartedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := f.s.ClaimStravaUpload(ctx, open.ID, t0); ok || err != nil {
+		t.Fatalf("claim open ride = %v, %v", ok, err)
 	}
 }

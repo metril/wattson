@@ -8,7 +8,8 @@ import (
 )
 
 // Downsample thins ss to at most max points by averaging buckets of
-// ceil(n/max) samples. Input within max is returned as a copy.
+// ceil(n/max) samples (ElapsedS and DistanceM are taken from each bucket's
+// last sample). Input within max is returned as a copy.
 func Downsample(ss []store.Sample, max int) []store.Sample {
 	if max < 1 || len(ss) <= max {
 		return slices.Clone(ss)
@@ -55,6 +56,9 @@ func bucket(b []store.Sample) store.Sample {
 		o.HRBpm = int(math.Round(hr / float64(hrN)))
 	}
 	o.Lat, o.Lon, o.EleM = lat.mean(), lon.mean(), ele.mean()
+	// Distance and time run to the bucket's end so the chart ends at the true end.
+	last := b[len(b)-1]
+	o.ElapsedS, o.DistanceM = last.ElapsedS, last.DistanceM
 	return o
 }
 

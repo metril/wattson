@@ -148,3 +148,16 @@ func TestDownsampleBucketMeans(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+func TestDownsampleEndsAtTrueEnd(t *testing.T) {
+	t.Parallel()
+	ss := ramp120()
+	got := history.Downsample(ss, 10)
+	if len(got) != 10 {
+		t.Fatalf("len = %d", len(got))
+	}
+	last := got[len(got)-1]
+	if last.DistanceM != 1200 || last.ElapsedS != 120 {
+		t.Errorf("last = dist %v elapsed %v, want 1200 / 120", last.DistanceM, last.ElapsedS)
+	}
+}

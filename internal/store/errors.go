@@ -21,3 +21,6 @@ var (
 
 // ErrLastRider is returned when deleting a user's only rider.
 var ErrLastRider = errors.New("store: cannot delete the last rider")
+
+// ErrAlreadyFinished is returned by FinishRide for a ride that already has an end time.
+var ErrAlreadyFinished = errors.New("store: ride already finished")

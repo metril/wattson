@@ -185,12 +185,13 @@ func nanIfNull(v sql.NullFloat64) float64 {
 	return v.Float64
 }
 
-// FinishRide closes the ride with its summary and sample count.
+// FinishRide closes an open ride with its summary and sample count.
+// ErrNotFound if absent, ErrAlreadyFinished if it already has an end time.
 func (s *Store) FinishRide(ctx context.Context, id int64, endedAt time.Time, sum Summary, n int) (Ride, error) {
 	res, err := s.Write.ExecContext(ctx,
 		`UPDATE rides SET ended_at=?, duration_s=?, elapsed_s=?, distance_m=?, ascent_m=?, avg_power_w=?,
 			max_power_w=?, np_w=?, kj=?, avg_cadence_rpm=?, avg_speed_kmh=?, max_speed_kmh=?,
-			avg_hr_bpm=?, max_hr_bpm=?, sample_count=? WHERE id=?`,
+			avg_hr_bpm=?, max_hr_bpm=?, sample_count=? WHERE id=? AND ended_at IS NULL`,
 		fmtTime(endedAt), sum.DurationS, sum.ElapsedS, sum.DistanceM, sum.AscentM, sum.AvgPowerW,
 		sum.MaxPowerW, sum.NPW, sum.KJ, sum.AvgCadenceRpm, sum.AvgSpeedKmh, sum.MaxSpeedKmh,
 		sum.AvgHRBpm, sum.MaxHRBpm, n, id)
@@ -198,7 +199,10 @@ func (s *Store) FinishRide(ctx context.Context, id int64, endedAt time.Time, sum
 		return Ride{}, fmt.Errorf("finish ride: %w", err)
 	}
 	if c, _ := res.RowsAffected(); c == 0 {
-		return Ride{}, ErrNotFound
+		if _, err := s.Ride(ctx, id); err != nil {
+			return Ride{}, err
+		}
+		return Ride{}, ErrAlreadyFinished
 	}
 	return s.Ride(ctx, id)
 }
@@ -281,12 +285,12 @@ func (s *Store) DeleteRide(ctx context.Context, id int64) error {
 	return nil
 }
 
-// ClaimStravaUpload atomically moves a ride from none|error to uploading
+// ClaimStravaUpload atomically moves a finished ride from none|error to uploading
 // (clearing the error and upload id). It reports whether this call won.
 func (s *Store) ClaimStravaUpload(ctx context.Context, id int64, now time.Time) (bool, error) {
 	res, err := s.Write.ExecContext(ctx,
 		`UPDATE rides SET strava_status='uploading', strava_error='', strava_upload_id=NULL,
-			strava_updated_at=? WHERE id=? AND strava_status IN ('none','error')`, fmtTime(now), id)
+			strava_updated_at=? WHERE id=? AND ended_at IS NOT NULL AND strava_status IN ('none','error')`, fmtTime(now), id)
 	if err != nil {
 		return false, fmt.Errorf("claim strava upload: %w", err)
 	}

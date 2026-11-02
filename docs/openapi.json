@@ -1501,6 +1501,11 @@
             "format": "date-time",
             "type": "string"
           },
+          "bias": {
+            "description": "Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode.",
+            "format": "int64",
+            "type": "integer"
+          },
           "cadence_rpm": {
             "description": "Pedalling cadence in revolutions per minute.",
             "format": "double",
@@ -1517,6 +1522,11 @@
           },
           "elapsed_s": {
             "description": "Riding time in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "grade_ahead_pct": {
+            "description": "Road grade at the lookahead point of the route, in percent; 0 when not riding a route.",
             "format": "double",
             "type": "number"
           },
@@ -1543,6 +1553,16 @@
             "description": "Resistance level (1 to 32) the bike last reported; 0 when unknown.",
             "format": "int64",
             "type": "integer"
+          },
+          "route_id": {
+            "description": "Identifier of the route being ridden; 0 when not riding a route.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "route_length_m": {
+            "description": "Length of the route being ridden, in metres; 0 when not riding a route.",
+            "format": "double",
+            "type": "number"
           },
           "speed_kmh": {
             "description": "Simulated speed in kilometres per hour.",
@@ -1574,7 +1594,11 @@
           "grade_pct",
           "level",
           "reported_level",
-          "connected"
+          "connected",
+          "route_id",
+          "route_length_m",
+          "grade_ahead_pct",
+          "bias"
         ],
         "type": "object"
       },

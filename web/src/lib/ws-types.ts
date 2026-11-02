@@ -17,6 +17,10 @@ export type Tick = {
   reported_level: number;
   connected: boolean;
   alert?: string;
+  route_id: number;
+  route_length_m: number;
+  grade_ahead_pct: number;
+  bias: number;
 };
 
 export type BikeStatus = components['schemas']['Status'];

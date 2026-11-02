@@ -9,13 +9,16 @@ type ModeInput struct {
 	SpeedMS, PowerW float64
 	Cadence         float64
 	Manual          int // the rider's manual level
+	Bias            int // live level bias (route mode), within ±MaxBias
 }
 
 // ModeOutput is the resistance level to request and the simulated grade
 // (a fraction) fed to the physics.
 type ModeOutput struct {
-	Level int
-	Grade float64
+	Level      int
+	Grade      float64 // under the rider, fraction
+	GradeAhead float64 // at the lookahead point, fraction (route mode)
+	Done       bool    // the ride is complete and should finish
 }
 
 // Mode decides resistance each tick.

@@ -45,6 +45,19 @@ const (
 type Command struct {
 	Kind  CmdKind
 	Value int
+	Mode  Mode // start only; nil keeps the current mode
+}
+
+// MaxBias bounds the live level bias in route mode.
+const MaxBias = 10
+
+// biasMode is a Mode whose level_delta adjusts a bias instead of the manual
+// level, and which rejects set_level.
+type biasMode interface{ UsesBias() bool }
+
+// routedMode is a Mode that follows a route of known length.
+type routedMode interface {
+	RouteInfo() (id int64, lengthM float64)
 }
 
 // Tick is one published snapshot of the ride. While paused, Level is the
@@ -63,6 +76,10 @@ type Tick struct {
 	ReportedLevel int       `json:"reported_level" doc:"Resistance level (1 to 32) the bike last reported; 0 when unknown."`
 	Connected     bool      `json:"connected" doc:"Whether the link to the bike is up right now."`
 	Alert         string    `json:"alert,omitempty" doc:"Warning for the rider, for example a stale reading; absent when none."`
+	RouteID       int64     `json:"route_id" doc:"Identifier of the route being ridden; 0 when not riding a route."`
+	RouteLengthM  float64   `json:"route_length_m" doc:"Length of the route being ridden, in metres; 0 when not riding a route."`
+	GradeAheadPct float64   `json:"grade_ahead_pct" doc:"Road grade at the lookahead point of the route, in percent; 0 when not riding a route."`
+	Bias          int       `json:"bias" doc:"Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode."`
 }
 
 type Config struct {
@@ -95,19 +112,21 @@ type Engine struct {
 	done chan struct{}
 
 	// Run-goroutine state.
-	state     State
-	manual    int
-	lastReq   int // last level handed to the driver; 0 = none/force resend
-	elapsed   time.Duration
-	distance  float64
-	speed     float64
-	grade     float64
-	lastTel   bike.Telemetry
-	telAt     time.Time
-	haveTel   bool
-	connected bool
-	alert     string
-	lastTick  time.Time
+	state      State
+	manual     int
+	lastReq    int // last level handed to the driver; 0 = none/force resend
+	elapsed    time.Duration
+	distance   float64
+	speed      float64
+	grade      float64
+	gradeAhead float64
+	bias       int
+	lastTel    bike.Telemetry
+	telAt      time.Time
+	haveTel    bool
+	connected  bool
+	alert      string
+	lastTick   time.Time
 
 	mu       sync.Mutex // guards snap, subs, closed, closeErr
 	closeErr error
@@ -243,6 +262,9 @@ func (e *Engine) Run(ctx context.Context) (err error) {
 			return ctx.Err()
 		case now := <-t.C:
 			e.tick(ctx, now)
+			if e.state == StateFinished {
+				return nil
+			}
 		case v, ok := <-tel:
 			if !ok {
 				tel = nil
@@ -293,7 +315,7 @@ func (e *Engine) floor(ctx context.Context) {
 // input builds the mode input; stale telemetry counts as no power or cadence.
 func (e *Engine) input(now time.Time) ModeInput {
 	in := ModeInput{
-		Elapsed: e.elapsed, DistanceM: e.distance, SpeedMS: e.speed, Manual: e.manual,
+		Elapsed: e.elapsed, DistanceM: e.distance, SpeedMS: e.speed, Manual: e.manual, Bias: e.bias,
 	}
 	if e.haveTel && now.Sub(e.telAt) <= staleAfter {
 		in.PowerW, in.Cadence = e.lastTel.PowerW, e.lastTel.Cadence
@@ -303,7 +325,33 @@ func (e *Engine) input(now time.Time) ModeInput {
 
 // apply requests the mode's level right now (used by commands).
 func (e *Engine) apply(ctx context.Context) {
-	e.send(ctx, e.mode.Step(e.input(time.Now())).Level)
+	out := e.mode.Step(e.input(time.Now()))
+	e.gradeAhead = out.GradeAhead
+	e.send(ctx, out.Level)
+}
+
+// routeLength is the length of the route being ridden, 0 outside route mode.
+func (e *Engine) routeLength() float64 {
+	if r, ok := e.mode.(routedMode); ok {
+		_, l := r.RouteInfo()
+		return l
+	}
+	return 0
+}
+
+func (e *Engine) usesBias() bool {
+	b, ok := e.mode.(biasMode)
+	return ok && b.UsesBias()
+}
+
+// finish ends the ride: bike to the floor, final finished tick published.
+func (e *Engine) finish(ctx context.Context) {
+	e.floor(ctx)
+	e.state = StateFinished
+	e.speed, e.grade, e.gradeAhead = 0, 0, 0
+	now := time.Now()
+	e.refresh(now)
+	e.publish()
 }
 
 func (e *Engine) tick(ctx context.Context, now time.Time) {
@@ -314,10 +362,18 @@ func (e *Engine) tick(ctx context.Context, now time.Time) {
 		e.elapsed += dt
 		in.Elapsed = e.elapsed
 		out := e.mode.Step(in)
-		e.grade = out.Grade
+		e.grade, e.gradeAhead = out.Grade, out.GradeAhead
 		e.speed = e.phys.Step(e.speed, in.PowerW, out.Grade, dt)
 		e.distance += e.speed * dt.Seconds()
+		l := e.routeLength()
+		if l > 0 && e.distance > l {
+			e.distance = l
+		}
 		e.send(ctx, out.Level)
+		if out.Done || (l > 0 && e.distance >= l) {
+			e.finish(ctx)
+			return
+		}
 	}
 	e.refresh(now)
 	e.publish()
@@ -353,7 +409,7 @@ func (e *Engine) event(ctx context.Context, v bike.Event) {
 
 func (e *Engine) pause(ctx context.Context) {
 	e.state = StatePaused
-	e.speed, e.grade = 0, 0
+	e.speed, e.grade, e.gradeAhead = 0, 0, 0
 	e.floor(ctx)
 }
 
@@ -365,6 +421,10 @@ func (e *Engine) command(ctx context.Context, c Command) error {
 	case CmdStart:
 		if e.state != StateReady {
 			return ErrBadState
+		}
+		if c.Mode != nil {
+			e.mode = c.Mode
+			e.bias, e.gradeAhead = 0, 0
 		}
 		lo, hi := e.caps()
 		e.manual = clampInt(e.manual, lo, hi)
@@ -386,18 +446,19 @@ func (e *Engine) command(ctx context.Context, c Command) error {
 		e.lastTick = time.Now()
 		e.apply(ctx)
 	case CmdStop:
-		e.floor(ctx)
-		e.state = StateFinished
-		e.speed, e.grade = 0, 0
-		now := time.Now()
-		e.refresh(now)
-		e.publish()
+		e.finish(ctx)
 		return nil
 	case CmdSetLevel, CmdLevelDelta:
 		lo, hi := e.caps()
-		if c.Kind == CmdSetLevel {
+		switch {
+		case e.usesBias():
+			if c.Kind == CmdSetLevel {
+				return ErrBadState
+			}
+			e.bias = clampInt(e.bias+c.Value, -MaxBias, MaxBias)
+		case c.Kind == CmdSetLevel:
 			e.manual = clampInt(c.Value, lo, hi)
-		} else {
+		default:
 			e.manual = clampInt(e.manual+c.Value, lo, hi)
 		}
 		if e.state == StateRiding {
@@ -418,6 +479,10 @@ func (e *Engine) build(now time.Time) Tick {
 		SpeedKmh: e.speed * 3.6, GradePct: e.grade * 100,
 		Level: e.manual, ReportedLevel: e.lastTel.Level,
 		Connected: e.connected, Alert: e.alert,
+		GradeAheadPct: e.gradeAhead * 100, Bias: e.bias,
+	}
+	if r, ok := e.mode.(routedMode); ok {
+		tk.RouteID, tk.RouteLengthM = r.RouteInfo()
 	}
 	if e.lastReq > 0 {
 		tk.Level = e.lastReq

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
+	"github.com/metril/wattson/internal/route"
 )
 
 type fakeDriver struct {
@@ -595,4 +597,235 @@ func TestFinalTickOnCancel(t *testing.T) {
 			t.Fatalf("snapshot %+v", snap)
 		}
 	})
+}
+
+func newRouteEngine(f *fakeDriver) *Engine {
+	return New(Config{Driver: f, StartLevel: 8})
+}
+
+func startRoute(t *testing.T, e *Engine, l float64) {
+	t.Helper()
+	if err := e.Do(context.Background(), Command{Kind: CmdStart, Mode: newTestRoute(l)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStartWithRouteMode(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := newRouteEngine(f)
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		startRoute(t, e, 2000)
+		tk := lastTick(t, advance(time.Second, sub))
+		if tk.Mode != "route" || tk.RouteID != 7 || tk.RouteLengthM != 2000 {
+			t.Fatalf("tick %+v", tk)
+		}
+	})
+}
+
+func TestLevelDeltaIsBiasInRouteMode(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := newRouteEngine(f)
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		startRoute(t, e, 2000)
+		if err := do(t, e, "level_delta", 1); err != nil {
+			t.Fatal(err)
+		}
+		tk := lastTick(t, advance(3*time.Second, sub))
+		if tk.Bias != 1 || tk.Level != 6 {
+			t.Fatalf("tick %+v", tk)
+		}
+		if err := do(t, e, "set_level", 3); !errors.Is(err, ErrBadState) {
+			t.Fatalf("set_level err %v", err)
+		}
+	})
+}
+
+func TestBiasClamped(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := newRouteEngine(f)
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		startRoute(t, e, 2000)
+		for range 15 {
+			if err := do(t, e, "level_delta", 1); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := e.Snapshot().Bias; got != MaxBias {
+			t.Fatalf("bias %d", got)
+		}
+	})
+}
+
+func TestBiasNeverBelowFloor(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := newRouteEngine(f)
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		m := NewRouteMode(RouteConfig{
+			ID: 1, Course: fakeCourse{L: 2000},
+			Mapper:   Mapper{Gain: 1, Offset: 2, DownhillScale: 0.5, Min: 1, Max: 16},
+			Smoother: DefaultSmoother(1, 16), LeadS: 4,
+		})
+		if err := e.Do(context.Background(), Command{Kind: CmdStart, Mode: m}); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if err := do(t, e, "level_delta", -10); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tk := lastTick(t, advance(5*time.Second, sub))
+		if tk.Bias != -MaxBias {
+			t.Fatalf("tick %+v", tk)
+		}
+		for _, c := range f.Calls() {
+			if c < 1 {
+				t.Fatalf("calls %v", f.Calls())
+			}
+		}
+	})
+}
+
+func TestRouteFinishes(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := newRouteEngine(f)
+		sub, cancelSub := e.Subscribe(256)
+		defer cancelSub()
+		res, _ := start(t, e)
+		f.connect()
+		synctest.Wait()
+		startRoute(t, e, 100)
+		var fin *Tick
+		for i := 0; i < 60 && fin == nil; i++ {
+			f.tel <- bike.Telemetry{PowerW: 200, Cadence: 80, At: time.Now()}
+			for _, tk := range advance(time.Second, sub) {
+				if tk.State == StateFinished && fin == nil {
+					tk := tk
+					fin = &tk
+				}
+			}
+		}
+		if fin == nil || fin.DistanceM != 100 {
+			t.Fatalf("finished tick %+v", fin)
+		}
+		if c := f.Calls(); c[len(c)-1] != 1 {
+			t.Fatalf("calls %v", c)
+		}
+		if err := <-res; err != nil {
+			t.Fatalf("Run = %v", err)
+		}
+	})
+}
+
+func TestFreeModeTickHasNoRoute(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := New(Config{Driver: f, StartLevel: 8})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		tk := lastTick(t, advance(2*time.Second, sub))
+		if tk.RouteID != 0 || tk.Bias != 0 || tk.RouteLengthM != 0 || tk.GradeAheadPct != 0 {
+			t.Fatalf("tick %+v", tk)
+		}
+	})
+}
+
+func TestRouteRideLevelRisesBeforeClimb(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		prof, err := route.Process(route.Synthetic([]route.Segment{{LengthM: 1000, GradePct: 0}, {LengthM: 1000, GradePct: 6}}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := bike.NewSupervisor(sim.Dial(sim.Config{Cadence: sim.Const(85)}), bike.SupervisorOptions{})
+		e := New(Config{Driver: d, StartLevel: 8})
+		sub, cancelSub := e.Subscribe(4096)
+		defer cancelSub()
+		res, _ := start(t, e)
+		time.Sleep(time.Second)
+		synctest.Wait()
+		m := NewRouteMode(RouteConfig{
+			ID: 1, Course: prof, Mapper: Mapper{Gain: 1, Offset: 5, DownhillScale: 0.5, Min: 1, Max: 16},
+			Smoother: DefaultSmoother(1, 16), LeadS: 4,
+		})
+		if err := e.Do(context.Background(), Command{Kind: CmdStart, Mode: m}); err != nil {
+			t.Fatal(err)
+		}
+		var all []Tick
+		for i := 0; i < 2000 && (len(all) == 0 || all[len(all)-1].State != StateFinished); i++ {
+			all = append(all, advance(10*time.Second, sub)...)
+		}
+		var firstUp, speed900 float64
+		firstUp, speed900 = -1, -1
+		sawEleven := false
+		for _, tk := range all {
+			if firstUp < 0 && tk.State == StateRiding && tk.Level >= 6 {
+				firstUp = tk.DistanceM
+			}
+			if speed900 < 0 && tk.DistanceM >= 900 {
+				speed900 = tk.SpeedKmh
+			}
+			if tk.DistanceM >= 1300 && tk.Level == 11 && speed900 > 0 && tk.SpeedKmh < speed900 {
+				sawEleven = true
+			}
+		}
+		if firstUp < 850 || firstUp >= 1000 {
+			t.Errorf("level first rose at %.0f m", firstUp)
+		}
+		if !sawEleven {
+			t.Error("never level 11 and slower beyond 1300 m")
+		}
+		last := all[len(all)-1]
+		if last.State != StateFinished || last.DistanceM != last.RouteLengthM || math.Abs(last.DistanceM-2000) > 0.01 {
+			t.Errorf("last %+v", last)
+		}
+		if err := <-res; err != nil {
+			t.Errorf("Run = %v", err)
+		}
+	})
+}
+
+func BenchmarkTickRoute(b *testing.B) {
+	f := newFake()
+	e := New(Config{Driver: f, StartLevel: 8, Mode: newTestRoute(1e9)})
+	e.state = "riding"
+	e.speed = 9
+	ctx := context.Background()
+	now := time.Now()
+	b.ReportAllocs()
+	for b.Loop() {
+		now = now.Add(time.Second)
+		e.tick(ctx, now)
+	}
 }

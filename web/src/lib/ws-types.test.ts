@@ -22,6 +22,10 @@ const sampleTick: Required<Tick> = {
   reported_level: 0,
   connected: false,
   alert: '',
+  route_id: 0,
+  route_length_m: 0,
+  grade_ahead_pct: 0,
+  bias: 0,
 };
 const sampleStatus: Required<BikeStatus> = {
   connected: false,

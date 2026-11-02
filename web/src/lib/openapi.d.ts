@@ -1356,6 +1356,11 @@ export interface components {
              */
             at: string;
             /**
+             * Format: int64
+             * @description Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode.
+             */
+            bias: number;
+            /**
              * Format: double
              * @description Pedalling cadence in revolutions per minute.
              */
@@ -1372,6 +1377,11 @@ export interface components {
              * @description Riding time in seconds.
              */
             elapsed_s: number;
+            /**
+             * Format: double
+             * @description Road grade at the lookahead point of the route, in percent; 0 when not riding a route.
+             */
+            grade_ahead_pct: number;
             /**
              * Format: double
              * @description Road grade of the current mode, in percent.
@@ -1394,6 +1404,16 @@ export interface components {
              * @description Resistance level (1 to 32) the bike last reported; 0 when unknown.
              */
             reported_level: number;
+            /**
+             * Format: int64
+             * @description Identifier of the route being ridden; 0 when not riding a route.
+             */
+            route_id: number;
+            /**
+             * Format: double
+             * @description Length of the route being ridden, in metres; 0 when not riding a route.
+             */
+            route_length_m: number;
             /**
              * Format: double
              * @description Simulated speed in kilometres per hour.

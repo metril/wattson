@@ -6,6 +6,9 @@ import { Card } from '@/components/Card';
 import { RequireAuth, ME_KEY } from '@/lib/auth';
 import { getKioskToken, setKioskToken, setUnauthorizedHandler } from '@/lib/api';
 import { KioskPage } from '@/pages/Kiosk';
+import { LoginPage } from '@/pages/Login';
+import { SetupPage } from '@/pages/Setup';
+import { RidersPage } from '@/pages/Riders';
 import { TokensPage } from '@/pages/settings/Tokens';
 import { SettingsLayout } from '@/pages/settings/SettingsLayout';
 import { GeneralForm } from '@/pages/settings/General';
@@ -18,15 +21,6 @@ import { UsersPage } from '@/pages/settings/Users';
 function Page({ title }: { title: string }) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <h1 className="numeral text-2xl">{title}</h1>
-      <Card className="text-dim">Coming soon.</Card>
-    </div>
-  );
-}
-
-function Standalone({ title }: { title: string }) {
-  return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-4">
       <h1 className="numeral text-2xl">{title}</h1>
       <Card className="text-dim">Coming soon.</Card>
     </div>
@@ -54,8 +48,8 @@ export function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={<Standalone title="Sign in" />} />
-      <Route path="/setup" element={<Standalone title="Set up Wattson" />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/setup" element={<SetupPage />} />
       <Route path="/kiosk" element={<KioskPage />} />
       <Route
         element={
@@ -65,7 +59,7 @@ export function AppRoutes() {
         }
       >
         <Route index element={<Page title="Ride" />} />
-        <Route path="riders" element={<Page title="Riders" />} />
+        <Route path="riders" element={<RidersPage />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings"

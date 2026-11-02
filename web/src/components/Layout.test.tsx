@@ -19,6 +19,7 @@ function stub(logout: () => Response | Promise<Response>) {
       const path = new URL(req.url).pathname;
       if (path === '/api/auth/providers') return json(200, { needs_setup: false, local_login: true, providers: [] });
       if (path === '/api/auth/me') return json(200, { user, scopes: ['read'], via: 'session' });
+      if (path === '/api/riders') return json(200, []);
       if (path === '/api/auth/logout') return logout();
       return json(404, { error: { code: 'not_found', message: 'x' } });
     }),

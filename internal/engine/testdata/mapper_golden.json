@@ -1,0 +1,17 @@
+[
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": 0, "bias": 0, "want": 5},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": 6, "bias": 0, "want": 11},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": -4, "bias": 0, "want": 3},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": 25, "bias": 0, "want": 16},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": -20, "bias": 0, "want": 1},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": 3, "bias": 2, "want": 10},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": 4, "bias": -3, "want": 6},
+  {"gain": 1, "offset": 5, "downhill_scale": 0.5, "min": 1, "max": 16, "grade_pct": 0, "bias": 2.5, "want": 7.5},
+  {"gain": 1, "offset": 1, "downhill_scale": 0.5, "min": 0, "max": 16, "grade_pct": -30, "bias": -10, "want": 1},
+  {"gain": 0.6, "offset": 3, "downhill_scale": 0.25, "min": 1, "max": 20, "grade_pct": 10, "bias": 0, "want": 9},
+  {"gain": 0.6, "offset": 3, "downhill_scale": 0.25, "min": 1, "max": 20, "grade_pct": -8, "bias": 0, "want": 1.8},
+  {"gain": 0.6, "offset": 3, "downhill_scale": 0.25, "min": 1, "max": 20, "grade_pct": 7.5, "bias": 0.5, "want": 8},
+  {"gain": 2, "offset": 4, "downhill_scale": 1, "min": 3, "max": 10, "grade_pct": -5, "bias": 0, "want": 3},
+  {"gain": 2, "offset": 4, "downhill_scale": 1, "min": 3, "max": 10, "grade_pct": 5, "bias": 0, "want": 10},
+  {"gain": 1, "offset": 6, "downhill_scale": 0, "min": 1, "max": 16, "grade_pct": -10, "bias": 0, "want": 6}
+]

@@ -74,3 +74,52 @@ func TestRouteModeInfo(t *testing.T) {
 		t.Fatalf("%s %v %d %v", m.Name(), m.UsesBias(), id, l)
 	}
 }
+
+// varCourse has a settable constant grade.
+type varCourse struct{ g *float64 }
+
+func (c varCourse) Length() float64         { return 2000 }
+func (c varCourse) GradeAt(float64) float64 { return *c.g }
+
+func TestRouteModeBiasNudgesImmediately(t *testing.T) {
+	t.Parallel()
+	g := 0.0
+	m := NewRouteMode(RouteConfig{
+		Course: varCourse{&g}, Mapper: Mapper{Gain: 1, Offset: 5, DownhillScale: 0.5, Min: 1, Max: 16},
+		Smoother: DefaultSmoother(1, 16), LeadS: 4,
+	})
+	step := func(el time.Duration, bias int) int {
+		return m.Step(ModeInput{DistanceM: 10, Elapsed: el, Bias: bias}).Level
+	}
+	if got := step(0, 0); got != 5 {
+		t.Fatalf("prime %d", got)
+	}
+	g = 0.02 // target 7, a grade-driven change after the dwell
+	if got := step(10*time.Second, 0); got != 7 {
+		t.Fatalf("grade change %d", got)
+	}
+	// Half a second later, well inside the dwell: the bias press still lands.
+	if got := step(10500*time.Millisecond, 1); got != 8 {
+		t.Fatalf("bias inside dwell %d", got)
+	}
+	if got := step(10600*time.Millisecond, -1); got != 6 {
+		t.Fatalf("bias back %d", got)
+	}
+}
+
+func TestRouteModeBiasBeatsHysteresis(t *testing.T) {
+	t.Parallel()
+	g := 0.0
+	m := NewRouteMode(RouteConfig{
+		Course: varCourse{&g}, Mapper: Mapper{Gain: 1, Offset: 6, DownhillScale: 0.5, Min: 1, Max: 16},
+		Smoother: DefaultSmoother(1, 16), LeadS: 4,
+	})
+	m.Step(ModeInput{DistanceM: 10}) // primed at 6
+	g = -0.012                       // target 5.4: held at 6 by the dead band
+	if got := m.Step(ModeInput{DistanceM: 10, Elapsed: 10 * time.Second}).Level; got != 6 {
+		t.Fatalf("held %d", got)
+	}
+	if got := m.Step(ModeInput{DistanceM: 10, Elapsed: 10 * time.Second, Bias: 1}).Level; got != 7 {
+		t.Fatalf("bias %d", got)
+	}
+}

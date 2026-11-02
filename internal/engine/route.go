@@ -25,6 +25,7 @@ type RouteMode struct {
 	mapper   Mapper
 	smoother Smoother
 	leadS    float64
+	lastBias int
 }
 
 func NewRouteMode(c RouteConfig) *RouteMode {
@@ -45,6 +46,12 @@ func (m *RouteMode) RouteInfo() (id int64, lengthM float64) { return m.id, m.cou
 // the current one: the smoother moves at most MaxStep levels per MinDwell, so
 // jumps of more than about six levels cannot complete within a 4 s lead.
 func (m *RouteMode) Step(in ModeInput) ModeOutput {
+	if in.Bias != m.lastBias {
+		// A bias press moves the held level at once, bypassing dwell and
+		// the dead band, so the rider feels it immediately.
+		m.smoother.Nudge(in.Bias-m.lastBias, in.Elapsed)
+		m.lastBias = in.Bias
+	}
 	l := m.course.Length()
 	d := math.Min(in.DistanceM, l)
 	ahead := m.course.GradeAt(math.Min(d+in.SpeedMS*m.leadS, l))

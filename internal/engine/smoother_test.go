@@ -103,3 +103,27 @@ func FuzzSmootherBounds(f *testing.F) {
 		}
 	})
 }
+
+func TestSmootherNudge(t *testing.T) {
+	t.Parallel()
+	s := DefaultSmoother(1, 16)
+	s.Nudge(1, 0) // before priming: no-op
+	if got := s.Step(5, 0); got != 5 {
+		t.Fatalf("prime %d", got)
+	}
+	s.Nudge(5, time.Second) // limited to MaxStep
+	if s.cur != 7 {
+		t.Fatalf("cur %d", s.cur)
+	}
+	s.Nudge(-20, time.Second)
+	s.Nudge(-20, time.Second)
+	if s.cur != 3 {
+		t.Fatalf("cur %d", s.cur)
+	}
+	s = DefaultSmoother(1, 16)
+	s.Step(1, 0)
+	s.Nudge(-2, 0)
+	if s.cur != 1 {
+		t.Fatalf("floor %d", s.cur)
+	}
+}

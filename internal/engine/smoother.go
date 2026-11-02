@@ -58,6 +58,22 @@ func (s *Smoother) Step(target float64, now time.Duration) int {
 	return s.cur
 }
 
+// Nudge shifts the held level by delta (limited to ±MaxStep) at once, for a
+// live bias change, and restarts the dwell. It is a no-op before the first Step.
+func (s *Smoother) Nudge(delta int, now time.Duration) {
+	if !s.primed || delta == 0 {
+		return
+	}
+	if s.MaxStep > 0 {
+		delta = clampInt(delta, -s.MaxStep, s.MaxStep)
+	}
+	lo, hi := s.bounds()
+	if next := clampInt(s.cur+delta, lo, hi); next != s.cur {
+		s.cur = next
+		s.last = now
+	}
+}
+
 // roundInt rounds half away from zero, saturating for huge or infinite values.
 func roundInt(v float64) int {
 	return int(math.Max(-1e9, math.Min(1e9, math.Round(v))))

@@ -369,11 +369,11 @@ func (e *Engine) tick(ctx context.Context, now time.Time) {
 		if l > 0 && e.distance > l {
 			e.distance = l
 		}
-		e.send(ctx, out.Level)
 		if out.Done || (l > 0 && e.distance >= l) {
 			e.finish(ctx)
 			return
 		}
+		e.send(ctx, out.Level)
 	}
 	e.refresh(now)
 	e.publish()

@@ -61,6 +61,10 @@ export const tickFixture = (over: Partial<Tick> = {}): Tick => ({
   level: 5,
   reported_level: 0,
   connected: true,
+  route_id: 0,
+  route_length_m: 0,
+  grade_ahead_pct: 0,
+  bias: 0,
   ...over,
 });
 

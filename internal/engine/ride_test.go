@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -641,8 +640,18 @@ func TestLevelDeltaIsBiasInRouteMode(t *testing.T) {
 		f.connect()
 		synctest.Wait()
 		startRoute(t, e, 2000)
+		synctest.Wait()
+		if got := f.Calls(); !slices.Equal(got, []int{5}) {
+			t.Fatalf("calls %v", got)
+		}
+		t0 := time.Now()
 		if err := do(t, e, "level_delta", 1); err != nil {
 			t.Fatal(err)
+		}
+		synctest.Wait()
+		// Reaches the driver at once, inside the smoother's 2 s dwell.
+		if got := f.Calls(); !slices.Equal(got, []int{5, 6}) || time.Since(t0) != 0 {
+			t.Fatalf("calls %v after %v", got, time.Since(t0))
 		}
 		tk := lastTick(t, advance(3*time.Second, sub))
 		if tk.Bias != 1 || tk.Level != 6 {
@@ -650,6 +659,43 @@ func TestLevelDeltaIsBiasInRouteMode(t *testing.T) {
 		}
 		if err := do(t, e, "set_level", 3); !errors.Is(err, ErrBadState) {
 			t.Fatalf("set_level err %v", err)
+		}
+	})
+}
+
+// A mode's Done alone (no route length) finishes the ride like stop.
+type doneMode struct{ at time.Duration }
+
+func (doneMode) Name() string { return "done" }
+func (m doneMode) Step(in ModeInput) ModeOutput {
+	return ModeOutput{Level: 9, Done: in.Elapsed >= m.at}
+}
+
+func TestModeDoneFinishesRide(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := New(Config{Driver: f})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		res, _ := start(t, e)
+		f.connect()
+		synctest.Wait()
+		if err := e.Do(context.Background(), Command{Kind: CmdStart, Mode: doneMode{at: 3 * time.Second}}); err != nil {
+			t.Fatal(err)
+		}
+		var fin bool
+		for _, tk := range advance(10*time.Second, sub) {
+			fin = fin || tk.State == StateFinished
+		}
+		if !fin {
+			t.Fatal("no finished tick")
+		}
+		if c := f.Calls(); c[len(c)-1] != 1 {
+			t.Fatalf("calls %v", c)
+		}
+		if err := <-res; err != nil {
+			t.Fatalf("Run = %v", err)
 		}
 	})
 }
@@ -807,7 +853,7 @@ func TestRouteRideLevelRisesBeforeClimb(t *testing.T) {
 			t.Error("never level 11 and slower beyond 1300 m")
 		}
 		last := all[len(all)-1]
-		if last.State != StateFinished || last.DistanceM != last.RouteLengthM || math.Abs(last.DistanceM-2000) > 0.01 {
+		if last.State != StateFinished || last.DistanceM != 2000 || last.RouteLengthM != 2000 {
 			t.Errorf("last %+v", last)
 		}
 		if err := <-res; err != nil {

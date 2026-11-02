@@ -102,7 +102,7 @@ func parseBPM(state string) (int, bool) {
 }
 
 // attempt makes one connection and holds it until it drops. got reports whether
-// at least one reading arrived.
+// the attempt authenticated and subscribed (which resets the backoff).
 func (m *HAMonitor) attempt(ctx context.Context) (got bool, err error) {
 	cl, err := m.c.Dial(ctx)
 	if err != nil {
@@ -111,7 +111,7 @@ func (m *HAMonitor) attempt(ctx context.Context) (got bool, err error) {
 	defer cl.Close()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var gotAny, seen atomic.Bool
+	var seen atomic.Bool
 	err = cl.SubscribeEntities(sctx, []string{m.c.Entity}, func(s hass.State) {
 		if s.EntityID != m.c.Entity {
 			return
@@ -119,7 +119,6 @@ func (m *HAMonitor) attempt(ctx context.Context) (got bool, err error) {
 		seen.Store(true)
 		if b, ok := parseBPM(s.State); ok {
 			m.last.Store(&hrSample{bpm: b, at: time.Now()})
-			gotAny.Store(true)
 		}
 	})
 	if err != nil {
@@ -131,10 +130,12 @@ func (m *HAMonitor) attempt(ctx context.Context) (got bool, err error) {
 		return false, fmt.Errorf("entity %s not found", m.c.Entity)
 	}
 	m.set(func() { m.connected, m.errText = true, "" })
+	// A completed auth and subscription is a healthy attempt even while the
+	// entity reads unavailable: it resets the backoff.
 	select {
 	case <-ctx.Done():
-		return gotAny.Load(), nil
+		return true, nil
 	case <-cl.Done():
-		return gotAny.Load(), cl.Err()
+		return true, cl.Err()
 	}
 }

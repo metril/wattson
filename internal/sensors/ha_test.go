@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,14 +15,22 @@ import (
 const haTok = "tok"
 
 func haMonitor(s *hasstest.Server, token string) *HAMonitor {
+	m, _ := haMonitorCount(s, token)
+	return m
+}
+
+// haMonitorCount also returns the number of Dial attempts made so far.
+func haMonitorCount(s *hasstest.Server, token string) (*HAMonitor, *atomic.Int32) {
+	var dials atomic.Int32
 	return NewHA(HAConfig{
 		Dial: func(ctx context.Context) (*hass.Client, error) {
+			dials.Add(1)
 			return hass.Dial(ctx, s.URL(), token, hass.Options{PingInterval: time.Second})
 		},
 		Entity:     "sensor.hr",
 		BackoffMin: 20 * time.Millisecond,
 		BackoffMax: 40 * time.Millisecond,
-	})
+	}), &dials
 }
 
 func waitFor(t *testing.T, what string, ok func() bool) {
@@ -100,18 +109,16 @@ func TestHAHRBadToken(t *testing.T) {
 	t.Parallel()
 	s := hasstest.Start(t, haTok)
 	s.SetState("sensor.hr", "64", nil)
-	m := haMonitor(s, "wrong")
+	m, dials := haMonitorCount(s, "wrong")
 	stop := runMonitor(t, m)
 	defer stop()
 	waitFor(t, "token error", func() bool { return strings.Contains(m.Status().Error, "token") })
-	if st := m.Status(); st.Connected || strings.Contains(st.Error, "wrong") {
+	waitFor(t, "retries", func() bool { return dials.Load() >= 3 })
+	if st := m.Status(); st.Connected || st.BPM != 0 || !strings.Contains(st.Error, "token") || strings.Contains(st.Error, "wrong") {
 		t.Fatalf("status %+v", st)
 	}
-	// it keeps retrying
-	waitFor(t, "retry", func() bool { return s.Auths() == 0 && m.Status().Error != "" })
-	time.Sleep(60 * time.Millisecond)
-	if m.Status().Error == "" {
-		t.Fatal("error cleared")
+	if s.Auths() != 0 {
+		t.Fatalf("auths %d", s.Auths())
 	}
 }
 

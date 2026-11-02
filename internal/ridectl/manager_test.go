@@ -759,3 +759,31 @@ func TestStartRouteUsesRiderMapper(t *testing.T) {
 		}
 	})
 }
+
+func TestStartRouteReleasedDuringLoad(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		rec := &simRec{}
+		var m *Manager
+		p := testRoute(t)
+		m = newMgr(rec, 20*time.Millisecond, nil, Deps{LoadRoute: func(ctx context.Context, id int64) (*route.Profile, error) {
+			// bike released and reconnected (new connection) while the route loads
+			if err := m.Release(ctx); err != nil {
+				t.Error(err)
+			}
+			if _, err := m.Connect(ctx, routeRider); err != nil {
+				t.Error(err)
+			}
+			waitState(t, m, "ready")
+			return p, nil
+		}})
+		defer m.Close(context.Background())
+		if _, err := m.Connect(t.Context(), routeRider); err != nil {
+			t.Fatal(err)
+		}
+		waitState(t, m, "ready")
+		if err := m.StartRoute(t.Context(), 3); !errors.Is(err, ErrNoBike) {
+			t.Fatalf("StartRoute = %v, want ErrNoBike", err)
+		}
+	})
+}

@@ -297,7 +297,16 @@ func (m *Manager) StartRoute(ctx context.Context, routeID int64) error {
 	if err != nil {
 		return err
 	}
-	return m.Do(ctx, engine.Command{Kind: engine.CmdStart, Mode: engine.NewRouteMode(engine.RouteConfig{
+	// The bike may have been released (or swapped for a new connection with a
+	// possibly different rider) while the route loaded.
+	m.mu.Lock()
+	if m.cur != c || c.eng != eng || c.releasing {
+		m.mu.Unlock()
+		return ErrNoBike
+	}
+	c.lastActive = time.Now()
+	m.mu.Unlock()
+	return eng.Do(ctx, engine.Command{Kind: engine.CmdStart, Mode: engine.NewRouteMode(engine.RouteConfig{
 		ID:       routeID,
 		Course:   p,
 		Mapper:   engine.Mapper{Gain: r.Gain, Offset: r.OffsetLevel, DownhillScale: r.DownhillScale, Min: r.MinLevel, Max: r.MaxLevel},
@@ -316,7 +325,11 @@ func StoreRoutes(st *store.Store) func(context.Context, int64) (*route.Profile, 
 		if err != nil {
 			return nil, err
 		}
-		return route.Decode(r.Points)
+		p, err := route.Decode(r.Points)
+		if err != nil {
+			return nil, fmt.Errorf("decode route %d: %w", id, err)
+		}
+		return p, nil
 	}
 }
 

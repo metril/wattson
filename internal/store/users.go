@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -24,16 +23,18 @@ type User struct {
 	CreatedAt    time.Time
 }
 
-const userCols = `id, username, COALESCE(email,''), display_name, COALESCE(password_hash,''),
-	COALESCE(iss,''), COALESCE(sub,''), is_admin, is_bootstrap, disabled, created_at`
+var userCols = userColumns("")
 
-// userColsU is userCols qualified for joins against users aliased as u.
-var userColsU = strings.NewReplacer(
-	"id,", "u.id,", "username,", "u.username,", "COALESCE(email", "COALESCE(u.email",
-	"display_name,", "u.display_name,", "COALESCE(password_hash", "COALESCE(u.password_hash",
-	"COALESCE(iss", "COALESCE(u.iss", "COALESCE(sub", "COALESCE(u.sub",
-	"is_admin,", "u.is_admin,", "is_bootstrap,", "u.is_bootstrap,", "disabled,", "u.disabled,",
-	"created_at", "u.created_at").Replace(userCols)
+// userColumns returns the users column list qualified by alias (empty for
+// none), for joins that select users columns.
+func userColumns(alias string) string {
+	if alias != "" {
+		alias += "."
+	}
+	return alias + "id, " + alias + "username, COALESCE(" + alias + "email,''), " + alias + "display_name, " +
+		"COALESCE(" + alias + "password_hash,''), COALESCE(" + alias + "iss,''), COALESCE(" + alias + "sub,''), " +
+		alias + "is_admin, " + alias + "is_bootstrap, " + alias + "disabled, " + alias + "created_at"
+}
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -79,6 +80,9 @@ type execer interface {
 }
 
 func insertUser(ctx context.Context, x execer, u User) (User, error) {
+	if (u.Iss == "") != (u.Sub == "") {
+		return User{}, ErrIssSubMismatch
+	}
 	now := time.Now().UTC()
 	res, err := x.ExecContext(ctx,
 		`INSERT INTO users(username, email, display_name, password_hash, iss, sub,
@@ -130,7 +134,8 @@ func (s *Store) CreateBootstrapAdmin(ctx context.Context, username, displayName,
 }
 
 // CreateUser inserts u (ID and CreatedAt are assigned). ErrNameConflict on a
-// duplicate username (case-insensitive) or (iss, sub).
+// duplicate username (case-insensitive) or (iss, sub), ErrIssSubMismatch if
+// exactly one of Iss and Sub is set.
 func (s *Store) CreateUser(ctx context.Context, u User) (User, error) {
 	return insertUser(ctx, s.Write, u)
 }
@@ -256,8 +261,12 @@ func (s *Store) SetPassword(ctx context.Context, id int64, hash string) error {
 }
 
 // LinkOIDC attaches an OIDC identity to the user. ErrNotFound if no such
-// user, ErrNameConflict if the identity is already linked to someone.
+// user, ErrNameConflict if the identity is already linked to someone and
+// ErrIssSubMismatch unless iss and sub are both set or both empty (unlink).
 func (s *Store) LinkOIDC(ctx context.Context, id int64, iss, sub string) error {
+	if (iss == "") != (sub == "") {
+		return ErrIssSubMismatch
+	}
 	if err := s.execOne(ctx, `UPDATE users SET iss = ?, sub = ? WHERE id = ?`, nullStr(iss), nullStr(sub), id); err != nil {
 		return fmt.Errorf("link oidc: %w", err)
 	}

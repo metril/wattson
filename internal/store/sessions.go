@@ -25,7 +25,7 @@ func (s *Store) CreateSession(ctx context.Context, idHash string, userID int64, 
 // session is missing or expired (now >= expires) or the user is disabled.
 func (s *Store) SessionUser(ctx context.Context, idHash string, now time.Time) (User, error) {
 	u, err := scanUser(s.Read.QueryRowContext(ctx,
-		`SELECT `+userColsU+` FROM sessions s JOIN users u ON u.id = s.user_id
+		`SELECT `+userColumns("u")+` FROM sessions s JOIN users u ON u.id = s.user_id
 		 WHERE s.id_hash = ? AND s.expires_at > ? AND u.disabled = 0`, idHash, fmtTime(now)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound

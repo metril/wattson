@@ -107,22 +107,26 @@ func (s *Store) DeleteAPIToken(ctx context.Context, userID, id int64) error {
 	return nil
 }
 
+// prefixScanner scans extra leading columns before handing the rest to scanUser.
+type prefixScanner struct {
+	r   scanner
+	pre []any
+}
+
+func (p prefixScanner) Scan(dest ...any) error { return p.r.Scan(append(p.pre, dest...)...) }
+
 // TokenUser resolves a token hash to the token and its owner. ErrNotFound if
 // the hash is unknown or the owner is disabled.
 func (s *Store) TokenUser(ctx context.Context, hash string) (APIToken, User, error) {
 	row := s.Read.QueryRowContext(ctx,
 		`SELECT t.id, t.user_id, t.name, t.prefix, t.scopes, t.created_at, t.last_used_at,
-		        `+userColsU+`
+		        `+userColumns("u")+`
 		 FROM api_tokens t JOIN users u ON u.id = t.user_id
 		 WHERE t.hash = ? AND u.disabled = 0`, hash)
 	var t APIToken
 	var scopes, created string
 	var used sql.NullString
-	var u User
-	var ucreated string
-	err := row.Scan(&t.ID, &t.UserID, &t.Name, &t.Prefix, &scopes, &created, &used,
-		&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.PasswordHash,
-		&u.Iss, &u.Sub, &u.IsAdmin, &u.IsBootstrap, &u.Disabled, &ucreated)
+	u, err := scanUser(prefixScanner{row, []any{&t.ID, &t.UserID, &t.Name, &t.Prefix, &scopes, &created, &used}})
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIToken{}, User{}, ErrNotFound
 	}
@@ -131,9 +135,6 @@ func (s *Store) TokenUser(ctx context.Context, hash string) (APIToken, User, err
 	}
 	if err := t.parse(scopes, created, used); err != nil {
 		return APIToken{}, User{}, err
-	}
-	if u.CreatedAt, err = time.Parse(TimeFormat, ucreated); err != nil {
-		return APIToken{}, User{}, fmt.Errorf("parse created_at: %w", err)
 	}
 	return t, u, nil
 }

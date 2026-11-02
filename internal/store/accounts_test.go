@@ -388,3 +388,30 @@ func TestTokenUserAndTouch(t *testing.T) {
 		t.Fatalf("disabled owner: %v, want ErrNotFound", err)
 	}
 }
+
+func TestIssSubMustComeTogether(t *testing.T) {
+	t.Parallel()
+	s := storetest.New(t)
+	if _, err := s.CreateUser(ctx, store.User{Username: "a", Iss: "https://idp"}); !errors.Is(err, store.ErrIssSubMismatch) {
+		t.Fatalf("iss without sub: %v", err)
+	}
+	if _, err := s.CreateUser(ctx, store.User{Username: "b", Sub: "abc"}); !errors.Is(err, store.ErrIssSubMismatch) {
+		t.Fatalf("sub without iss: %v", err)
+	}
+	u := mustUser(t, s, store.User{Username: "c"})
+	if err := s.LinkOIDC(ctx, u.ID, "https://idp", ""); !errors.Is(err, store.ErrIssSubMismatch) {
+		t.Fatalf("LinkOIDC iss only: %v", err)
+	}
+	if err := s.LinkOIDC(ctx, u.ID, "", "abc"); !errors.Is(err, store.ErrIssSubMismatch) {
+		t.Fatalf("LinkOIDC sub only: %v", err)
+	}
+	if err := s.LinkOIDC(ctx, u.ID, "https://idp", "abc"); err != nil {
+		t.Fatalf("LinkOIDC both: %v", err)
+	}
+	if err := s.LinkOIDC(ctx, u.ID, "", ""); err != nil {
+		t.Fatalf("LinkOIDC unlink: %v", err)
+	}
+	if _, err := s.CreateUser(ctx, store.User{Username: "d", Iss: "https://idp", Sub: "x"}); err != nil {
+		t.Fatalf("both set: %v", err)
+	}
+}

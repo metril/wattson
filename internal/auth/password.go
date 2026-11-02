@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -26,7 +27,7 @@ const (
 
 	// Upper bounds on parameters accepted when verifying, so a corrupt or
 	// hostile stored hash cannot request gigabytes of memory.
-	maxMemKiB  = 256 * 1024
+	maxMemKiB  = 64 * 1024
 	maxTime    = 16
 	maxThreads = 16
 )
@@ -43,29 +44,49 @@ var (
 
 // HashPassword returns a PHC-format argon2id hash of pw with a random salt:
 // $argon2id$v=19$m=12288,t=3,p=1$<salt>$<hash> (raw standard base64).
-func HashPassword(pw string) (string, error) {
+// ctx bounds the wait for the hashing semaphore.
+func HashPassword(ctx context.Context, pw string) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("auth: salt: %w", err)
 	}
-	return hashWith(pw, salt, argonMemKiB, argonTime, argonThreads), nil
+	return hashWith(ctx, pw, salt, argonMemKiB, argonTime, argonThreads)
 }
 
-func hashWith(pw string, salt []byte, m, t uint32, p uint8) string {
-	key := derive(pw, salt, m, t, p, keyLen)
+func hashWith(ctx context.Context, pw string, salt []byte, m, t uint32, p uint8) (string, error) {
+	key, err := derive(ctx, pw, salt, m, t, p, keyLen)
+	if err != nil {
+		return "", err
+	}
+	return formatPHC(m, t, p, salt, key), nil
+}
+
+func formatPHC(m, t uint32, p uint8, salt, key []byte) string {
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, m, t, p, b64.EncodeToString(salt), b64.EncodeToString(key))
 }
 
-func derive(pw string, salt []byte, m, t uint32, p uint8, n uint32) []byte {
-	hashSem <- struct{}{}
+// derive runs argon2id under the global semaphore. Waiting for the semaphore
+// honours ctx, so a cancelled request leaves the queue instead of burning
+// 12 MiB and ~50 ms of CPU for nobody.
+func derive(ctx context.Context, pw string, salt []byte, m, t uint32, p uint8, n uint32) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case hashSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	defer func() { <-hashSem }()
-	return argon2.IDKey([]byte(pw), salt, t, m, p, n)
+	return argon2.IDKey([]byte(pw), salt, t, m, p, n), nil
 }
 
 // VerifyPassword reports whether pw matches the PHC hash, using the
 // parameters recorded in the hash. A malformed hash is an error, not false.
-func VerifyPassword(phc, pw string) (bool, error) {
+// ctx bounds the wait for the hashing semaphore; on cancellation the error
+// wraps ctx.Err().
+func VerifyPassword(ctx context.Context, phc, pw string) (bool, error) {
 	// ["", "argon2id", "v=19", "m=..,t=..,p=..", salt, hash]
 	parts := strings.Split(phc, "$")
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
@@ -91,7 +112,15 @@ func VerifyPassword(phc, pw string) (bool, error) {
 	if err != nil || len(want) == 0 {
 		return false, errMalformed
 	}
-	got := derive(pw, salt, m, t, p, uint32(len(want)))
+	// Strict PHC: the hash must be byte-identical to the canonical encoding
+	// of what was parsed (no trailing junk, leading zeros or odd base64).
+	if phc != formatPHC(m, t, p, salt, want) {
+		return false, errMalformed
+	}
+	got, err := derive(ctx, pw, salt, m, t, p, uint32(len(want)))
+	if err != nil {
+		return false, err
+	}
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 

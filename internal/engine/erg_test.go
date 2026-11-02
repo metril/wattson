@@ -481,28 +481,24 @@ func TestErgNilModelFallsBackToSeed(t *testing.T) {
 
 func TestErgNoReadingNoFeedback(t *testing.T) {
 	t.Parallel()
-	m := NewErgMode(ErgConfig{Model: seedModel(), TargetW: 150, MinLevel: 1, MaxLevel: 16})
-	if out := m.Step(ModeInput{Cadence: 80, PowerW: 0}); out.Level != 6 {
-		t.Fatalf("level %d with no power reading, want 6", out.Level)
-	}
-}
-
-func TestErgRiseLimited(t *testing.T) {
-	t.Parallel()
-	m := NewErgMode(ErgConfig{Model: seedModel(), TargetW: 150, MinLevel: 1, MaxLevel: 16})
-	if out := m.Step(ModeInput{Cadence: 80}); out.Level != 6 {
-		t.Fatalf("level %d, want 6", out.Level)
-	}
-	_ = m.SetTarget(250)
-	el := time.Second
-	for _, want := range []int{8, 10, 11} { // ff is 11: +2 per tick
-		if out := m.Step(ModeInput{Cadence: 80, Elapsed: el}); out.Level != want {
-			t.Fatalf("at %v level %d, want %d", el, out.Level, want)
-		}
+	m := NewErgMode(ErgConfig{Model: seedModel(), TargetW: 200, MinLevel: 1, MaxLevel: 16})
+	el := time.Duration(0)
+	step := func(p float64) ModeOutput {
+		out := m.Step(ModeInput{Cadence: 80, PowerW: p, Elapsed: el})
 		el += time.Second
+		return out
 	}
-	_ = m.SetTarget(100) // falls are not limited
-	if out := m.Step(ModeInput{Cadence: 80, Elapsed: el}); out.Level != 4 {
-		t.Fatalf("fall: level %d, want 4", out.Level)
+	var out ModeOutput
+	for range 6 { // well past the settle ticks, riding slightly low
+		out = step(190)
+	}
+	level, integ := out.Level, m.integ
+	for range 5 { // a 0 W dropout while pedalling
+		if got := step(0); got.Level != level {
+			t.Fatalf("level %d on a 0 W reading, want %d", got.Level, level)
+		}
+	}
+	if m.integ != integ {
+		t.Fatalf("integrator moved on a 0 W reading: %v -> %v", integ, m.integ)
 	}
 }

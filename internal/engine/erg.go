@@ -149,11 +149,16 @@ func (m *ErgMode) Step(in ModeInput) ModeOutput {
 		return out
 	}
 	// Feed-forward and gain use a floored cadence: while the rider ramps up
-	// from a stop, the true cadence would demand the maximum level.
+	// from a stop, the true cadence would demand the maximum level. Accepted
+	// by design: steady riding at 30-60 rpm may run about 10 % under target,
+	// because the feed-forward is for 60 rpm and the integrator is capped.
 	rpm := math.Max(in.Cadence, ergFFMinRpm)
 	ff := m.model.LevelFor(bt, rpm)
 	s := math.Max(m.model.Slope(rpm), 1e-3)
-	err := bt - in.PowerW/m.mult
+	var err float64
+	if in.PowerW > 0 { // a 0 W reading while pedalling is a dropout, not feedback
+		err = bt - in.PowerW/m.mult
+	}
 	db := math.Min(0.5*s, 0.05*bt)
 	e := err
 	if m.settle > 0 || math.Abs(err) <= db {

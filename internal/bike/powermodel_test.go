@@ -150,3 +150,35 @@ func TestPowerModelRejectsNonPositiveDefinite(t *testing.T) {
 		t.Fatalf("accepted indefinite covariance: %+v", got)
 	}
 }
+
+// After hours at one level the model still adapts when the bike changes.
+func TestPowerModelTracksStepChange(t *testing.T) {
+	t.Parallel()
+	m := bike.NewPowerModel(bike.SeedState())
+	truth := func(a, b float64, i int) (float64, float64) {
+		rpm := 70 + 20*math.Sin(float64(i)/37)
+		return rpm, rpm * (a + 6*b) * (1 + 0.01*math.Sin(float64(i)*1.7))
+	}
+	for i := range 20000 {
+		rpm, w := truth(0.375, 0.25, i)
+		m.Observe(6, rpm, w)
+	}
+	before := m.Params()
+	for i := range 300 {
+		rpm, w := truth(0.375, 0.30, i)
+		if !m.Observe(6, rpm, w) {
+			t.Fatalf("step sample %d rejected", i)
+		}
+	}
+	after := m.Params()
+	want := 0.375 + 6*0.30
+	got := after.A + 6*after.B
+	was := before.A + 6*before.B
+	t.Logf("before %+v after %+v: L6 slope-per-rpm %v -> %v (want %v)", before, after, was, got, want)
+	if math.Abs(got-want) > 0.1*math.Abs(want-was) {
+		t.Fatalf("L6 per-rpm power %v did not track %v (was %v)", got, want, was)
+	}
+	if math.Abs(after.B-before.B) < 0.005 {
+		t.Fatalf("B did not move noticeably: %v -> %v", before.B, after.B)
+	}
+}

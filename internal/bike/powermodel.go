@@ -12,15 +12,21 @@ type PowerParams struct{ A, B float64 }
 var Seed = PowerParams{A: 0.375, B: 0.25}
 
 const (
-	pmForget     = 0.999 // RLS forgetting factor λ
-	pmMinB       = 0.01  // smallest slope a fit may have and still be valid
+	// RLS with a random-walk parameter model: a small diagonal Q is added to
+	// the covariance each sample, so the fit keeps adapting (time constant of
+	// a few minutes at 1 Hz) without the covariance blowing up along
+	// directions the samples do not excite. R is the assumed noise variance
+	// of a power reading, in W².
+	pmNoiseVar   = 25.0
+	pmQA         = 4e-7 // per-sample drift variance of A
+	pmQB         = 1e-8 // per-sample drift variance of B
+	pmMinB       = 0.01 // smallest slope a fit may have and still be valid
 	pmMinRPM     = 40
 	pmMaxRPM     = 160
 	pmMaxWatts   = 2000
 	pmOutlierN   = 20 // outlier rejection starts after this many samples
 	pmOutlierFrc = 0.5
-	// pmMaxTrace bounds the covariance trace: with samples at one level the
-	// uncovered direction would otherwise grow by 1/λ per sample without limit.
+	// pmMaxTrace is a safety bound on the covariance trace.
 	pmMaxTrace = 2.0
 )
 
@@ -84,17 +90,17 @@ func (m *PowerModel) Observe(level int, rpm, watts float64) bool {
 	p11, p12, p22 := s.P[0], s.P[1], s.P[2]
 	// Px
 	a, b := p11*x1+p12*x2, p12*x1+p22*x2
-	den := pmForget + x1*a + x2*b
+	den := pmNoiseVar + x1*a + x2*b
 	if den <= 0 || !finite(den) {
 		return false
 	}
 	k1, k2 := a/den, b/den
-	err := watts - pred
+	err := watts - (s.A*x1 + s.B*x2) // the update always uses the raw state, never the fallback
 	n := PowerModelState{A: s.A + k1*err, B: s.B + k2*err, N: s.N + 1}
-	// P = (P − k·(xᵀP)) / λ, xᵀP = (Px)ᵀ by symmetry.
-	n.P[0] = (p11 - k1*a) / pmForget
-	n.P[1] = (p12 - (k1*b+k2*a)/2) / pmForget
-	n.P[2] = (p22 - k2*b) / pmForget
+	// P = P − k·(xᵀP) + Q, xᵀP = (Px)ᵀ by symmetry.
+	n.P[0] = p11 - k1*a + pmQA
+	n.P[1] = p12 - (k1*b+k2*a)/2
+	n.P[2] = p22 - k2*b + pmQB
 	if tr := n.P[0] + n.P[2]; tr > pmMaxTrace {
 		f := pmMaxTrace / tr
 		n.P[0], n.P[1], n.P[2] = n.P[0]*f, n.P[1]*f, n.P[2]*f

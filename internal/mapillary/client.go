@@ -103,12 +103,35 @@ func redactURL(u string) string {
 	return p.String()
 }
 
-// scrub removes the token from an error text.
+// scrub removes the token, raw and in its query and path escaped forms
+// (real tokens look like MLY|123|abc, which a URL carries as MLY%7C123%7Cabc),
+// from an error text.
 func scrub(s, tok string) string {
-	if tok != "" {
-		s = strings.ReplaceAll(s, tok, redactedVal)
+	if tok == "" {
+		return s
+	}
+	for _, form := range []string{tok, url.QueryEscape(tok), url.PathEscape(tok)} {
+		s = strings.ReplaceAll(s, form, redactedVal)
 	}
 	return s
+}
+
+// endpoint joins base and path and sets query, keeping any query already on
+// base. Errors are not token bearing.
+func endpoint(base, path string, query url.Values) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return "", errors.New("mapillary: invalid base URL")
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + path
+	u.RawPath = ""
+	u.Fragment = ""
+	q := u.Query()
+	for k, v := range query {
+		q[k] = v
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // do GETs rawURL with up to maxAttempts tries on 429 and 5xx. headerAuth
@@ -116,12 +139,14 @@ func scrub(s, tok string) string {
 // the query otherwise. The caller closes the body of a 2xx response.
 func (c *Client) do(ctx context.Context, rawURL, tok string, headerAuth bool) (*http.Response, error) {
 	var last error
+	var delay time.Duration
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
-			if err := c.wait(ctx, time.Duration(attempt)*time.Second); err != nil {
+			if err := c.wait(ctx, delay); err != nil {
 				return nil, err
 			}
 		}
+		delay = time.Duration(attempt+1) * time.Second // 1 s, 2 s
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("mapillary: bad request URL %s", redactURL(rawURL))
@@ -145,23 +170,43 @@ func (c *Client) do(ctx context.Context, rawURL, tok string, headerAuth bool) (*
 		case resp.StatusCode >= 200 && resp.StatusCode < 300, resp.StatusCode == http.StatusNotFound:
 			return resp, nil
 		case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
-			_ = resp.Body.Close()
+			drainClose(resp.Body)
 			return nil, fmt.Errorf("%w (%d)", ErrTokenRejected, resp.StatusCode)
 		case resp.StatusCode == http.StatusBadRequest && oauthError(resp.Body):
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf("%w (%d)", ErrTokenRejected, resp.StatusCode)
 		case resp.StatusCode == http.StatusTooManyRequests:
-			_ = resp.Body.Close()
+			delay = retryAfter(resp, delay)
+			drainClose(resp.Body)
 			last = ErrRateLimited
 		case resp.StatusCode >= 500:
-			_ = resp.Body.Close()
+			delay = retryAfter(resp, delay)
+			drainClose(resp.Body)
 			last = fmt.Errorf("mapillary: HTTP %d from %s", resp.StatusCode, redactURL(rawURL))
 		default:
-			_ = resp.Body.Close()
+			drainClose(resp.Body)
 			return nil, fmt.Errorf("mapillary: HTTP %d from %s", resp.StatusCode, redactURL(rawURL))
 		}
 	}
 	return nil, last
+}
+
+// maxRetryAfter caps a server-requested wait.
+const maxRetryAfter = 10 * time.Second
+
+// retryAfter returns the Retry-After delay in seconds (capped), else def.
+func retryAfter(resp *http.Response, def time.Duration) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After")))
+	if err != nil || n < 0 {
+		return def
+	}
+	return min(time.Duration(n)*time.Second, maxRetryAfter)
+}
+
+// drainClose reads a little of the body so the connection can be reused.
+func drainClose(b io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(b, 64<<10))
+	_ = b.Close()
 }
 
 // oauthError reports whether a 400 body is a Graph API OAuth (token) error,
@@ -201,7 +246,10 @@ func (c *Client) Coverage(ctx context.Context, z, x, y int) ([]Candidate, error)
 	if err != nil {
 		return nil, err
 	}
-	u := fmt.Sprintf("%s/%d/%d/%d?access_token=%s", strings.TrimRight(c.TilesURL, "/"), z, x, y, url.QueryEscape(tok))
+	u, err := endpoint(c.TilesURL, fmt.Sprintf("/%d/%d/%d", z, x, y), url.Values{"access_token": {tok}})
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.do(ctx, u, tok, false)
 	if err != nil {
 		return nil, err
@@ -294,6 +342,9 @@ func propBool(v any) bool {
 	}
 }
 
+// propString renders a tile property as an id. orb decodes every MVT integer
+// as float64, so ids above 2^53 would lose precision; Mapillary ids are
+// about 1e15 (below 2^53), so this is exact in practice.
 func propString(v any) string {
 	switch n := v.(type) {
 	case nil:
@@ -319,7 +370,10 @@ func (c *Client) Image(ctx context.Context, id string) (ImageMeta, error) {
 	if id == "" || strings.Trim(id, "0123456789") != "" {
 		return ImageMeta{}, errors.New("mapillary: bad image id")
 	}
-	u := strings.TrimRight(c.GraphURL, "/") + "/" + id + "?fields=thumb_2048_url,creator"
+	u, err := endpoint(c.GraphURL, "/"+id, url.Values{"fields": {"thumb_2048_url,creator"}})
+	if err != nil {
+		return ImageMeta{}, err
+	}
 	resp, err := c.do(ctx, u, tok, true)
 	if err != nil {
 		return ImageMeta{}, err
@@ -367,7 +421,10 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	u := strings.TrimRight(c.GraphURL, "/") + "/images?fields=id&limit=1&bbox=13.40,52.51,13.41,52.52"
+	u, err := endpoint(c.GraphURL, "/images", url.Values{"fields": {"id"}, "limit": {"1"}, "bbox": {"13.40,52.51,13.41,52.52"}})
+	if err != nil {
+		return err
+	}
 	resp, err := c.do(ctx, u, tok, true)
 	if err != nil {
 		return err

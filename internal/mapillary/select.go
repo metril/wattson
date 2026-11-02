@@ -89,7 +89,8 @@ func Select(p *route.Profile, cands []Candidate, o SelectOpts) []Photo {
 	var segs []segment
 	for i := 0; i+1 < p.Len(); i++ {
 		s := segment{aLat: p.Lat[i], aLon: p.Lon[i], bLat: p.Lat[i+1], bLon: p.Lon[i+1], d0: p.DistAt(i), d1: p.DistAt(i + 1)}
-		if !(s.d1 > s.d0) || !finite(s.aLat, s.aLon, s.bLat, s.bLon) {
+		// Segments crossing the antimeridian are not supported: skipped.
+		if !(s.d1 > s.d0) || !finite(s.aLat, s.aLon, s.bLat, s.bLon) || math.Abs(s.bLon-s.aLon) > 180 {
 			continue
 		}
 		dx := (s.bLon - s.aLon) * math.Cos((s.aLat+s.bLat)/2*math.Pi/180) * metersPerD
@@ -119,15 +120,22 @@ func Select(p *route.Profile, cands []Candidate, o SelectOpts) []Photo {
 	buckets := make(map[int]scored)
 	for _, c := range cands {
 		if !finite(c.Lat, c.Lon) || (!c.Pano && !finite(c.Compass)) {
-			continue
+			continue // a non-panorama needs a heading to be judged
+		}
+		compass := c.Compass
+		if !finite(compass) {
+			compass = 0 // pano with an unknown heading; keeps the photo list JSON-safe
 		}
 		cosLat := math.Cos(c.Lat * math.Pi / 180)
 		ck := cellOf(c.Lat, c.Lon)
+		// Cells are narrower in metres east-west than north-south; scan enough
+		// of them to cover MaxLateralM in both directions.
+		r := int32(min(50, max(1, math.Ceil(o.MaxLateralM/(cellDeg*metersPerD*max(0.01, cosLat))))))
 
 		var best *segment
 		var bestLat, bestAlong, bestDiff float64
-		for da := int32(-1); da <= 1; da++ {
-			for db := int32(-1); db <= 1; db++ {
+		for da := -r; da <= r; da++ {
+			for db := -r; db <= r; db++ {
 				for _, si := range grid[cellKey{ck[0] + da, ck[1] + db}] {
 					s := &segs[si]
 					diff := 0.0
@@ -157,7 +165,7 @@ func Select(p *route.Profile, cands []Candidate, o SelectOpts) []Photo {
 			continue
 		}
 		ph := scored{
-			Photo: Photo{ID: c.ID, DM: bestAlong, Lat: c.Lat, Lon: c.Lon, BearingDeg: c.Compass, CapturedAt: c.CapturedAt, Pano: c.Pano},
+			Photo: Photo{ID: c.ID, DM: bestAlong, Lat: c.Lat, Lon: c.Lon, BearingDeg: compass, CapturedAt: c.CapturedAt, Pano: c.Pano},
 			score: bestLat + bestDiff/6,
 		}
 		b := int(math.Floor(bestAlong / o.BucketM))
@@ -239,7 +247,7 @@ func Tiles(p *route.Profile, z int, bufM float64) [][3]int {
 			break
 		}
 		gap := max(math.Abs(p.Lat[i+1]-p.Lat[i]), math.Abs(p.Lon[i+1]-p.Lon[i]))
-		if gap > maxGap && finite(gap) {
+		if gap > maxGap && gap <= 180 && finite(gap) { // no antimeridian wrapping
 			n := int(math.Ceil(gap / maxGap))
 			for k := 1; k < n; k++ {
 				f := float64(k) / float64(n)

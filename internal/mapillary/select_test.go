@@ -1,6 +1,7 @@
 package mapillary
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -269,5 +270,28 @@ func TestSelectBudget(t *testing.T) {
 	t.Logf("100 km select: %.1f ms/op", float64(r.NsPerOp())/1e6)
 	if ns := r.NsPerOp(); ns >= 200e6 {
 		t.Fatalf("select took %.1f ms/op, budget 200 ms", float64(ns)/1e6)
+	}
+}
+
+func TestSelectPanoUnknownHeadingJSONSafe(t *testing.T) {
+	t.Parallel()
+	pano := at("p", 300, 2, math.NaN())
+	pano.Pano = true
+	flat := at("n", 500, 2, math.NaN()) // non-pano without a heading cannot be judged: dropped
+	got := Select(eastProfile(1000), []Candidate{pano, flat}, SelectOpts{})
+	if len(got) != 1 || got[0].ID != "p" || got[0].BearingDeg != 0 {
+		t.Fatalf("got %+v", got)
+	}
+	if _, err := json.Marshal(got); err != nil {
+		t.Errorf("marshal: %v", err)
+	}
+}
+
+func TestSelectWideLateralScansFarCells(t *testing.T) {
+	t.Parallel()
+	// 400 m north is two 0.002 degree cell rows away from the route.
+	got := Select(eastProfile(1000), []Candidate{at("a", 300, 400, 90)}, SelectOpts{MaxLateralM: 500})
+	if len(got) != 1 || math.Abs(got[0].DM-300) > 1 {
+		t.Fatalf("got %+v", got)
 	}
 }

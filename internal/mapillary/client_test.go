@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +18,7 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
-const testToken = "SECRETTOKEN123"
+const testToken = "MLY|1234567|abcSECRET"
 
 func newClient(srv *httptest.Server) *Client {
 	return &Client{
@@ -196,11 +197,16 @@ func TestRateLimitedRetries(t *testing.T) {
 	var sleeps []time.Duration
 	var codes []int
 	var n int
+	var retryAfterHdr string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		code := codes[min(n, len(codes)-1)]
 		n++
+		ra := retryAfterHdr
 		mu.Unlock()
+		if ra != "" && code != 200 {
+			w.Header().Set("Retry-After", ra)
+		}
 		w.WriteHeader(code)
 		if code == 200 {
 			_, _ = w.Write([]byte(`{"data":[]}`))
@@ -214,9 +220,11 @@ func TestRateLimitedRetries(t *testing.T) {
 	if err := c.Ping(context.Background()); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
+	mu.Lock()
 	if len(sleeps) != 2 || sleeps[0] != time.Second || sleeps[1] != 2*time.Second {
 		t.Errorf("sleeps = %v", sleeps)
 	}
+	mu.Unlock()
 
 	mu.Lock()
 	n, sleeps, codes = 0, nil, []int{429, 429, 429, 429}
@@ -224,9 +232,34 @@ func TestRateLimitedRetries(t *testing.T) {
 	if err := c.Ping(context.Background()); !errors.Is(err, ErrRateLimited) {
 		t.Errorf("4x429 err = %v", err)
 	}
+	mu.Lock()
 	if n != 3 {
 		t.Errorf("attempts = %d, want 3", n)
 	}
+	mu.Unlock()
+
+	// Retry-After (seconds) replaces the backoff and is capped at 10 s.
+	mu.Lock()
+	n, sleeps, codes, retryAfterHdr = 0, nil, []int{429, 503, 200}, "5"
+	mu.Unlock()
+	if err := c.Ping(context.Background()); err != nil {
+		t.Errorf("retry-after: %v", err)
+	}
+	mu.Lock()
+	if len(sleeps) != 2 || sleeps[0] != 5*time.Second || sleeps[1] != 5*time.Second {
+		t.Errorf("retry-after sleeps = %v", sleeps)
+	}
+	n, sleeps, codes, retryAfterHdr = 0, nil, []int{429, 200}, "999"
+	mu.Unlock()
+	if err := c.Ping(context.Background()); err != nil {
+		t.Errorf("retry-after cap: %v", err)
+	}
+	mu.Lock()
+	if len(sleeps) != 1 || sleeps[0] != 10*time.Second {
+		t.Errorf("capped sleeps = %v", sleeps)
+	}
+	retryAfterHdr = ""
+	mu.Unlock()
 
 	mu.Lock()
 	n, codes = 0, []int{503, 200}
@@ -282,5 +315,37 @@ func TestDefaultImageHosts(t *testing.T) {
 		if got := c.imageHostOK(u); got != want {
 			t.Errorf("%s = %v, want %v", u, got, want)
 		}
+	}
+}
+
+func TestScrubForms(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		"GET https://x/14/1/1?access_token=" + url.QueryEscape(testToken) + ": boom",
+		"raw " + testToken + " raw",
+		"path /" + url.PathEscape(testToken) + "/x",
+	} {
+		if out := scrub(in, testToken); strings.Contains(out, "1234567") || !strings.Contains(out, redactedVal) {
+			t.Errorf("scrub(%q) = %q", in, out)
+		}
+	}
+}
+
+func TestTilesURLWithQuery(t *testing.T) {
+	t.Parallel()
+	var gotQ url.Values
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQ, gotPath = r.URL.Query(), r.URL.Path
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	c := newClient(srv)
+	c.TilesURL = srv.URL + "/tiles/?x=1"
+	if _, err := c.Coverage(context.Background(), 14, 5, 6); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/tiles/14/5/6" || gotQ.Get("x") != "1" || gotQ.Get("access_token") != testToken {
+		t.Errorf("path %q query %v", gotPath, gotQ)
 	}
 }

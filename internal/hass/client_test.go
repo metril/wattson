@@ -6,9 +6,11 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/metril/wattson/internal/hass"
 	"github.com/metril/wattson/internal/hass/hasstest"
 )
@@ -304,5 +306,88 @@ func TestReadLimit(t *testing.T) {
 	st, err := dial(t, s, hass.Options{ReadLimit: 16 << 20}).States(ctx2s(t))
 	if err != nil || len(st) != 1 {
 		t.Fatalf("%v %v", len(st), err)
+	}
+}
+
+// Home Assistant rejects a request whose id does not exceed the previous one
+// (id_reuse); concurrent requests and pings must still be written in id order.
+func TestConcurrentRequestsKeepIDsIncreasing(t *testing.T) {
+	t.Parallel()
+	s := hasstest.Start(t, tok)
+	s.SetState("number.r", "5", nil)
+	c := dial(t, s, hass.Options{PingInterval: 10 * time.Millisecond})
+	ctx := ctx2s(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8*100)
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				errs <- c.CallService(ctx, "number", "set_value", "number.r", map[string]any{"value": i + 1})
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c.Err() != nil {
+		t.Fatal(c.Err())
+	}
+	if n := len(s.Calls()); n != 800 {
+		t.Fatalf("calls %d", n)
+	}
+}
+
+func TestFakeRejectsIDReuse(t *testing.T) {
+	t.Parallel()
+	s := hasstest.Start(t, tok)
+	ctx := ctx2s(t)
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(s.URL(), "http")+"/api/websocket", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	read := func() string {
+		_, b, err := ws.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	send := func(v string) {
+		if err := ws.Write(ctx, websocket.MessageText, []byte(v)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read()
+	send(`{"type":"auth","access_token":"` + tok + `"}`)
+	read()
+	send(`{"id":5,"type":"ping"}`)
+	if got := read(); !strings.Contains(got, `"pong"`) {
+		t.Fatal(got)
+	}
+	send(`{"id":4,"type":"ping"}`)
+	if got := read(); !strings.Contains(got, `id_reuse`) || !strings.Contains(got, `"success":false`) {
+		t.Fatal(got)
+	}
+}
+
+func TestCloseEndsDoneAtOnce(t *testing.T) {
+	t.Parallel()
+	s := hasstest.Start(t, tok)
+	c := dial(t, s, hass.Options{})
+	_ = c.Close()
+	select {
+	case <-c.Done():
+	default:
+		t.Fatal("Done not closed when Close returned")
+	}
+	if _, err := c.States(ctx2s(t)); !errors.Is(err, hass.ErrClosed) {
+		t.Fatalf("States after Close: %v", err)
 	}
 }

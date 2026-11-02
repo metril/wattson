@@ -43,8 +43,11 @@ type Options struct {
 	// PingInterval is how often a ping is sent; a ping unanswered for twice
 	// this long closes the client with ErrTimeout. Default 10s.
 	PingInterval time.Duration
-	// ReadLimit is the largest accepted message in bytes. Default 1 MiB; raise
-	// it (16 MiB) for States on large installations.
+	// ReadLimit is the largest accepted message in bytes on this connection.
+	// Default 1 MiB; raise it (16 MiB) for States on large installations. A
+	// larger message closes the connection (websocket "message too big") and
+	// so ends the whole Client with ErrClosed: every pending request and
+	// subscription fails, and the caller must Dial again.
 	ReadLimit int64
 }
 
@@ -186,24 +189,36 @@ func (c *Client) Err() error {
 	}
 }
 
-// Close ends the connection. It must not be called from a SubscribeEntities callback.
+// Close ends the client: Done closes at once and Err is ErrClosed. The
+// WebSocket close handshake then runs in the background, bounded by closeGrace.
+// It must not be called from a SubscribeEntities callback.
 func (c *Client) Close() error {
-	select {
-	case <-c.done:
-		return nil
-	default:
-	}
-	_ = c.conn.Close(websocket.StatusNormalClosure, "")
-	c.fail(ErrClosed)
+	c.finish(ErrClosed, true)
 	return nil
 }
 
-func (c *Client) fail(err error) {
+// closeGrace bounds the graceful close handshake started by Close.
+const closeGrace = 2 * time.Second
+
+func (c *Client) fail(err error) { c.finish(err, false) }
+
+// finish ends the client once. A graceful finish keeps the read loop running
+// so the close handshake can complete; otherwise the connection is cut now.
+func (c *Client) finish(err error, graceful bool) {
 	c.once.Do(func() {
 		c.err = err
 		close(c.done)
-		c.cancel()
-		_ = c.conn.CloseNow()
+		if !graceful {
+			c.cancel()
+			_ = c.conn.CloseNow()
+			return
+		}
+		go func() {
+			t := time.AfterFunc(closeGrace, func() { _ = c.conn.CloseNow() })
+			defer t.Stop()
+			_ = c.conn.Close(websocket.StatusNormalClosure, "")
+			c.cancel()
+		}()
 	})
 }
 
@@ -250,9 +265,15 @@ func (c *Client) readLoop() {
 	}
 }
 
+// pingMaxFailures is how many consecutive failed pings (other than a timeout,
+// which ends the client at once) end the client with ErrClosed, so a keepalive
+// that cannot work does not silently stop and leave a dead link undetected.
+const pingMaxFailures = 2
+
 func (c *Client) pingLoop(every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
+	failures := 0
 	for {
 		select {
 		case <-c.done:
@@ -262,12 +283,19 @@ func (c *Client) pingLoop(every time.Duration) {
 		pctx, cancel := context.WithTimeout(c.ctx, 2*every)
 		_, err := c.do(pctx, "ping", nil, nil)
 		cancel()
-		if errors.Is(err, context.DeadlineExceeded) {
+		switch {
+		case err == nil:
+			failures = 0
+		case errors.Is(err, context.DeadlineExceeded):
 			c.fail(ErrTimeout)
 			return
-		}
-		if err != nil {
+		case errors.Is(err, ErrClosed), errors.Is(err, ErrTimeout):
 			return
+		default:
+			if failures++; failures >= pingMaxFailures {
+				c.fail(fmt.Errorf("%w: ping failing: %v", ErrClosed, err))
+				return
+			}
 		}
 	}
 }
@@ -276,10 +304,14 @@ func (c *Client) pingLoop(every time.Duration) {
 // with the allocated id before the request is written.
 func (c *Client) do(ctx context.Context, typ string, fields map[string]any, onID func(id int)) (json.RawMessage, error) {
 	ch := make(chan reply, 1)
+	// Home Assistant requires strictly increasing ids, so allocating the id,
+	// registering the waiter and writing happen under one lock.
+	c.wmu.Lock()
 	c.mu.Lock()
 	select {
 	case <-c.done:
 		c.mu.Unlock()
+		c.wmu.Unlock()
 		return nil, c.err
 	default:
 	}
@@ -299,14 +331,14 @@ func (c *Client) do(ctx context.Context, typ string, fields map[string]any, onID
 	maps.Copy(msg, fields)
 	b, err := json.Marshal(msg)
 	if err != nil {
+		c.wmu.Unlock()
 		forget()
 		return nil, err
 	}
 	wctx, cancel := context.WithTimeout(c.ctx, writeBound)
-	c.wmu.Lock()
 	err = c.conn.Write(wctx, websocket.MessageText, b)
-	c.wmu.Unlock()
 	cancel()
+	c.wmu.Unlock()
 	if err != nil {
 		forget()
 		c.fail(fmt.Errorf("%w: write: %v", ErrClosed, err))
@@ -352,8 +384,10 @@ func (c *Client) CallService(ctx context.Context, domain, service, entityID stri
 
 // SubscribeEntities subscribes to ids (all entities when empty). fn receives
 // each entity's full state: first as added, then after every merged diff. It
-// runs on the read goroutine, so it must be quick and must not call the
-// Client. SubscribeEntities returns once the initial state event has been
+// runs on the read goroutine, which also delivers every response and pong: fn
+// must return quickly, must not block, and must not call any Client method
+// (including Close) or wait on something that does, or the Client deadlocks.
+// Hand work off to another goroutine instead. SubscribeEntities returns once the initial state event has been
 // delivered; the subscription ends (unsubscribe_events) when ctx is done.
 func (c *Client) SubscribeEntities(ctx context.Context, ids []string, fn func(State)) error {
 	sub := &entSub{fn: fn, states: map[string]State{}, initial: make(chan struct{})}

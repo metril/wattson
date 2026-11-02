@@ -35,6 +35,7 @@ type conn struct {
 	ws   *websocket.Conn
 	wmu  sync.Mutex
 	subs map[int]map[string]struct{} // subscription id -> entity ids (empty = all); guarded by Server.mu
+	last int                         // highest request id seen; guarded by Server.mu
 }
 
 // Server is a running fake.
@@ -285,6 +286,12 @@ func (s *Server) handle(c *conn, m map[string]json.RawMessage) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Like Home Assistant, ids must strictly increase per connection.
+	if id <= c.last {
+		fail("id_reuse", "Identifier values have to increase.")
+		return
+	}
+	c.last = id
 	switch typ {
 	case "ping":
 		if !s.ignorePings {

@@ -77,4 +77,35 @@ describe('MetricGrid', () => {
     render(<MetricGrid ticks={new TickStore()} />);
     expect(screen.queryByText('Remaining')).not.toBeInTheDocument();
   });
+
+  it('shows heart rate through the DOM, a dash for 0, without re-rendering', () => {
+    const ticks = new TickStore();
+    let renders = 0;
+    render(
+      <Profiler id="g" onRender={() => renders++}>
+        <MetricGrid ticks={ticks} />
+      </Profiler>,
+    );
+    act(() => {
+      ticks.set(tickFixture({ heart_rate_bpm: 0 }));
+      vi.runAllTimers();
+    });
+    const hr = screen.getByText('HR').closest('div')!;
+    expect(hr).toHaveTextContent('—');
+    act(() => {
+      ticks.set(tickFixture({ heart_rate_bpm: 72 }));
+      vi.runAllTimers();
+    });
+    expect(hr).toHaveTextContent('72');
+    expect(renders).toBe(1);
+  });
+
+  it('reports the heart rate source status', () => {
+    const { rerender } = render(
+      <MetricGrid ticks={new TickStore()} hr={{ source: 'ble', target: 'AA:BB', connected: false, error: 'device not found' }} />,
+    );
+    expect(screen.getByText('Bluetooth: device not found')).toBeInTheDocument();
+    rerender(<MetricGrid ticks={new TickStore()} hr={{ source: 'ha', target: 'sensor.hr', connected: true }} />);
+    expect(screen.getByText('Home Assistant: connected')).toBeInTheDocument();
+  });
 });

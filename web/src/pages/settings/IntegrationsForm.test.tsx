@@ -114,6 +114,50 @@ describe('IntegrationsForm', () => {
     expect(screen.getByLabelText('MQTT broker URL')).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('PATCHes only the changed MQTT discovery prefix', async () => {
+    const s = settingsFixture();
+    const api = stubApi({ 'GET /api/settings': [200, s], 'PATCH /api/settings': [200, s] });
+    renderWithClient(<IntegrationsForm />);
+    const prefix = await screen.findByLabelText('MQTT discovery prefix');
+    expect(prefix).toHaveValue('homeassistant');
+    await userEvent.clear(prefix);
+    await userEvent.type(prefix, 'ha2');
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(api.bodies('PATCH /api/settings')).toHaveLength(1));
+    expect(api.bodies('PATCH /api/settings')[0]).toEqual({ mqtt: { discovery_prefix: 'ha2' } });
+  });
+
+  it('shows the MQTT status line', async () => {
+    stubApi({
+      'GET /api/settings': [200, settingsFixture({ mqtt: { url: 'mqtt://b:1883' } })],
+      'GET /api/mqtt/status': [200, { enabled: true, connected: false, error: 'not authorized' }],
+    });
+    renderWithClient(<IntegrationsForm />);
+    expect(await screen.findByText('Not connected: not authorized')).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ enabled: true, connected: true }, 'Connected'],
+    [{ enabled: false, connected: false }, 'Disabled'],
+  ])('MQTT status %j reads %s', async (status, text) => {
+    stubApi({ 'GET /api/settings': [200, settingsFixture()], 'GET /api/mqtt/status': [200, status] });
+    renderWithClient(<IntegrationsForm />);
+    expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
+  it('tests MQTT with the typed values', async () => {
+    const api = stubApi({
+      'GET /api/settings': [200, settingsFixture()],
+      'POST /api/settings/test/mqtt': [200, { ok: true, message: 'MQTT ok', latency_ms: 9 }],
+    });
+    renderWithClient(<IntegrationsForm />);
+    await userEvent.type(await screen.findByLabelText('MQTT broker URL'), 'mqtt://b:1883');
+    await userEvent.type(screen.getByLabelText('MQTT password'), 'pw');
+    await userEvent.click(screen.getByRole('button', { name: /test mqtt/i }));
+    expect(await screen.findByText(/MQTT ok/)).toBeInTheDocument();
+    expect(api.bodies('POST /api/settings/test/mqtt')[0]).toMatchObject({ url: 'mqtt://b:1883', password: 'pw' });
+  });
+
   it('hints to clear the segments folder for a remote BRouter', async () => {
     const hint = /clear 'segments folder'/i;
     const bundled = settingsFixture({ brouter: { url: 'http://brouter:17777' } });

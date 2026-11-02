@@ -103,7 +103,7 @@ export function RidePage() {
         </Banner>
       )}
       {routeMode && <RouteView routeId={routeId} ticks={socket.ticks} />}
-      <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode}>
+      <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} hr={bike?.hr}>
         <LevelControls
           socket={levelSocket}
           route={routeMode}

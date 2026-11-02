@@ -12,7 +12,7 @@ import { RidePage } from '@/pages/Ride';
 import { TokensPage } from '@/pages/settings/Tokens';
 import { SettingsLayout } from '@/pages/settings/SettingsLayout';
 import { GeneralForm } from '@/pages/settings/General';
-import { BikeForm } from '@/pages/settings/Bike';
+import { BikePage } from '@/pages/settings/Bike';
 import { IntegrationsForm } from '@/pages/settings/Integrations';
 import { AuthPage } from '@/pages/settings/Auth';
 import { UsersPage } from '@/pages/settings/Users';
@@ -95,7 +95,7 @@ export function AppRoutes() {
         >
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<GeneralForm />} />
-          <Route path="bike" element={<BikeForm />} />
+          <Route path="bike" element={<BikePage />} />
           <Route path="integrations" element={<IntegrationsForm />} />
           <Route path="maps" element={lazyPage(<MapRegionsPage />)} />
           <Route path="auth" element={<AuthPage />} />

@@ -93,4 +93,41 @@ describe('BikeForm', () => {
     await userEvent.click(screen.getByRole('button', { name: /save/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Release the bike on the Ride screen first');
   });
+
+  it('Home Assistant driver hides the address, shows three pickers and the FTMS note', async () => {
+    const api = setup(
+      { driver: 'ha' },
+      {
+        'GET /api/ha/entities': [
+          200,
+          {
+            entities: [
+              { entity_id: 'number.bike_resistance', name: 'Bike resistance', state: '5', unit: '', device_class: '' },
+            ],
+            truncated: false,
+          },
+        ],
+      },
+    );
+    renderWithClient(<BikeForm />);
+    await screen.findByLabelText('Driver');
+    expect(screen.queryByLabelText('Bike address')).toBeNull();
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Scan' })).toBeNull();
+    for (const l of ['Resistance entity', 'Power entity', 'Cadence entity']) {
+      expect(screen.getByLabelText(l)).toBeInTheDocument();
+    }
+    expect(screen.getByText(/can only drive FTMS bikes through its FTMS integration/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Resistance entity'), 'resist');
+    await userEvent.click(await screen.findByRole('option', { name: /number\.bike_resistance/ }));
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(api.bodies('PATCH /api/settings')).toHaveLength(1));
+    expect(api.bodies('PATCH /api/settings')[0]).toEqual({ bike: { ha_resistance_entity: 'number.bike_resistance' } });
+  });
+
+  it('offers Home Assistant (FTMS) in the driver list', async () => {
+    setup();
+    renderWithClient(<BikeForm />);
+    expect(await screen.findByRole('option', { name: 'Home Assistant (FTMS)' })).toHaveValue('ha');
+  });
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bike, KeyRound, LogOut, Route, Settings, Unlink, Users } from 'lucide-react';
+import { Bike, History, KeyRound, LogOut, Route, Settings, Unlink, Users } from 'lucide-react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
@@ -74,6 +74,10 @@ export function Layout() {
           </button>
         ) : (
           <>
+            <NavLink to="/history" className={link}>
+              <History aria-hidden className="size-6" />
+              History
+            </NavLink>
             <NavLink to="/routes" className={link}>
               <Route aria-hidden className="size-6" />
               Routes

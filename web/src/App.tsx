@@ -24,6 +24,9 @@ const RouteSyntheticPage = lazy(() =>
   import('@/pages/RouteSynthetic').then((m) => ({ default: m.RouteSyntheticPage })),
 );
 
+const HistoryPage = lazy(() => import('@/pages/History').then((m) => ({ default: m.HistoryPage })));
+const RideDetailPage = lazy(() => import('@/pages/RideDetail').then((m) => ({ default: m.RideDetailPage })));
+
 const RouteDrawPage = lazy(() => import('@/pages/RouteDraw').then((m) => ({ default: m.RouteDrawPage })));
 
 const MapRegionsPage = lazy(() =>
@@ -75,6 +78,8 @@ export function AppRoutes() {
       >
         <Route index element={<RidePage />} />
         <Route path="riders" element={<RidersPage />} />
+        <Route path="history" element={lazyPage(<HistoryPage />)} />
+        <Route path="history/:id" element={lazyPage(<RideDetailPage />)} />
         <Route path="routes" element={lazyPage(<RoutesPage />)} />
         <Route path="routes/new/synthetic" element={lazyPage(<RouteSyntheticPage />)} />
         <Route path="routes/new/draw" element={lazyPage(<RouteDrawPage />)} />

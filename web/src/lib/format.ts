@@ -15,3 +15,9 @@ export function km(m: number): string {
 export function fixed0(n: number): string {
   return n.toFixed(0);
 }
+
+/** Local date and time of an ISO timestamp, such as "2 Nov 2026, 05:05". */
+export function rideDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '–' : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}

@@ -43,7 +43,18 @@ func NewESPHomeWith(ctx context.Context, hostport, key string, opts ...ESPHomeOp
 	for _, o := range opts {
 		o(t)
 	}
-	t.lastAdv.Store(time.Now().UnixNano())
+	t.lastSub.Store(time.Now().UnixNano())
+	// Every message the proxy sends only to its advertisement subscriber is
+	// proof we still are that subscriber. In a quiet room adverts may stop
+	// while notifications, GATT replies and connection reports keep flowing.
+	for _, typ := range []uint16{
+		esphomeapi.MsgBLEDeviceConnectionResponse, esphomeapi.MsgGATTGetServicesResponse,
+		esphomeapi.MsgGATTGetServicesDoneResponse, esphomeapi.MsgGATTReadResponse,
+		esphomeapi.MsgGATTWriteResponse, esphomeapi.MsgGATTNotifyResponse,
+		esphomeapi.MsgGATTNotifyDataResponse, esphomeapi.MsgGATTErrorResponse,
+	} {
+		c.On(typ, func([]byte) { t.heard() })
+	}
 	// Never cancelled: only Close ends the subscription (see Close).
 	if err := c.SubscribeAdvertisements(context.Background(), t.onAdv); err != nil {
 		_ = c.Close()
@@ -52,15 +63,16 @@ func NewESPHomeWith(ctx context.Context, hostport, key string, opts ...ESPHomeOp
 	return t, nil
 }
 
-// defaultHeldAfter is how long the proxy may go without sending any
-// advertisement before it counts as held by another client.
+// defaultHeldAfter is how long the proxy may go without sending us any
+// subscriber-only message before it counts as held by another client.
 const defaultHeldAfter = 10 * time.Second
 
 // ESPHomeOption tunes NewESPHomeWith.
 type ESPHomeOption func(*espTransport)
 
-// WithHeldAfter sets how long without any advertisement from the proxy,
-// while the API link is alive, counts as "another client took the proxy's
+// WithHeldAfter sets how long without any subscriber-only message (adverts,
+// notifications, GATT or connection replies) from the proxy, while the API
+// link is alive, counts as "another client took the proxy's
 // Bluetooth subscription" (default 10 s).
 func WithHeldAfter(d time.Duration) ESPHomeOption {
 	return func(t *espTransport) { t.heldAfter = d }
@@ -72,11 +84,13 @@ type espTransport struct {
 	mu    sync.RWMutex
 	scans map[*dropQueue[esphomeapi.RawAdv]]struct{} // active Scan queues
 
-	// lastAdv is the unix-nano time of the newest advertisement, or of the
-	// subscription before any arrived. Only the subscriber receives
-	// advertisements, so their absence is how a lost subscription shows:
-	// ConnectionsFree is answered to every client and cannot tell.
-	lastAdv   atomic.Int64
+	// lastSub is the unix-nano time of the newest subscriber-only message
+	// (advertisement, GATT reply or notification, connection report), or of
+	// the subscription before any arrived. The proxy sends those only to the
+	// newest advertisement subscriber, so total silence is how a lost
+	// subscription shows: ConnectionsFree is answered to every client and
+	// cannot tell.
+	lastSub   atomic.Int64
 	heldAfter time.Duration
 }
 
@@ -85,16 +99,19 @@ var _ Proxy = (*espTransport)(nil)
 // Done is closed when the API link to the proxy is gone.
 func (t *espTransport) Done() <-chan struct{} { return t.c.Done() }
 
-// silent reports that no advertisement arrived for heldAfter.
+// heard records a message only the subscriber receives.
+func (t *espTransport) heard() { t.lastSub.Store(time.Now().UnixNano()) }
+
+// silent reports that nothing only the subscriber receives arrived for heldAfter.
 func (t *espTransport) silent() bool {
-	return time.Since(time.Unix(0, t.lastAdv.Load())) >= t.heldAfter
+	return time.Since(time.Unix(0, t.lastSub.Load())) >= t.heldAfter
 }
 
 // ProxyStatus reports the proxy's identity, connection slots and whether we
 // still hold its advertisement subscription. The proxy answers ConnectionsFree
-// to any client, so Subscribed comes from advertisement silence instead: false
-// once none arrived for the held-after period (see ErrProxyHeld) or when the
-// proxy does not answer within ctx's deadline. A dead link is an error
+// to any client, so Subscribed comes from subscriber-only traffic instead:
+// false once none arrived for the held-after period (see ErrProxyHeld),
+// whether or not the proxy answered within ctx. A dead link is an error
 // wrapping ErrDisconnected.
 func (t *espTransport) ProxyStatus(ctx context.Context) (ProxyStatus, error) {
 	info := t.c.Info()
@@ -114,6 +131,7 @@ func (t *espTransport) ProxyStatus(ctx context.Context) (ProxyStatus, error) {
 		}
 		return st, nil
 	case errors.Is(err, context.DeadlineExceeded):
+		st.Subscribed = !t.silent()
 		return st, nil
 	default:
 		return st, espErr("proxy status", err)
@@ -148,7 +166,7 @@ func (t *espTransport) timeoutHeld(op string, err error) error {
 
 // onAdv runs on the API read goroutine: fan out without blocking.
 func (t *espTransport) onAdv(r esphomeapi.RawAdv) {
-	t.lastAdv.Store(time.Now().UnixNano())
+	t.heard()
 	t.mu.RLock()
 	for q := range t.scans {
 		q.push(r)

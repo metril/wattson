@@ -98,8 +98,11 @@ type bleState struct {
 	// Advertisements (the real proxy's api_connection_); nil when none or
 	// after Unsubscribe. Subscribing replaces any previous subscriber.
 	subscriber *session
-	dropped    int // BLE replies dropped because nobody was subscribed
-	flush      sync.Once
+	// advPaused stops the periodic advert flush (a quiet room: no device is
+	// advertising) without touching the subscription or any other reply.
+	advPaused bool
+	dropped   int // BLE replies dropped because nobody was subscribed
+	flush     sync.Once
 }
 
 func (s *Server) ble() *bleState {
@@ -168,6 +171,16 @@ func (s *Server) ClearForeignSubscriber() {
 	if st.subscriber == foreignSession {
 		st.subscriber = nil
 	}
+	st.mu.Unlock()
+}
+
+// PauseAdverts stops (or with false resumes) the simulated proxy's periodic
+// advertisements, like a quiet room where nothing is advertising. The
+// subscriber is unchanged: connection replies and notifications still flow.
+func (s *Server) PauseAdverts(paused bool) {
+	st := s.ensureBLE()
+	st.mu.Lock()
+	st.advPaused = paused
 	st.mu.Unlock()
 }
 
@@ -558,7 +571,7 @@ func (s *Server) startFlush(st *bleState) {
 				s.mu.Unlock()
 				st.mu.Lock()
 				var rs []Reply
-				if cur != nil && st.subscriber == cur {
+				if cur != nil && st.subscriber == cur && !st.advPaused {
 					rs = s.advBatch(st)
 				}
 				st.mu.Unlock()

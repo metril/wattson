@@ -559,3 +559,32 @@ func TestESPHomeSlowConnectIsNotHeld(t *testing.T) {
 		t.Fatalf("err = %v, want a plain deadline error", err)
 	}
 }
+
+// In a quiet room adverts stop but the proxy still talks to us: any
+// subscriber-only message (here a notification) proves we hold the subscription.
+func TestProxyStatusQuietRoomNotificationsProveSubscription(t *testing.T) {
+	t.Parallel()
+	e := heldEnv(t)
+	c, err := e.tr.Connect(ctx2s(t), e.dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Subscribe(ctx2s(t), espNotify, func([]byte) {}); err != nil {
+		t.Fatal(err)
+	}
+	p := proxyOf(t, e.tr)
+	e.srv.PauseAdverts(true)
+	waitHeld(t, p) // nothing at all for heldAfter: indistinguishable from a takeover
+	e.srv.NotifyBLE(e.dev.Uint64(), hNotify, []byte{1})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if st, err := p.ProxyStatus(ctx2s(t)); err == nil && st.Subscribed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a notification did not prove the subscription")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

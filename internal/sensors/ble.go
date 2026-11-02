@@ -149,7 +149,7 @@ func (m *BLEMonitor) resolve(ctx context.Context) (blue.Address, error) {
 	if ctx.Err() != nil {
 		return blue.Address{}, ctx.Err()
 	}
-	// A proxy held by another client delivers no adverts at all.
+	// A proxy held by another client delivers no Bluetooth data at all.
 	if herr := m.proxyHeld(ctx); herr != nil {
 		return blue.Address{}, herr
 	}

@@ -211,16 +211,16 @@ func ParseAdvertisingData(b []byte) (name string, services []UUID) {
 // what to do. Wattson never takes the subscription back: that would start a
 // fight with the other client.
 func ProxyHeldError(op, proxyName string) error {
-	return fmt.Errorf("%s: %w: %s stopped sending advertisements; another client (Home Assistant's ESPHome integration, for one) is subscribed to its Bluetooth, and ESPHome allows only one. Disconnect it or give Wattson a dedicated proxy", op, ErrProxyHeld, proxyName)
+	return fmt.Errorf("%s: %w: %s has stopped sending Bluetooth data to Wattson. Another client (usually Home Assistant's Bluetooth integration) is likely subscribed; remove this proxy from HA's Bluetooth. If the bike and heart-rate strap are off and nothing else is in range, this can also appear", op, ErrProxyHeld, proxyName)
 }
 
 // ProxyStatus is a snapshot of a Bluetooth proxy.
 type ProxyStatus struct {
 	Name, MAC, Version string // device name, MAC address and ESPHome version
 	Flags              uint32 // bluetooth_proxy feature flags
-	// Subscribed is false when no advertisement arrived for a while, or the
-	// proxy did not answer: another API client took its Bluetooth subscription
-	// (see ErrProxyHeld) or the proxy is unresponsive.
+	// Subscribed is false when the proxy sent us no Bluetooth data (adverts,
+	// notifications, GATT or connection replies) for a while: another API client
+	// took its Bluetooth subscription (see ErrProxyHeld), or nothing is in range.
 	Subscribed bool
 	Free       int       // free connection slots
 	Limit      int       // total connection slots
@@ -232,7 +232,7 @@ type Proxy interface {
 	// Done is closed when the link to the proxy is gone.
 	Done() <-chan struct{}
 	// ProxyStatus queries the proxy; the caller bounds ctx. Subscribed is false
-	// when the advertisement stream has gone silent or ctx expires while the
-	// link is alive (nil error); a dead link gives an error wrapping ErrDisconnected.
+	// when all subscriber-only traffic has gone silent (nil error even if ctx
+	// expired while the link is alive); a dead link gives an error wrapping ErrDisconnected.
 	ProxyStatus(ctx context.Context) (ProxyStatus, error)
 }

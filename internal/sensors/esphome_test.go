@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -163,4 +164,55 @@ func TestHRProxyTakenOverWhileConnected(t *testing.T) {
 	if m.Status().Connected {
 		t.Fatal("still Connected after losing the subscription")
 	}
+}
+
+// Quiet room: bike and HR connected, nobody advertising. Notifications keep
+// proving the subscription, so the HR connection is never dropped as "held";
+// only when all traffic stops too is the proxy reported held.
+func TestHRQuietRoomIsNotHeld(t *testing.T) {
+	t.Parallel()
+	e := newProxyEnv(t, 150*time.Millisecond)
+	sess, err := bike.BLEDial(e.tr, bikeAddr, bike.Options{Keepalive: time.Hour})(context.Background())
+	if err != nil {
+		t.Fatalf("bike dial: %v", err)
+	}
+	t.Cleanup(func() { _ = sess.Close(context.Background()) })
+	m := startHR(t, sensors.BLEConfig{Transport: e.tr, Addr: hrDev, BackoffMin: 20 * time.Millisecond, BackoffMax: 50 * time.Millisecond, ProxyCheck: 50 * time.Millisecond})
+	poll(t, "HR connected", func() bool { return m.Status().Connected })
+	e.srv.PauseAdverts(true)
+
+	// 4x heldAfter with zero adverts but a heart rate notification every 20 ms.
+	for end := time.Now().Add(600 * time.Millisecond); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		e.srv.NotifyBLE(hrDev.Uint64(), hrNotifyHandle, []byte{0x00, 0x48})
+		if st := m.Status(); !st.Connected || st.Error != "" {
+			t.Fatalf("status during quiet room = %+v", st)
+		}
+	}
+	connects := 0
+	for _, r := range e.srv.BLEConnRequests() {
+		if r.Address == hrDev.Uint64() && r.RequestType != 1 {
+			connects++
+		}
+	}
+	if connects != 1 {
+		t.Fatalf("HR connected %d times, want 1 (flapping)", connects)
+	}
+
+	// Now every message stops: indistinguishable from losing the subscription.
+	var sawHeld atomic.Bool
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(time.Millisecond):
+				if strings.Contains(m.Status().Error, "another client") {
+					sawHeld.Store(true)
+				}
+			}
+		}
+	}()
+	poll(t, "held once all traffic stops", sawHeld.Load)
 }

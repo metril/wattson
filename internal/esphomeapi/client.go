@@ -24,6 +24,7 @@ const (
 	defaultPingInterval = 10 * time.Second
 	clientInfo          = "wattson"
 	apiMajor, apiMinor  = 1, 10
+	defaultDialTimeout  = 5 * time.Second
 	closeWriteTimeout   = time.Second
 	minWriteTimeout     = time.Second
 )
@@ -39,6 +40,10 @@ type DialOptions struct {
 	// PingInterval is the keepalive period (default 10 s). A ping that sees no
 	// inbound traffic within 2x the interval closes the client with ErrTimeout.
 	PingInterval time.Duration
+	// DialTimeout bounds the TCP connect (default 5 s); ctx still applies.
+	DialTimeout time.Duration
+
+	dial func(ctx context.Context, network, addr string) (net.Conn, error) // test hook
 }
 
 // DeviceInfo is the identity reported by the device.
@@ -82,10 +87,22 @@ func Dial(ctx context.Context, hostport, key string, opts ...DialOptions) (*Clie
 	if err != nil {
 		return nil, fmt.Errorf("%w: key is not valid base64", ErrBadKey)
 	}
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", hostport)
+	if o.DialTimeout <= 0 {
+		o.DialTimeout = defaultDialTimeout
+	}
+	dial := o.dial
+	if dial == nil {
+		dial = (&net.Dialer{Timeout: o.DialTimeout}).DialContext
+	}
+	dctx, dcancel := context.WithTimeout(ctx, o.DialTimeout)
+	conn, err := dial(dctx, "tcp", hostport)
+	dcancel()
 	if err != nil {
-		return nil, err
+		var ne net.Error
+		if ctx.Err() == nil && (errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())) {
+			return nil, fmt.Errorf("dial timeout: %s did not answer within %s (host down or unreachable?): %w", hostport, o.DialTimeout, err)
+		}
+		return nil, fmt.Errorf("dial %s: %w", hostport, err)
 	}
 	sc, _, err := clientHandshake(ctx, conn, psk)
 	if err != nil {

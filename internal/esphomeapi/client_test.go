@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -247,5 +249,47 @@ func TestSendMarshalsMessage(t *testing.T) {
 	var m BLEDeviceRequest
 	if err := m.Unmarshal(<-got); err != nil || m.Address != 7 || m.RequestType != 4 {
 		t.Fatalf("%+v %v", m, err)
+	}
+}
+
+func TestDialTimeoutNamesHost(t *testing.T) {
+	t.Parallel()
+	blackhole := func(ctx context.Context, _, _ string) (net.Conn, error) {
+		<-ctx.Done() // a black-holed host never answers
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: context.DeadlineExceeded}
+	}
+	start := time.Now()
+	_, err := Dial(context.Background(), "10.255.255.1:6053", keyB64(1), DialOptions{DialTimeout: 20 * time.Millisecond, dial: blackhole})
+	if err == nil || !strings.Contains(err.Error(), "dial timeout") || !strings.Contains(err.Error(), "10.255.255.1:6053") {
+		t.Fatalf("err = %v, want dial timeout naming host:port", err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("took %v", time.Since(start))
+	}
+}
+
+func TestDialParentCancelIsNotDialTimeout(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Dial(ctx, "10.255.255.1:6053", keyB64(1), DialOptions{DialTimeout: time.Minute, dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return nil, ctx.Err()
+	}})
+	if err == nil || strings.Contains(err.Error(), "dial timeout") || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDialRefusedIsClear(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	_, err = Dial(context.Background(), addr, keyB64(1))
+	if err == nil || !strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), addr) {
+		t.Fatalf("err = %v", err)
 	}
 }

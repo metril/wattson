@@ -57,7 +57,7 @@ The proxy serves one Bluetooth subscriber. If Home Assistant adopts it (or anoth
 
 Settings, **Diagnostics** (admin only) checks the Bluetooth path that is in use: for the proxy its name, ESPHome version, MAC, feature flags (missing ones, `active_connections` and `raw_advertisements`, are marked red and need new firmware), free and total slots with the addresses holding them, and the subscription state. The **Devices** table lists the configured bike and heart rate monitor with their state and, after **Scan for signal strength**, their signal in dBm ("not seen" if the scan did not hear them; connected devices often stop advertising). A check can take up to about 20 seconds when the proxy is slow or unreachable.
 
-The page refreshes every 10 seconds with a read-only probe (identity, flags, slots) that does not subscribe to Bluetooth, so leaving it open does not take the proxy from Home Assistant. While a bike is connected the subscription state is shown; with no bike connected it reads "unknown". **Scan for signal strength** does subscribe: it briefly takes the proxy's Bluetooth from Home Assistant while it runs, and the polling pauses meanwhile.
+The page refreshes every 10 seconds with a read-only probe (identity, flags, slots) that does not subscribe to Bluetooth, so leaving it open does not take the proxy from Home Assistant. While a bike is connected the subscription state is shown; with no bike connected it reads "unknown". With no bike connected, **Scan for signal strength** subscribes: it briefly takes the proxy's Bluetooth from Home Assistant while it runs (with a bike connected it reuses the live subscription instead), and the polling pauses meanwhile.
 
 ## Troubleshooting
 

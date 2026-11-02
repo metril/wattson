@@ -236,7 +236,7 @@ export function DiagnosticsPage() {
           {scanning && <Loader2 aria-hidden className="size-5 animate-spin" />}
           {scanning ? `Scanning ${SCAN_S} s…` : 'Scan for signal strength'}
         </Button>
-        {q.data?.transport === 'esphome' && (
+        {q.data?.transport === 'esphome' && !q.data.devices.some((d) => d.state !== 'idle') && (
           <span className="text-sm text-dim">
             A scan briefly takes the proxy's Bluetooth from Home Assistant.
           </span>

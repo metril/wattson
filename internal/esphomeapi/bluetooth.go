@@ -191,9 +191,10 @@ func (c *Client) SubscribeAdvertisements(ctx context.Context, fn func(RawAdv)) e
 }
 
 // ConnectionsFree asks the proxy for its connection-slot counts and the
-// addresses holding them. The proxy answers only the client that holds the
-// advertisement subscription, so when another client has taken it over (the
-// newest subscriber wins) no reply ever comes and the error is ctx's.
+// addresses holding them. The proxy answers any requester, subscribed to
+// advertisements or not (only its retry latch is scoped to the subscriber),
+// so a reply says nothing about who holds the subscription. The error is
+// ctx's when the proxy does not answer in time.
 func (c *Client) ConnectionsFree(ctx context.Context) (BLEConnectionsFreeResponse, error) {
 	ch := make(chan BLEConnectionsFreeResponse, 1)
 	cancel := c.On(MsgBLEConnectionsFreeResponse, func(p []byte) {

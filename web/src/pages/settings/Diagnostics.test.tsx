@@ -126,7 +126,7 @@ describe('Diagnostics', () => {
     try {
       let finish!: () => void;
       const seen: string[] = [];
-      stubApi({ 'GET /api/diagnostics/bluetooth': [200, held] });
+      stubApi({ 'GET /api/diagnostics/bluetooth': [200, { ...held, devices: [{ role: 'bike', address: 'AA:BB:CC:DD:EE:FF', state: 'idle', connected: false }] }] });
       const orig = globalThis.fetch;
       vi.stubGlobal('fetch', async (req: Request) => {
         const search = new URL(req.url).search;
@@ -148,5 +148,13 @@ describe('Diagnostics', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('does not warn about taking the proxy while a bike is connected', async () => {
+    const live = { ...held, devices: [{ role: 'bike' as const, address: 'AA:BB:CC:DD:EE:FF', state: 'ready', connected: true }] };
+    stubApi({ 'GET /api/diagnostics/bluetooth': [200, live] });
+    renderWithClient(<DiagnosticsPage />);
+    await screen.findByRole('region', { name: 'ESPHome proxy' });
+    expect(screen.queryByText(/briefly takes the proxy/)).toBeNull();
   });
 });

@@ -1,6 +1,144 @@
 {
   "components": {
     "schemas": {
+      "AuthOut": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_local_login": {
+            "description": "Whether username and password sign-in is enabled. The bootstrap admin can always sign in with a password.",
+            "type": "boolean"
+          },
+          "session_ttl_hours": {
+            "description": "Session lifetime in hours, 1 to 8760. Applies to sessions created after the change.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "allow_local_login",
+          "session_ttl_hours"
+        ],
+        "type": "object"
+      },
+      "AuthPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_local_login": {
+            "description": "Enable or disable username and password sign-in.",
+            "type": "boolean"
+          },
+          "session_ttl_hours": {
+            "description": "Session lifetime in hours, 1 to 8760.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BRouterOut": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "BRouter base URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "BRouterPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "BRouter base URL; empty clears it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BikeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Bluetooth address of the bike, AA:BB:CC:DD:EE:FF; empty when unset.",
+            "type": "string"
+          },
+          "driver": {
+            "description": "Bike protocol: auto, fitplus, ftms or sim.",
+            "type": "string"
+          },
+          "esphome_host": {
+            "description": "ESPHome Bluetooth proxy as host or host:port (default port 6053); empty when unset.",
+            "type": "string"
+          },
+          "esphome_key_set": {
+            "description": "Whether an ESPHome API encryption key is stored. The key itself is never returned.",
+            "type": "boolean"
+          },
+          "idle_release_min": {
+            "description": "Minutes without pedalling before the bike is released, 0 to 240; 0 disables.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sim_cadence_rpm": {
+            "description": "Cadence of the simulated bike, in revolutions per minute, 0 to 150.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "transport": {
+            "description": "How the bike is reached: local (host Bluetooth) or esphome (Bluetooth proxy).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "driver",
+          "transport",
+          "address",
+          "esphome_host",
+          "esphome_key_set",
+          "idle_release_min",
+          "sim_cadence_rpm"
+        ],
+        "type": "object"
+      },
+      "BikePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Bluetooth address AA:BB:CC:DD:EE:FF; empty clears it.",
+            "type": "string"
+          },
+          "driver": {
+            "description": "Bike protocol: auto, fitplus, ftms or sim.",
+            "type": "string"
+          },
+          "esphome_host": {
+            "description": "ESPHome proxy as host or host:port; empty clears it.",
+            "type": "string"
+          },
+          "esphome_key": {
+            "description": "ESPHome API encryption key, base64 of 32 bytes. Omit to keep the stored key; an empty string clears it.",
+            "type": "string"
+          },
+          "idle_release_min": {
+            "description": "Minutes without pedalling before release, 0 to 240.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sim_cadence_rpm": {
+            "description": "Simulated cadence in revolutions per minute, 0 to 150.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "transport": {
+            "description": "local or esphome.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateTokenInBody": {
         "additionalProperties": false,
         "properties": {
@@ -107,6 +245,61 @@
         ],
         "type": "object"
       },
+      "GeneralOut": {
+        "additionalProperties": false,
+        "properties": {
+          "public_url": {
+            "description": "External base URL of this server (http or https, no path); empty when unset.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_url"
+        ],
+        "type": "object"
+      },
+      "GeneralPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "public_url": {
+            "description": "External base URL of this server (http or https, no path); empty clears it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HAOut": {
+        "additionalProperties": false,
+        "properties": {
+          "token_set": {
+            "description": "Whether a long-lived access token is stored. The token itself is never returned.",
+            "type": "boolean"
+          },
+          "url": {
+            "description": "Home Assistant base URL; empty when unset.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "token_set"
+        ],
+        "type": "object"
+      },
+      "HAPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "Long-lived access token. Omit to keep the stored token; an empty string clears it.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Home Assistant base URL; empty clears it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "HealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -142,6 +335,70 @@
           "username",
           "password"
         ],
+        "type": "object"
+      },
+      "MQTTOut": {
+        "additionalProperties": false,
+        "properties": {
+          "password_set": {
+            "description": "Whether an MQTT password is stored. The password itself is never returned.",
+            "type": "boolean"
+          },
+          "url": {
+            "description": "MQTT broker URL (mqtt:// or mqtts://); empty when unset.",
+            "type": "string"
+          },
+          "username": {
+            "description": "MQTT username; empty when unset.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "username",
+          "password_set"
+        ],
+        "type": "object"
+      },
+      "MQTTPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "description": "MQTT password. Omit to keep the stored password; an empty string clears it.",
+            "type": "string"
+          },
+          "url": {
+            "description": "MQTT broker URL (mqtt:// or mqtts://); empty clears it.",
+            "type": "string"
+          },
+          "username": {
+            "description": "MQTT username.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MapillaryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "token_set": {
+            "description": "Whether a Mapillary access token is stored. The token itself is never returned.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "token_set"
+        ],
+        "type": "object"
+      },
+      "MapillaryPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "Mapillary access token. Omit to keep the stored token; an empty string clears it.",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "MeOut": {
@@ -255,6 +512,92 @@
         ],
         "type": "object"
       },
+      "SettingsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/AuthOut",
+            "description": "Sign-in settings."
+          },
+          "bike": {
+            "$ref": "#/components/schemas/BikeOut",
+            "description": "Bike connection settings."
+          },
+          "brouter": {
+            "$ref": "#/components/schemas/BRouterOut",
+            "description": "BRouter routing service."
+          },
+          "general": {
+            "$ref": "#/components/schemas/GeneralOut",
+            "description": "General settings."
+          },
+          "ha": {
+            "$ref": "#/components/schemas/HAOut",
+            "description": "Home Assistant connection."
+          },
+          "mapillary": {
+            "$ref": "#/components/schemas/MapillaryOut",
+            "description": "Mapillary street imagery."
+          },
+          "mqtt": {
+            "$ref": "#/components/schemas/MQTTOut",
+            "description": "MQTT broker connection."
+          },
+          "strava": {
+            "$ref": "#/components/schemas/StravaOut",
+            "description": "Strava integration."
+          }
+        },
+        "required": [
+          "general",
+          "auth",
+          "bike",
+          "ha",
+          "mqtt",
+          "brouter",
+          "mapillary",
+          "strava"
+        ],
+        "type": "object"
+      },
+      "SettingsPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/AuthPatch",
+            "description": "Sign-in settings."
+          },
+          "bike": {
+            "$ref": "#/components/schemas/BikePatch",
+            "description": "Bike connection settings."
+          },
+          "brouter": {
+            "$ref": "#/components/schemas/BRouterPatch",
+            "description": "BRouter routing service."
+          },
+          "general": {
+            "$ref": "#/components/schemas/GeneralPatch",
+            "description": "General settings."
+          },
+          "ha": {
+            "$ref": "#/components/schemas/HAPatch",
+            "description": "Home Assistant connection."
+          },
+          "mapillary": {
+            "$ref": "#/components/schemas/MapillaryPatch",
+            "description": "Mapillary street imagery."
+          },
+          "mqtt": {
+            "$ref": "#/components/schemas/MQTTPatch",
+            "description": "MQTT broker connection."
+          },
+          "strava": {
+            "$ref": "#/components/schemas/StravaPatch",
+            "description": "Strava integration."
+          }
+        },
+        "type": "object"
+      },
       "SetupInBody": {
         "additionalProperties": false,
         "properties": {
@@ -293,6 +636,90 @@
         },
         "required": [
           "needs_setup"
+        ],
+        "type": "object"
+      },
+      "StravaOut": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "description": "Strava API client ID; empty when unset.",
+            "type": "string"
+          },
+          "client_secret_set": {
+            "description": "Whether a Strava client secret is stored. The secret itself is never returned.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_secret_set"
+        ],
+        "type": "object"
+      },
+      "StravaPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "description": "Strava API client ID.",
+            "type": "string"
+          },
+          "client_secret": {
+            "description": "Strava client secret. Omit to keep the stored secret; an empty string clears it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TestESPHomeInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "description": "ESPHome proxy as host or host:port (default port 6053). Empty uses the stored host.",
+            "type": "string"
+          },
+          "key": {
+            "description": "ESPHome API encryption key, base64 of 32 bytes. Empty uses the stored key.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TestHAInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "Long-lived access token to test. Empty uses the stored token.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Home Assistant base URL to test. Empty uses the stored URL.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "latency_ms": {
+            "description": "Time the test took, in milliseconds.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "message": {
+            "description": "Human-readable outcome or error text.",
+            "type": "string"
+          },
+          "ok": {
+            "description": "Whether the connection works.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "message",
+          "latency_ms"
         ],
         "type": "object"
       },
@@ -719,6 +1146,334 @@
         "summary": "Sign-in options",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "description": "Returns the whole configuration. Secrets are write-only: each is reported as a `*_set` boolean (`bike.esphome_key_set`, `ha.token_set`, `mqtt.password_set`, `mapillary.token_set`, `strava.client_secret_set`) and the value is never returned. Requires the `admin` scope.",
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "patch": {
+        "description": "Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `\u003csection.field\u003e: \u003cproblem\u003e` and nothing is stored. Returns the new settings in the same shape as the GET. Requires the `admin` scope.",
+        "operationId": "updateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/test/esphome": {
+      "post": {
+        "description": "Connects to the ESPHome device, performs the encrypted handshake and reads its device info, then disconnects, timing out after 5 seconds. It never subscribes to Bluetooth and never talks to the bike, so it is safe during a ride. Empty body fields fall back to the stored settings. The result is always HTTP 200; check `ok`. A device without the Bluetooth proxy component reports `no bluetooth_proxy`. Requires the `admin` scope.",
+        "operationId": "testESPHome",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestESPHomeInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Test the ESPHome Bluetooth proxy",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/test/ha": {
+      "post": {
+        "description": "Calls `GET {url}/api/` with the token as a bearer credential, timing out after 5 seconds. Empty body fields fall back to the stored settings. The result is always HTTP 200; check `ok`. A 401 from Home Assistant reports `token rejected (401)`. Requires the `admin` scope.",
+        "operationId": "testHomeAssistant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestHAInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Test the Home Assistant connection",
+        "tags": [
+          "settings"
         ]
       }
     },

@@ -256,3 +256,68 @@ func TestResetDuringSaveDoesNotResurrect(t *testing.T) {
 		t.Error("the stale save resurrected the row after ResetPowerModel")
 	}
 }
+
+// gatedLoad blocks the first PowerModel read after it has fetched the row.
+type gatedLoad struct {
+	memModels
+	inLoad  chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (g *gatedLoad) PowerModel(ctx context.Context, key string) ([]byte, error) {
+	b, err := g.memModels.PowerModel(ctx, key)
+	g.once.Do(func() { close(g.inLoad); <-g.release })
+	return b, err
+}
+
+// An idle reset that races Connect's model load must not be undone by the
+// stale model the load returns.
+func TestResetDuringConnectLoadWins(t *testing.T) {
+	t.Parallel()
+	learned := bike.NewPowerModel(bike.SeedState())
+	for i := range 5 {
+		if !learned.Observe(3+i, 80, 80*(0.375+0.25*float64(3+i))) {
+			t.Fatal("sample rejected")
+		}
+	}
+	b, err := json.Marshal(learned.State())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pm := &gatedLoad{inLoad: make(chan struct{}), release: make(chan struct{})}
+	pm.rows = map[string][]byte{"sim": b}
+	m := newMgr(&simRec{}, 20*time.Millisecond, nil, Deps{PowerModels: pm})
+	defer m.Close(context.Background())
+	conn := make(chan error, 1)
+	go func() { _, err := m.Connect(t.Context(), testRider); conn <- err }()
+	<-pm.inLoad // Connect has read the learned row
+	reset := make(chan error, 1)
+	go func() { reset <- m.ResetPowerModel(t.Context()) }()
+	var rerr error
+	done := false
+	select {
+	case rerr, done = <-reset: // not serialised: the reset overtook Connect
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(pm.release)
+	if err := <-conn; err != nil {
+		t.Fatal(err)
+	}
+	if !done {
+		rerr = <-reset
+	}
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	waitState(t, m, "ready")
+	m.mu.Lock()
+	c := m.cur
+	m.mu.Unlock()
+	if n := c.model.State().N; n != 0 {
+		t.Errorf("connection kept the stale model (%d samples) after the reset", n)
+	}
+	if _, ok := pm.state(t, "sim"); ok {
+		t.Error("stored row survived the reset")
+	}
+}

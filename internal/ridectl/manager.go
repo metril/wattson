@@ -232,6 +232,11 @@ func (m *Manager) Connect(ctx context.Context, r store.Rider) (Status, error) {
 	r.MaxLevel = max(r.MaxLevel, r.MinLevel)
 
 	key := BikeKey(s)
+	// pmMu spans the load and the install of the connection, so an idle
+	// ResetPowerModel cannot slip between them and leave c with a stale
+	// model (it would find c installed and reset it in place instead).
+	m.pmMu.Lock()
+	defer m.pmMu.Unlock()
 	model, savedN := m.loadModel(ctx, key)
 
 	m.mu.Lock()

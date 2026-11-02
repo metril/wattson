@@ -69,7 +69,9 @@ func Decode(b []byte) (*Profile, error) {
 		LengthM: math.Float64frombits(binary.LittleEndian.Uint64(raw[8:])),
 	}
 	raw = raw[16:]
-	if !(p.StepM > 0) || !(p.LengthM > 0) || math.IsInf(p.StepM, 0) || math.IsInf(p.LengthM, 0) {
+	// Only blobs this package produces are accepted: fixed step, and a
+	// sample count that matches the length.
+	if p.StepM != StepM || !(p.LengthM >= MinLengthM && p.LengthM <= MaxLengthM) || n != sampleCount(p.LengthM) {
 		return nil, errBadBlob
 	}
 	for _, col := range []struct {

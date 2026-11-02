@@ -67,15 +67,18 @@ func TestProcessRamp(t *testing.T) {
 
 func TestProcessRecoversNoisyRamp(t *testing.T) {
 	t.Parallel()
-	raw := densify(Synthetic([]Segment{{500, 0}, {2000, 6}, {500, 0}}))
+	// Real tracks never line up with the 10 m resampling grid, so start the
+	// 5 m raw spacing 1.3 m off it.
+	raw := append([]Point{{0, -1.3 / metresPerDegLon, syntheticStartEle}},
+		densify(Synthetic([]Segment{{500, 0}, {2000, 6}, {500, 0}}))...)
 	rng := rand.New(rand.NewPCG(1, 2))
 	for i := range raw {
 		raw[i].Ele += rng.NormFloat64() * 0.5
 	}
 	p := mustProcess(t, raw)
-	// Within GradeWindowM/2 of an end the central difference degenerates to a
-	// one-sided one over a single noisy endpoint, so those samples are skipped.
-	const edge = GradeWindowM / 2
+	// Within GradeWindowM of an end the grade comes from one-sided, edge-fitted
+	// samples whose noise is inherently larger, so the flat-noise bound skips them.
+	const edge = GradeWindowM
 	var sum, maxDev float64
 	var n int
 	for i := 0; i < p.Len(); i++ {
@@ -265,4 +268,40 @@ func TestStatsDeadBand(t *testing.T) {
 	st := p.Stats()
 	near(t, "ascent", st.AscentM, 5.4, 0.01)
 	near(t, "descent", st.DescentM, 5.4, 0.01)
+}
+
+func TestCleanRampGradeEverywhere(t *testing.T) {
+	t.Parallel()
+	// Median and Savitzky-Golay must not bend the ends of a clean slope.
+	p := mustProcess(t, Synthetic([]Segment{{1000, 5}}))
+	for i, g := range p.Grade {
+		if math.Abs(g-5) > 0.1 {
+			t.Fatalf("Grade[%d] (d=%.0f) = %.3f, want 5 +- 0.1", i, p.DistAt(i), g)
+		}
+	}
+	short := mustProcess(t, Synthetic([]Segment{{55, -5}}))
+	for i, g := range short.Grade {
+		if math.Abs(g+5) > 0.1 {
+			t.Fatalf("short Grade[%d] = %.3f", i, g)
+		}
+	}
+}
+
+func TestSmoothingHelpers(t *testing.T) {
+	t.Parallel()
+	// A quadratic is reproduced exactly by the SG filter, ends included.
+	x := make([]float64, 40)
+	for i := range x {
+		x[i] = 3 + 0.5*float64(i) - 0.02*float64(i*i)
+	}
+	for i, v := range savitzkyGolay(x, 0) {
+		near(t, "sg", v, x[i], 1e-9)
+	}
+	// Median shrinks symmetrically: a monotone series is unchanged.
+	m := medianFilter([]float64{1, 2, 3, 4, 5, 6, 7}, MedianWindow)
+	for i, v := range m {
+		if v != float64(i+1) {
+			t.Fatalf("median = %v", m)
+		}
+	}
 }

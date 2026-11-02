@@ -7,7 +7,7 @@ type Segment struct{ LengthM, GradePct float64 }
 
 const (
 	syntheticStartEle = 100.0
-	metresPerDegLon   = 111319.49 // at the equator
+	metresPerDegLon   = math.Pi / 180 * earthRadiusM // matches haversine, so lengths are exact
 )
 
 // Synthetic builds points every <=10 m due east from (0, 0), starting at

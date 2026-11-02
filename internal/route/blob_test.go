@@ -46,6 +46,26 @@ func TestBlobDecodeErrors(t *testing.T) {
 	}
 }
 
+func TestBlobDecodeRejectsInconsistent(t *testing.T) {
+	t.Parallel()
+	p := mustProcess(t, loadRamp(t))
+	bad := *p
+	bad.StepM = 5
+	if _, err := Decode(Encode(&bad)); err == nil {
+		t.Error("step != StepM accepted")
+	}
+	bad = *p
+	bad.LengthM = p.LengthM + 500 // n no longer matches the length
+	if _, err := Decode(Encode(&bad)); err == nil {
+		t.Error("length inconsistent with n accepted")
+	}
+	bad = *p
+	bad.LengthM = math.NaN()
+	if _, err := Decode(Encode(&bad)); err == nil {
+		t.Error("NaN length accepted")
+	}
+}
+
 func TestBlob100km(t *testing.T) {
 	t.Parallel()
 	pts := synthTrack(20000, 5, 1)

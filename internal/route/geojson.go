@@ -11,7 +11,9 @@ type LineString struct {
 const simplifyToleranceM = 2.0
 
 // GeoJSON returns the route simplified with Douglas-Peucker at 2 m, rounded
-// to 6 decimals (about 0.1 m).
+// to 6 decimals (about 0.1 m). The projection is planar around the mean
+// latitude, so routes crossing the antimeridian (longitude +-180) are not
+// supported.
 func GeoJSON(p *Profile) LineString {
 	n := p.Len()
 	ls := LineString{Type: "LineString", Coordinates: make([][2]float64, 0, 16)}

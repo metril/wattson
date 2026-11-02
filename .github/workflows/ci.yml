@@ -75,6 +75,10 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
         run: go build -trimpath -o /dev/null ./cmd/wattson
+      - name: route import budget (100 km < 200 ms, non-race)
+        # TestImportBudget skips under -race, so the test shards never run it.
+        if: matrix.goarch == 'amd64'
+        run: go test -count=1 -run Budget ./internal/route/
 
   web:
     name: Web (lint, test, build, size)

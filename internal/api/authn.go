@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -19,10 +18,8 @@ import (
 )
 
 const (
-	loginMaxFails  = 10
-	loginIPMaxFail = 50 // per remote IP across all usernames
-	loginWindow    = 10 * time.Minute
-	maxKeyName     = 128 // bytes of username kept in a limiter key
+	loginMaxFails = 10 // failed attempts per remote IP in loginWindow
+	loginWindow   = 10 * time.Minute
 )
 
 // MeOut describes the caller.
@@ -74,33 +71,6 @@ type providersOut struct {
 	Body ProvidersOut
 }
 
-type loginLimits struct{ pair, ip *auth.Limiter }
-
-// allow admits an attempt only if both the (IP, username) key and the IP key
-// have room. The returned release must be deferred; fail and ok record the
-// verdict.
-func (l loginLimits) allow(ip, name string) (res *loginRes, retry time.Duration) {
-	a, retry := l.pair.Allow("p|" + ip + "|" + name)
-	if a == nil {
-		return nil, retry
-	}
-	b, retry := l.ip.Allow("i|" + ip)
-	if b == nil {
-		a.Release()
-		return nil, retry
-	}
-	return &loginRes{a, b}, 0
-}
-
-type loginRes struct{ pair, ip *auth.Reservation }
-
-func (r *loginRes) release() { r.pair.Release(); r.ip.Release() }
-func (r *loginRes) fail()    { r.pair.Fail(); r.ip.Fail() }
-
-// ok forgets the (IP, username) failures but deliberately not the per-IP
-// count, so one valid account cannot be used to reset a password spray.
-func (r *loginRes) ok() { r.pair.Success(); r.ip.Release() }
-
 // clientIP is the host of r.RemoteAddr. X-Forwarded-For is never consulted:
 // it is client-controlled unless a trusted proxy rewrites it, and Wattson has
 // no trusted-proxy setting.
@@ -111,15 +81,11 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-// dummyHash is a valid argon2 hash verified for unknown users so that both
-// outcomes cost one argon2 run.
-var dummyHash = sync.OnceValue(func() string {
-	h, err := auth.HashPassword(context.Background(), "wattson-dummy-password")
-	if err != nil {
-		return ""
-	}
-	return h
-})
+// newDummyHash returns a valid argon2 hash that is verified for unknown
+// users so that both outcomes cost one argon2 run.
+func newDummyHash() (string, error) {
+	return auth.HashPassword(context.Background(), "wattson-dummy-password")
+}
 
 func rateLimited(ctx context.Context, retry time.Duration) error {
 	secs := max(int(math.Ceil(retry.Seconds())), 1)
@@ -167,41 +133,42 @@ func (d Deps) startSession(ctx context.Context, r *http.Request, userID int64) (
 }
 
 func (d Deps) registerAuthn(api huma.API) {
-	limits := loginLimits{
-		pair: auth.NewLimiter(loginMaxFails, loginWindow),
-		ip:   auth.NewLimiter(loginIPMaxFail, loginWindow),
+	dummy, err := newDummyHash()
+	if err != nil {
+		panic("api: cannot compute the dummy password hash: " + err.Error())
 	}
+	// Login attempts are limited per remote IP only (not per username, which
+	// would let a third party lock a victim out): 10 failures in 10 minutes.
+	// A successful login does not reset the count, so a valid account cannot
+	// be used to restart a password spray from the same address.
+	limiter := auth.NewLimiter(loginMaxFails, loginWindow)
 	// Password-change guessing by a signed-in user, keyed by user ID.
 	pwLimit := auth.NewLimiter(loginMaxFails, loginWindow)
 
 	register(api, route{Method: http.MethodPost, Path: "/api/auth/login", ID: "login", Tag: "auth",
 		Summary: "Sign in with a password",
 		Description: "Verifies a local username and password and sets the session cookie. Attempts are rate limited per " +
-			"remote IP address and username (10 failures in 10 minutes) and per remote IP (50 failures); a refused " +
-			"attempt returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, " +
+			"remote IP address (the connection's address; X-Forwarded-For is ignored): after 10 failures in 10 minutes " +
+			"every attempt from that address, whatever the username, returns 429 `rate_limited` with a `Retry-After` " +
+			"header in seconds. Unknown user, wrong password, " +
 			"disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 " +
 			"`local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. " +
 			"No authentication required.",
 		Status: http.StatusNoContent, Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests}},
 		func(ctx context.Context, in *loginIn) (*cookieOut, error) {
 			r := httpRequest(ctx)
-			ip := clientIP(r)
-			name := strings.ToLower(in.Body.Username)
-			if len(name) > maxKeyName {
-				name = name[:maxKeyName]
-			}
-			res, retry := limits.allow(ip, name)
+			res, retry := limiter.Allow(clientIP(r))
 			if res == nil {
 				return nil, rateLimited(ctx, retry)
 			}
-			defer res.release()
+			defer res.Release()
 
 			u, err := d.Store.UserByUsername(ctx, in.Body.Username)
 			if err != nil && !errors.Is(err, store.ErrNotFound) {
 				return nil, err
 			}
 			known := err == nil && u.PasswordHash != "" && !u.Disabled && len(in.Body.Password) <= 256
-			hash := dummyHash()
+			hash := dummy
 			if known {
 				hash = u.PasswordHash
 			}
@@ -210,14 +177,14 @@ func (d Deps) registerAuthn(api huma.API) {
 				return nil, err
 			}
 			if !known || !match {
-				res.fail()
+				res.Fail()
 				return nil, errInvalidCreds()
 			}
 			s, err := d.Settings.Get(ctx)
 			if err != nil {
 				return nil, err
 			}
-			res.ok()
+			res.Release() // a valid password does not reset the per-IP failure count
 			if !s.Auth.AllowLocalLogin && !u.IsBootstrap {
 				return nil, apiErr(http.StatusForbidden, "local_login_disabled", "password sign-in is disabled; use single sign-on")
 			}
@@ -280,7 +247,7 @@ func (d Deps) registerAuthn(api huma.API) {
 			}
 			defer res.Release()
 			known := id.User.PasswordHash != "" && len(in.Body.CurrentPassword) <= 256
-			hash := dummyHash()
+			hash := dummy
 			if known {
 				hash = id.User.PasswordHash
 			}
@@ -300,11 +267,13 @@ func (d Deps) registerAuthn(api huma.API) {
 			if err := d.Store.SetPassword(ctx, id.User.ID, nh); err != nil {
 				return nil, err
 			}
-			if _, err := d.Store.DeleteUserSessions(ctx, id.User.ID); err != nil {
-				return nil, err
-			}
+			// Create the new session first, then drop every other one, so a
+			// session opened concurrently with the change does not survive it.
 			cookie, err := d.startSession(ctx, httpRequest(ctx), id.User.ID)
 			if err != nil {
+				return nil, err
+			}
+			if _, err := d.Store.DeleteOtherSessions(ctx, id.User.ID, auth.HashSecret(cookie.Value)); err != nil {
 				return nil, err
 			}
 			return &cookieOut{SetCookie: cookie}, nil

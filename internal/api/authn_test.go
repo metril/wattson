@@ -3,9 +3,9 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
-	"testing/synctest"
 
 	"github.com/metril/wattson/internal/settings"
 )
@@ -74,13 +74,6 @@ func TestLoginRefusals(t *testing.T) {
 
 func TestLoginRateLimited(t *testing.T) {
 	t.Parallel()
-	// A bubble freezes the clock, so Retry-After is exactly the window.
-	synctest.Test(t, func(t *testing.T) {
-		testLoginRateLimited(t)
-	})
-}
-
-func testLoginRateLimited(t *testing.T) {
 	ts := newTS(t)
 	ts.addUser(t, "bob", "bob-password-1", false)
 	c := ts.client(t)
@@ -97,13 +90,14 @@ func testLoginRateLimited(t *testing.T) {
 	if resp.StatusCode != 429 || errCode(t, b) != "rate_limited" {
 		t.Fatalf("11th attempt: %d %s", resp.StatusCode, b)
 	}
-	if got := resp.Header.Get("Retry-After"); got != "600" {
-		t.Errorf("Retry-After = %q, want 600", got)
+	// The ten failures took real time, so the wait is a little under the window.
+	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err != nil || secs < 590 || secs > 600 {
+		t.Errorf("Retry-After = %q, want 590..600", resp.Header.Get("Retry-After"))
 	}
-	// Another username from the same IP is unaffected by the pair key.
-	resp, _ = ts.do(t, c, "POST", "/api/auth/login", map[string]any{"username": "alice", "password": "wrong-password"})
-	if resp.StatusCode != 401 {
-		t.Errorf("other username: %d, want 401", resp.StatusCode)
+	// The limit is per IP: any other username from the same address is refused too.
+	resp, b = ts.do(t, c, "POST", "/api/auth/login", map[string]any{"username": "alice", "password": "wrong-password"})
+	if resp.StatusCode != 429 || errCode(t, b) != "rate_limited" {
+		t.Errorf("other username: %d %s, want 429", resp.StatusCode, b)
 	}
 }
 
@@ -203,7 +197,7 @@ func TestChangePasswordTokenRefused(t *testing.T) {
 	}
 }
 
-func TestCookieCSRFOnLogout(t *testing.T) {
+func TestPasswordChangeCrossOriginRefused(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)
 	ts.addUser(t, "bob", "bob-password-1", false)

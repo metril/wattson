@@ -422,7 +422,7 @@
   "paths": {
     "/api/auth/login": {
       "post": {
-        "description": "Verifies a local username and password and sets the session cookie. Attempts are rate limited per remote IP address and username (10 failures in 10 minutes) and per remote IP (50 failures); a refused attempt returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 `local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. No authentication required.",
+        "description": "Verifies a local username and password and sets the session cookie. Attempts are rate limited per remote IP address (the connection's address; X-Forwarded-For is ignored): after 10 failures in 10 minutes every attempt from that address, whatever the username, returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 `local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. No authentication required.",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -724,7 +724,7 @@
     },
     "/api/setup": {
       "post": {
-        "description": "Creates the bootstrap admin, optionally saves the public URL, and signs the new admin in with a session cookie. Fails with 409 `already_setup` once any user exists. No authentication required.",
+        "description": "Creates the bootstrap admin, optionally saves the public URL, and signs the new admin in with a session cookie. If saving the public URL fails after the admin was created, the failure is logged and the admin is still created. Fails with 409 `already_setup` once any user exists. No authentication required.",
         "operationId": "runSetup",
         "requestBody": {
           "content": {

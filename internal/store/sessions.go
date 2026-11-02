@@ -49,6 +49,12 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID int64) (int64, er
 	return s.deleteCount(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
 }
 
+// DeleteOtherSessions removes every session of a user except keepHash and
+// returns how many.
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID int64, keepHash string) (int64, error) {
+	return s.deleteCount(ctx, `DELETE FROM sessions WHERE user_id = ? AND id_hash <> ?`, userID, keepHash)
+}
+
 // DeleteExpiredSessions removes sessions with expires_at <= now.
 func (s *Store) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
 	return s.deleteCount(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, fmtTime(now))

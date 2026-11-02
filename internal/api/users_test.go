@@ -29,6 +29,10 @@ func TestUsersAdmin(t *testing.T) {
 	if resp.StatusCode != 409 || errCode(t, b) != "bootstrap_protected" {
 		t.Errorf("demote bootstrap: %d %s", resp.StatusCode, b)
 	}
+	resp, b = ts.do(t, admin, "PATCH", "/api/users/1", map[string]any{"disabled": true})
+	if resp.StatusCode != 409 || errCode(t, b) != "bootstrap_protected" {
+		t.Errorf("disable bootstrap: %d %s", resp.StatusCode, b)
+	}
 	resp, b = ts.do(t, admin, "PATCH", "/api/users/999", map[string]any{"disabled": true})
 	if resp.StatusCode != 404 {
 		t.Errorf("missing user: %d %s", resp.StatusCode, b)
@@ -59,5 +63,9 @@ func TestLastAdminProtected(t *testing.T) {
 	resp, body = ts.do(t, ca, "PATCH", fmt.Sprintf("/api/users/%d", a.ID), map[string]any{"is_admin": false})
 	if resp.StatusCode != 409 || errCode(t, body) != "last_admin" {
 		t.Errorf("demote last admin: %d %s", resp.StatusCode, body)
+	}
+	resp, body = ts.do(t, ca, "PATCH", fmt.Sprintf("/api/users/%d", a.ID), map[string]any{"disabled": true})
+	if resp.StatusCode != 409 || errCode(t, body) != "last_admin" {
+		t.Errorf("disable last admin: %d %s", resp.StatusCode, body)
 	}
 }

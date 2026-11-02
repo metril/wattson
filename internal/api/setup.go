@@ -52,7 +52,8 @@ func (d Deps) registerSetup(api huma.API) {
 	register(api, route{Method: http.MethodPost, Path: "/api/setup", ID: "runSetup", Tag: "setup",
 		Summary: "Create the first admin",
 		Description: "Creates the bootstrap admin, optionally saves the public URL, and signs the new admin in " +
-			"with a session cookie. Fails with 409 `already_setup` once any user exists. No authentication required.",
+			"with a session cookie. If saving the public URL fails after the admin was created, the failure is logged and " +
+			"the admin is still created. Fails with 409 `already_setup` once any user exists. No authentication required.",
 		Status: http.StatusCreated, Errors: []int{http.StatusConflict}},
 		func(ctx context.Context, in *setupIn) (*setupOut, error) {
 			b := in.Body

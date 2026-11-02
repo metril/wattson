@@ -1,10 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/metril/wattson/internal/auth"
@@ -133,5 +136,44 @@ func TestSetupSavesPublicURL(t *testing.T) {
 	}
 	if !resp.Cookies()[0].Secure {
 		t.Error("session cookie not Secure with an https public URL")
+	}
+}
+
+func TestSetupConcurrent(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	const n = 8
+	codes := make(chan int, n)
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			body, _ := json.Marshal(map[string]any{"username": fmt.Sprintf("admin%d", i), "password": testPW})
+			resp, err := http.Post(ts.URL+"/api/setup", "application/json", bytes.NewReader(body))
+			if err != nil {
+				errs <- err
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
+		}()
+	}
+	wg.Wait()
+	close(codes)
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	got := map[int]int{}
+	for c := range codes {
+		got[c]++
+	}
+	if got[201] != 1 || got[409] != n-1 {
+		t.Errorf("status counts = %v, want one 201 and %d 409", got, n-1)
+	}
+	if c, _ := ts.Store.CountUsers(context.Background()); c != 1 {
+		t.Errorf("users = %d, want 1", c)
 	}
 }

@@ -82,7 +82,7 @@ func (d Deps) registerTokens(api huma.API) {
 		Summary: "Create an API token",
 		Description: "Creates a token for the signed-in user and returns its plaintext exactly once. Session only: " +
 			"an API token gets 403 `session_required`. The scopes must be held by the caller, otherwise 403 `scope_exceeds`.",
-		Scope: auth.ScopeRead, Status: http.StatusCreated},
+		Scope: auth.ScopeRead, Status: http.StatusCreated, Errors: []int{http.StatusBadRequest, http.StatusForbidden}},
 		func(ctx context.Context, in *createTokenIn) (*createTokenOut, error) {
 			id, _ := auth.FromContext(ctx)
 			if id.Via != "session" {

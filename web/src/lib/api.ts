@@ -81,8 +81,11 @@ api.use(middleware);
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(status: number, code: string, message: string) {
+  /** Structured data some errors carry, such as the tiles named by 422 missing_tiles. */
+  details?: { missing_tiles?: string[] };
+  constructor(status: number, code: string, message: string, details?: { missing_tiles?: string[] }) {
     super(message);
+    this.details = details;
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
@@ -92,11 +95,12 @@ export class ApiError extends Error {
 /** Return the response body or throw an ApiError built from {error:{code,message}}. */
 export function unwrap<T>(r: { data?: T; error?: unknown; response: Response }): T {
   if (r.error !== undefined || !r.response.ok) {
-    const e = (r.error as { error?: { code?: string; message?: string } } | undefined)?.error;
+    const e = (r.error as { error?: { code?: string; message?: string; details?: { missing_tiles?: string[] } } } | undefined)?.error;
     throw new ApiError(
       r.response.status,
       e?.code ?? 'unknown',
       e?.message ?? `Request failed (${r.response.status})`,
+      e?.details,
     );
   }
   return r.data as T;

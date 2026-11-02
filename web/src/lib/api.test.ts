@@ -83,6 +83,12 @@ describe('unwrap', () => {
     }
   });
 
+  it('carries structured error details', async () => {
+    stubFetch(422, { error: { code: 'missing_tiles', message: 'm', details: { missing_tiles: ['E5_N45'] } } });
+    const r = await api.GET('/api/riders');
+    expect(() => unwrap(r)).toThrow(expect.objectContaining({ details: { missing_tiles: ['E5_N45'] } }));
+  });
+
   it('returns data on success', async () => {
     stubFetch(200, [{ id: 1 }]);
     const r = await api.GET('/api/riders');

@@ -48,9 +48,9 @@ export function stubApi(routes: Record<string, Handler>) {
   };
 }
 
-export const apiError = (status: number, code: string, message = code): Reply => [
+export const apiError = (status: number, code: string, message = code, details?: unknown): Reply => [
   status,
-  { error: { code, message } },
+  { error: { code, message, ...(details ? { details } : {}) } },
 ];
 
 export function renderWithClient(ui: ReactElement, route = '/') {

@@ -24,6 +24,8 @@ const RouteSyntheticPage = lazy(() =>
   import('@/pages/RouteSynthetic').then((m) => ({ default: m.RouteSyntheticPage })),
 );
 
+const RouteDrawPage = lazy(() => import('@/pages/RouteDraw').then((m) => ({ default: m.RouteDrawPage })));
+
 const lazyPage = (el: JSX.Element) => (
   <Suspense
     fallback={
@@ -71,6 +73,7 @@ export function AppRoutes() {
         <Route path="riders" element={<RidersPage />} />
         <Route path="routes" element={lazyPage(<RoutesPage />)} />
         <Route path="routes/new/synthetic" element={lazyPage(<RouteSyntheticPage />)} />
+        <Route path="routes/new/draw" element={lazyPage(<RouteDrawPage />)} />
         <Route path="routes/:id" element={lazyPage(<RouteDetailPage />)} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route

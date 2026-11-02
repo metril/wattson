@@ -7,9 +7,14 @@ configure({ asyncUtilTimeout: 3000 });
 // Node's Request rejects relative URLs, but openapi-fetch is created with
 // baseUrl "" (same-origin in the browser). Resolve against jsdom's location.
 const NativeRequest = globalThis.Request;
+// jsdom's AbortSignal is not the one undici's Request accepts, so the shim drops it.
+// Pages that abort check their own signal after the await, which is what tests exercise.
+function nativeInit(init?: RequestInit): RequestInit | undefined {
+  return init?.signal ? { ...init, signal: null } : init;
+}
 class RelativeRequest extends NativeRequest {
   constructor(input: RequestInfo | URL, init?: RequestInit) {
-    super(typeof input === 'string' ? new URL(input, window.location.href).href : input, init);
+    super(typeof input === 'string' ? new URL(input, window.location.href).href : input, nativeInit(init));
   }
 }
 globalThis.Request = RelativeRequest as typeof Request;

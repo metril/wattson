@@ -322,3 +322,22 @@ func waitFor(t *testing.T, f func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func TestHADialRefusesEntityMinAboveRiderMax(t *testing.T) {
+	t.Parallel()
+	s := hasstest.Start(t, token)
+	s.SetState("number.r", "8", map[string]any{"min": 8.0, "max": 24.0})
+	c := cfgFor(s, token)
+	c.MaxLevel = 6
+	sess, err := habike.Dial(c)(dialCtx(t))
+	if err == nil {
+		_ = sess.Close(context.Background())
+		t.Fatal("dial succeeded with entity min above rider max")
+	}
+	if !strings.Contains(err.Error(), "allows levels from 8") {
+		t.Fatalf("err %v", err)
+	}
+	if n := len(s.Calls()); n != 0 {
+		t.Fatalf("calls %d", n)
+	}
+}

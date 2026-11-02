@@ -315,7 +315,9 @@ func TestConcurrentRequestsKeepIDsIncreasing(t *testing.T) {
 	t.Parallel()
 	s := hasstest.Start(t, tok)
 	s.SetState("number.r", "5", nil)
-	c := dial(t, s, hass.Options{PingInterval: 10 * time.Millisecond})
+	// A long ping interval: under full -race load 800 round trips can delay a
+	// pong past a short timeout; this test is about request ids, not pings.
+	c := dial(t, s, hass.Options{PingInterval: time.Second})
 	ctx := ctx2s(t)
 	var wg sync.WaitGroup
 	errs := make(chan error, 8*100)

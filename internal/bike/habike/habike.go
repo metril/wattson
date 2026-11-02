@@ -95,6 +95,8 @@ func Dial(c Config) bike.Dial {
 			s.mu.Unlock()
 			if !ok || !numeric(st.State) {
 				err = unavailable(c.Resistance)
+			} else if rerr := s.rangeErr(); rerr != nil {
+				err = rerr
 			}
 		}
 		if err != nil {
@@ -195,6 +197,26 @@ func (s *Session) bounds() (lo, hi int) {
 		hi = defaultMax
 	}
 	return lo, max(hi, lo)
+}
+
+// rangeErr refuses an entity whose own minimum is above the rider's maximum
+// level (or whose maximum is below the lowest allowed level): no level would
+// be both safe for the rider and accepted by the entity.
+func (s *Session) rangeErr() error {
+	lo := max(1, s.cfg.MinLevel)
+	if m, ok := s.attr("min"); ok {
+		lo = max(lo, int(math.Ceil(m-1e-9)))
+	}
+	hi := s.cfg.MaxLevel
+	if m, ok := s.attr("max"); ok && m >= 1 {
+		if em := int(math.Floor(m + 1e-9)); hi <= 0 || em < hi {
+			hi = em
+		}
+	}
+	if hi > 0 && lo > hi {
+		return fmt.Errorf("habike: entity %s allows levels from %d but the allowed maximum is %d", s.cfg.Resistance, lo, hi)
+	}
+	return nil
 }
 
 // snap rounds level to the nearest multiple of the entity's step (counted from

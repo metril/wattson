@@ -16,7 +16,7 @@ const (
 	ergMinRpm      = 30  // below this the rider is not pedalling: hold
 	ergNominalRpm  = 80  // cadence assumed for the first level while not pedalling
 	ergFFMinRpm    = 60  // feed-forward cadence floor, so a pedalling ramp does not demand max
-	ergMaxRise     = 2   // most levels the request may rise in one tick (falls are unlimited)
+	ergMaxRise     = 2   // most levels the request may rise per step, command-driven steps included (falls are unlimited)
 	ergAdjMaxW     = 100 // bound of the workout target adjustment, watts
 )
 
@@ -177,7 +177,7 @@ func (m *ErgMode) Step(in ModeInput) ModeOutput {
 	}
 	if m.cur == 0 || math.Abs(u-float64(m.cur)) >= ergHyst {
 		next := m.level(u)
-		if dt > 0 && m.cur != 0 && next > m.cur+ergMaxRise {
+		if m.cur != 0 && next > m.cur+ergMaxRise {
 			next = m.cur + ergMaxRise
 		}
 		if next != m.cur {

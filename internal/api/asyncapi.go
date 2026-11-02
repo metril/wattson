@@ -114,7 +114,7 @@ func AsyncAPIDoc() ([]byte, error) {
 			},
 			"wattson/command/{command}": map[string]any{
 				"address": "wattson/command/{command}", "title": "Button command", "servers": mqttServer,
-				"description": "Buttons: start a free ride, pause, resume, stop, change the resistance level by one (in a route ride this shifts the live bias), or release the bike.",
+				"description": "Buttons: start a free ride, pause, resume, stop, change the resistance level by one (in route and interval rides this shifts the live bias), or release the bike.",
 				"parameters": map[string]any{"command": map[string]any{
 					"description": "Which button was pressed.", "enum": integrations.CommandKeys()}},
 				"messages": map[string]any{"mqttPress": map[string]any{"$ref": "#/components/messages/mqttPress"}},

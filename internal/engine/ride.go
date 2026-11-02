@@ -51,7 +51,7 @@ type Command struct {
 	Mode  Mode // start only; nil keeps the current mode
 }
 
-// MaxBias bounds the live level bias in route mode.
+// MaxBias bounds the live level bias in route and interval modes.
 const MaxBias = 10
 
 // biasMode is a Mode whose level_delta adjusts a bias instead of the manual
@@ -83,7 +83,7 @@ type Tick struct {
 	RouteID         int64     `json:"route_id" doc:"Identifier of the route being ridden; 0 when not riding a route."`
 	RouteLengthM    float64   `json:"route_length_m" doc:"Length of the route being ridden, in metres; 0 when not riding a route."`
 	GradeAheadPct   float64   `json:"grade_ahead_pct" doc:"Road grade at the lookahead point of the route, in percent; 0 when not riding a route."`
-	Bias            int       `json:"bias" doc:"Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode."`
+	Bias            int       `json:"bias" doc:"Live resistance bias in levels (-10 to 10) added to the route level (route mode) or shifting the interval level (interval mode); 0 in free ride and ERG modes."`
 	WorkoutID       int64     `json:"workout_id" doc:"Identifier of the workout being ridden; 0 when not riding a workout."`
 	BlockIndex      int       `json:"block_index" doc:"Zero-based index of the current workout block; 0 outside a workout."`
 	BlockCount      int       `json:"block_count" doc:"Number of blocks in the workout being ridden; 0 outside a workout."`

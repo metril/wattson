@@ -19,7 +19,7 @@ type rideOut struct {
 type commandIn struct {
 	Body struct {
 		Command      string `json:"command" enum:"start,pause,resume,stop,set_level,level_delta,set_target_power" doc:"Ride command: start, pause, resume, stop, set_level (to value), level_delta (by value) or set_target_power (free ERG target, value in watts)."`
-		Value        int    `json:"value,omitempty" doc:"Resistance level for set_level, the change in levels for level_delta (in ERG, steps of 10 W of target), or the target in watts (50 to 1000) for set_target_power; ignored by other commands."`
+		Value        int    `json:"value,omitempty" doc:"Resistance level for set_level, the change in levels for level_delta (in route and interval rides it shifts the live bias; in ERG, steps of 10 W of target), or the target in watts (50 to 1000) for set_target_power; ignored by other commands."`
 		RouteID      int64  `json:"route_id,omitempty" doc:"Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike."`
 		WorkoutID    int64  `json:"workout_id,omitempty" doc:"Workout to ride; only with start. Its blocks are resolved for the rider bound to the bike when the ride starts."`
 		TargetPowerW int    `json:"target_power_w,omitempty" doc:"Free ERG target, W (50-1000); only with start. Hold this power until stopped."`

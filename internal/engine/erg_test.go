@@ -502,3 +502,32 @@ func TestErgNoReadingNoFeedback(t *testing.T) {
 		t.Fatalf("integrator moved on a 0 W reading: %v -> %v", integ, m.integ)
 	}
 }
+
+func TestErgCommandStepRiseLimited(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newErgRig(t, sim.Const(80), ErgConfig{TargetW: 100})
+		defer r.stop()
+		advance(30*time.Second, r.sub)
+		n := len(r.rec.asked())
+		pre := r.rec.asked()[n-1]
+		if err := do(t, r.e, CmdSetTargetPower, 1000); err != nil {
+			t.Fatal(err)
+		}
+		// The command-driven step itself rises at most ergMaxRise.
+		if got := r.rec.asked()[n]; got > pre+ergMaxRise {
+			t.Fatalf("command step asked %d after %d: rise > %d", got, pre, ergMaxRise)
+		}
+		advance(10*time.Second, r.sub)
+		prev := pre
+		for _, l := range r.rec.asked()[n:] {
+			if l > prev+ergMaxRise {
+				t.Fatalf("asked level %d after %d: rise > %d", l, prev, ergMaxRise)
+			}
+			prev = l
+		}
+		if prev <= pre {
+			t.Fatalf("level never rose: %d -> %d", pre, prev)
+		}
+	})
+}

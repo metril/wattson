@@ -365,7 +365,7 @@ func (d Deps) registerRoutes(api huma.API) {
 		Summary: "Import a route file",
 		Description: "Uploads a GPX, TCX or FIT file (multipart/form-data, field `file`, at most 20 MiB) and stores it as a route " +
 			"owned by the caller. Tracks without elevation, or above 60 degrees latitude, are looked up at OpenTopoData when " +
-			"that is enabled in Settings. Errors: 400 `unsupported_format` or `no_track`; 413 `too_large`; " +
+			"that is enabled in Settings. Errors: 400 `unsupported_format`, `no_track` or `invalid_file` (the file could not be parsed); 413 `too_large`; " +
 			"422 `no_elevation` (enable OpenTopoData elevation in Settings → Integrations), `route_too_short` (under 50 m), " +
 			"`route_too_long` (over 500 km) or `too_many_points`; 502 `elevation_unavailable` (the elevation service failed).",
 		Scope: auth.ScopeControl, Status: http.StatusCreated, Multipart: true, MaxBody: MaxImportBytes, ReadTimeout: 2 * time.Minute,

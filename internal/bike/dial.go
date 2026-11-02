@@ -24,8 +24,10 @@ func BLEDial(tr blue.Transport, addr blue.Address, o Options) Dial {
 		cancel()
 		if err != nil {
 			if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
-				// Our own bound expired: the device never showed up.
-				err = fmt.Errorf("%w: %w", blue.ErrNotFound, err)
+				// Our own bound expired before a link came up. ErrNotFound only
+				// reflects that: callers must not treat it as proof the device
+				// is absent (it may be busy, out of range or slow to connect).
+				err = fmt.Errorf("%w: no link within %s: %w", blue.ErrNotFound, dialConnectTimeout, err)
 			}
 			return nil, err
 		}

@@ -42,6 +42,14 @@ func TestBLEDialOpensFitPlus(t *testing.T) {
 	if s.Protocol() != ProtoFitPlus || s.MaxLevel() != 16 {
 		t.Fatalf("proto %v max %d", s.Protocol(), s.MaxLevel())
 	}
+	select {
+	case <-s.Done():
+		t.Fatal("session ended right after BLEDial")
+	default:
+	}
+	if got, err := s.SetLevel(context.Background(), 3); err != nil || got != 3 {
+		t.Fatalf("SetLevel on fresh session = %d, %v", got, err)
+	}
 	if w := f.Writes(testAddr); len(w) == 0 || !bytes.Equal(w[0], []byte{0xaa, 0x01, 0x00, 0x01, 0x55}) {
 		t.Fatalf("writes % x", w)
 	}

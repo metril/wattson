@@ -44,6 +44,14 @@ Open the web app, pick a rider and tap Connect, then Start. Use the on-screen âˆ
 
 TV remote: the up and down arrows change the level and Enter starts, pauses or resumes. Stop and Release need touch or mouse, or the idle auto-release. Remote focus navigation for those arrives in M7.
 
+## Integrations and hardware
+
+- **Home Assistant bike driver**: Settings, Bike, driver "Home Assistant (FTMS)" drives the bike through `number`/`sensor` entities. **FTMS bridges only**: a FitPlus bike has no Home Assistant path and needs the local adapter or an ESPHome proxy. Details in [docs/home-assistant.md](docs/home-assistant.md).
+- **Heart rate** (optional): Settings, Bike, Heart rate. Use a Bluetooth strap, an Apple Watch through the free tier of the **HeartCast** iPhone app, or a Home Assistant sensor. The ride screen shows bpm and the source state; a reading older than 5 s shows `â€”`. Setup, range and address rotation: [hardware runbook](docs/hardware-runbook.md#heart-rate-m5).
+- **MQTT / Home Assistant entities**: Settings, Integrations, MQTT (broker URL, credentials, discovery prefix, Test MQTT). Sensors and buttons appear in Home Assistant by discovery; see [docs/ha-mqtt.md](docs/ha-mqtt.md).
+- **ESPHome proxy**: one proxy serves one Bluetooth subscriber. If Home Assistant adopts it, Wattson loses its Bluetooth data ("Held by another client"); remove it from Home Assistant's ESPHome integration. See [docs/esphome-proxy.md](docs/esphome-proxy.md#held-by-another-client).
+- **Diagnostics**: Settings, Diagnostics (admin) checks the local adapter or the ESPHome proxy, prints the fix for what it finds, and scans for the signal strength of your bike and heart rate monitor. A check can take up to about 20 s.
+
 ## Routes
 
 Routes turn the bike into a gradient trainer: Wattson raises the resistance a few seconds before a climb and eases it on descents. Open **Routes** in the web app.

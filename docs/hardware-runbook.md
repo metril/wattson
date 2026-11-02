@@ -82,3 +82,33 @@ If the bike answers but levels or frames do not match the built-in FitPlus table
 3. Pull the log (`adb bugreport` or `adb pull /sdcard/btsnoop_hci.log`) and open it in Wireshark; filter `btatt`.
 4. Decode the writes to the FitPlus write characteristic (`fff2`) and the notifications on `fff1` by hand against the table; record the real frames in `docs/s29r2.md`.
 5. `probe --pcap` is **deferred**; build it only if this fallback is needed.
+
+## Heart rate (M5)
+
+Wattson reads heart rate from a Bluetooth monitor or from a Home Assistant sensor (Settings, Bike, Heart rate). It is optional and never changes the ride state, the level or alerts. A reading older than 5 seconds shows as `—` on the ride screen. Settings changes apply the next time the bike connects.
+
+### Apple Watch with HeartCast
+
+An Apple Watch does not broadcast heart rate by itself. Run the **HeartCast** app (the free tier is enough) on the iPhone paired with the watch, and start its Bluetooth heart rate broadcast.
+
+1. Start the broadcast in HeartCast; keep the phone awake or the app in the foreground.
+2. In Wattson, Settings, Bike, Heart rate: choose **Bluetooth**, tap **Scan** (only heart rate monitors are listed) and pick the HeartCast row. This fills the address and the name.
+3. Save, then connect the bike. The ride screen shows the bpm and the source state ("Bluetooth: connected").
+
+**Range.** The iPhone must be within Bluetooth range of the radio that Wattson uses: the host's own adapter, or the ESPHome proxy if you use one. Put the phone or the proxy near the bike, not in another room. With a proxy the heart rate monitor takes a second connection slot ([esphome-proxy.md](esphome-proxy.md#slots)).
+
+**Address rotation.** iPhones change their private Bluetooth address from time to time, so the saved address goes stale. Wattson therefore also searches by the saved **name** (with the heart rate service) on every attempt, and finds the phone again. Keep the name filled in; rescan only if the name changed.
+
+Chest straps and other BLE monitors work the same way (pick them in the scan). Put the strap on, and wet the electrodes, before scanning.
+
+### Alternative: heart rate from Home Assistant
+
+If Home Assistant already has a heart rate sensor (for example from the Apple Health or Fitbit integration, or an ESPHome device), choose **Home Assistant** and pick the `sensor.*` entity (in bpm). It needs the Home Assistant URL and token under Integrations. Wattson subscribes to the entity, so the rate is as fresh as Home Assistant's own updates; slow integrations (cloud syncs) show stale or zero values.
+
+### Home Assistant as the bike driver
+
+`bike.driver = ha` (Settings, Bike, driver "Home Assistant (FTMS)") is for FTMS bridges only, not for FitPlus bikes. See [home-assistant.md](home-assistant.md). Wattson needs no Bluetooth then, and Diagnostics reports "No Bluetooth in use".
+
+### Diagnostics
+
+Settings, **Diagnostics** (admin only) is the first stop when the bike or monitor will not connect: it checks the local adapter (D-Bus socket, BlueZ, adapter) or the ESPHome proxy (feature flags, slots, who holds the subscription), prints the exact fix, and shows each device's state and, after **Scan for signal strength**, its signal in dBm. Requests can take up to about 20 seconds; the page shows a spinner meanwhile.

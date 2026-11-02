@@ -13,6 +13,7 @@ const ADMIN_PAGES = [
   '/settings/general',
   '/settings/bike',
   '/settings/integrations',
+  '/settings/diagnostics',
   '/settings/auth',
   '/settings/users',
   '/settings/tokens',

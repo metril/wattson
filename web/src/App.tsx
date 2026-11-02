@@ -15,6 +15,7 @@ import { GeneralForm } from '@/pages/settings/General';
 import { BikePage } from '@/pages/settings/Bike';
 import { IntegrationsForm } from '@/pages/settings/Integrations';
 import { AuthPage } from '@/pages/settings/Auth';
+import { DiagnosticsPage } from '@/pages/settings/Diagnostics';
 import { UsersPage } from '@/pages/settings/Users';
 
 // Route pages (and MapLibre behind them) load on demand to keep the entry bundle small.
@@ -98,6 +99,7 @@ export function AppRoutes() {
           <Route path="bike" element={<BikePage />} />
           <Route path="integrations" element={<IntegrationsForm />} />
           <Route path="maps" element={lazyPage(<MapRegionsPage />)} />
+          <Route path="diagnostics" element={<DiagnosticsPage />} />
           <Route path="auth" element={<AuthPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="*" element={<Navigate to="general" replace />} />

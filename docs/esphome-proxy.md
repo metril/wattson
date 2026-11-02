@@ -47,7 +47,15 @@ Port defaults to 6053 (`esphome://host:6053`). Avoid putting the key in shell hi
 
 ## Slots
 
-`bluetooth_proxy: connection_slots: 3`. Wattson needs one for the bike. A slot stays taken until the link is dropped; if a previous run crashed, wait a bit or reboot the proxy.
+`bluetooth_proxy: connection_slots: 3`. Wattson uses one slot for the bike and one for a heart rate monitor (Settings, Bike, Heart rate), on the same connection to the proxy, and the third stays spare for a reconnect. A slot stays taken until the link is dropped; if a previous run crashed, wait a bit or reboot the proxy.
+
+## Held by another client
+
+The proxy serves one Bluetooth subscriber. If Home Assistant adopts it (or another tool subscribes), the proxy stops sending Wattson its Bluetooth data: scans find nothing and connects time out, though the proxy looks fine. Settings, Diagnostics then shows **Held by another client** under the ESPHome proxy card, with the fix. In short: remove the proxy from Home Assistant's ESPHome integration (Settings, Devices, ESPHome, the proxy, Delete) or disable that entry, then open Diagnostics again; the card turns OK once Wattson has reconnected (start a ride connection or wait for the next retry). Wattson only reports this state, it never fights for the subscription.
+
+## Diagnostics page
+
+Settings, **Diagnostics** (admin only) checks the Bluetooth path that is in use: for the proxy its name, ESPHome version, MAC, feature flags (missing ones, `active_connections` and `raw_advertisements`, are marked red and need new firmware), free and total slots with the addresses holding them, and the subscription state. The **Devices** table lists the configured bike and heart rate monitor with their state and, after **Scan for signal strength**, their signal in dBm ("not seen" if the scan did not hear them; connected devices often stop advertising). A check can take up to about 20 seconds when the proxy is slow or unreachable.
 
 ## Troubleshooting
 
@@ -56,6 +64,7 @@ Port defaults to 6053 (`esphome://host:6053`). Avoid putting the key in shell hi
 | `invalid encryption key` (device says "Handshake MAC failure") | Wrong `--key`. Use the exact `wattson_proxy_api_key` the firmware was built with; re-flash if you changed it. |
 | `--key ... is required with --via esphome://` | Pass `--key`. |
 | `proxy has no free bluetooth connection slots` (`ErrNoSlots`) | Another client holds the slots. Disconnect HA/other tools, wait, or reboot the proxy. Check HA did not adopt it. |
+| Scans find nothing and connects time out, Diagnostics says "Held by another client" | Another client (usually Home Assistant) took the proxy's Bluetooth subscription. See [Held by another client](#held-by-another-client). |
 | `device is using the plaintext protocol` | Firmware has no `api: encryption`; re-flash this config. |
 | `connection refused` (names `host:port`) | Wrong port, or the API is not listening. Check the proxy's logs (`esphome logs wattson-proxy.yaml`). |
 | `dial timeout: host:port did not answer within 5s` | Wrong host/IP, proxy offline or unreachable, firewall on 6053. Whole transport setup is capped at 10 s. |

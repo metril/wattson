@@ -203,6 +203,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
         <div className="flex flex-wrap items-start gap-3">
           <button
             type="button"
+            data-nav
             aria-pressed={showMap}
             onClick={() => setShowMap((v) => !v)}
             className="inline-flex min-h-touch items-center justify-center self-start rounded-control border border-line bg-raised px-4 text-chalk md:hidden"

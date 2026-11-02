@@ -258,6 +258,21 @@ describe('Ride route mode', () => {
       expect(screen.getByTestId('ride3d')).toHaveAttribute('data-tier', 'full');
     });
 
+    it('Escape with the View menu open closes it and does not go back', async () => {
+      const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+      await riding();
+      await screen.findByTestId('mapview');
+      const view = screen.getByRole('button', { name: 'View' });
+      await userEvent.click(view);
+      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+      expect(view).toHaveFocus();
+      expect(back).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Escape}');
+      expect(back).toHaveBeenCalledTimes(1);
+    });
+
     it('3D stays unmounted while the phone map panel is hidden', async () => {
       withWebgl();
       setMedia('wide', false);

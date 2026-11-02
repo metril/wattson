@@ -52,6 +52,7 @@ function Row({ r }: { r: Ride }) {
     <li>
       <Link
         to={`/history/${r.id}`}
+        data-nav
         className={`grid min-h-touch grid-cols-3 items-center gap-x-3 gap-y-2 px-4 py-3 hover:bg-raised md:grid-cols-none ${COLS}`}
       >
         <span className="col-span-2 min-w-0 md:col-span-1">

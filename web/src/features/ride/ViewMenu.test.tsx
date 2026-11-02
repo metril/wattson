@@ -95,4 +95,14 @@ describe('ViewMenu', () => {
     setup();
     expect(screen.getByRole('button', { name: 'View' })).not.toHaveAttribute('aria-controls');
   });
+
+  it('Home and End jump to the first and last enabled option', async () => {
+    setup({ caps: { ...caps, webgl: false } }); // 3D is off, so End lands on Street photos and Home on 2D
+    await open();
+    screen.getByRole('radio', { name: '2D map' }).focus();
+    await userEvent.keyboard('{End}');
+    expect(screen.getByRole('radio', { name: 'Street photos' })).toHaveFocus();
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByRole('radio', { name: '2D map' })).toHaveFocus();
+  });
 });

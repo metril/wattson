@@ -11,18 +11,27 @@ function ownsKey(el: EventTarget | null, key: string): boolean {
 }
 
 /**
+ * ArrowUp/ArrowDown change the level only while focus is on the page itself or on
+ * a level control (marked `data-level`); everywhere else the arrows move focus.
+ */
+export function isLevelFocus(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return true;
+  return target === document.body || target === document.documentElement || !!target.closest('[data-level]');
+}
+
+/**
  * Window-level key handler for the ride screen (arrows and Enter on a TV
  * remote). Returns true from the handler when it used the key. `repeat` is
  * true for auto-repeat while a key is held.
  */
-export function useRideKey(handler: (key: string, repeat: boolean) => boolean): void {
+export function useRideKey(handler: (key: string, repeat: boolean, target: EventTarget | null) => boolean): void {
   const ref = useRef(handler);
   ref.current = handler;
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.defaultPrevented || ev.altKey || ev.ctrlKey || ev.metaKey) return;
       if (ownsKey(ev.target, ev.key)) return;
-      if (ref.current(ev.key, ev.repeat)) ev.preventDefault();
+      if (ref.current(ev.key, ev.repeat, ev.target)) ev.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

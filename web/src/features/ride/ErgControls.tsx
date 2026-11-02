@@ -6,7 +6,7 @@ import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
 import type { CommandName } from '@/lib/ws-types';
 import { ergError } from './StartPicker';
-import { useRideKey } from './keys';
+import { isLevelFocus, useRideKey } from './keys';
 
 const step =
   'metric-step h-[4.5rem] min-w-[7rem] flex-1 shrink-0 gap-2 px-3 text-xl font-medium min-[1600px]:h-24 min-[1600px]:text-3xl';
@@ -14,7 +14,7 @@ const step =
 /**
  * ERG target controls. "−10 W" / "+10 W" send level_delta, which the engine
  * turns into a 10 W nudge (in a workout, an adjustment on top of the blocks).
- * Free ERG also takes a typed target. ArrowUp/Right and ArrowDown/Left nudge too.
+ * Free ERG also takes a typed target. ArrowUp and ArrowDown nudge too (while focus is on the page or these buttons).
  */
 export function ErgControls({
   send,
@@ -43,10 +43,10 @@ export function ErgControls({
     send('level_delta', delta).catch((e) => onError?.(e));
   }
 
-  useRideKey((key) => {
-    if (disabled) return false;
-    if (key === 'ArrowUp' || key === 'ArrowRight') bump(1);
-    else if (key === 'ArrowDown' || key === 'ArrowLeft') bump(-1);
+  useRideKey((key, _repeat, target) => {
+    if (disabled || !isLevelFocus(target)) return false;
+    if (key === 'ArrowUp') bump(1);
+    else if (key === 'ArrowDown') bump(-1);
     else return false;
     return true;
   });
@@ -54,11 +54,11 @@ export function ErgControls({
   return (
     <div className="metric-wide m-wide flex flex-col gap-3 rounded-panel bg-panel p-3">
       <div className="flex items-center gap-3">
-        <button type="button" className={step} disabled={disabled} onClick={() => bump(-1)}>
+        <button type="button" data-nav data-level className={step} disabled={disabled} onClick={() => bump(-1)}>
           <Minus aria-hidden className="size-7" />
           <span>−10 W</span>
         </button>
-        <button type="button" className={step} disabled={disabled} onClick={() => bump(1)}>
+        <button type="button" data-nav data-level className={step} disabled={disabled} onClick={() => bump(1)}>
           <Plus aria-hidden className="size-7" />
           <span>+10 W</span>
         </button>

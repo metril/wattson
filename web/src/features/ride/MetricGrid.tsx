@@ -110,6 +110,7 @@ export function MetricGrid({
       {compact && (
         <button
           type="button"
+          data-nav
           aria-expanded={more}
           onClick={() => setMore((v) => !v)}
           className="m-more inline-flex min-h-touch items-center justify-center rounded-control bg-raised px-4 font-medium text-chalk"

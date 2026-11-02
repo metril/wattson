@@ -93,6 +93,10 @@ export default function Ride3D(p: {
       const el = document.createElement('div');
       el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${accent};border:3px solid ${token('--chalk', '#eaf1ee')};box-shadow:0 0 0 4px rgba(84,169,255,.35)`;
       const marker = new ml.Marker({ element: el }).setLngLat(positionAt(profile, lastD)).addTo(map);
+      // MapLibre makes a marker a focusable button; this one only shows where the rider is.
+      el.setAttribute('role', 'img');
+      el.setAttribute('aria-hidden', 'true');
+      el.removeAttribute('tabindex');
       const l: Live = {
         map,
         marker,

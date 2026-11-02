@@ -20,6 +20,7 @@ export function Field({ label, hint, error, trailing, className = '', ...input }
       <div className="flex gap-2">
         <input
           id={id}
+          data-nav
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy || undefined}
           className={`min-h-touch w-full min-w-0 rounded-control border border-line bg-raised px-3 text-chalk placeholder:text-faint aria-[invalid=true]:border-danger ${className}`}

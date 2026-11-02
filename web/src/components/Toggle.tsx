@@ -27,6 +27,7 @@ export function Toggle({
       >
         <input
           type="checkbox"
+          data-nav
           role="switch"
           checked={checked}
           disabled={disabled}

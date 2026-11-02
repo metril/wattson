@@ -156,6 +156,10 @@ export default function MapView(p: {
             const el = document.createElement('div');
             el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${token('--accent', '#54a9ff')};border:3px solid ${token('--chalk', '#eaf1ee')};box-shadow:0 0 0 4px rgba(84,169,255,.35)`;
             marker = new ml.Marker({ element: el });
+            // MapLibre makes a marker a focusable button; this one only shows where the rider is.
+            el.setAttribute('role', 'img');
+            el.setAttribute('aria-hidden', 'true');
+            el.removeAttribute('tabindex');
             marker.setLngLat(ll).addTo(map);
           } else marker.setLngLat(ll);
         },

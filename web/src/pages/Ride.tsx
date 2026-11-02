@@ -12,6 +12,7 @@ import { RouteView, useRouteId } from '@/features/ride/RouteView';
 import { useTickValue } from '@/features/ride/useTickValue';
 import { WorkoutView } from '@/features/ride/WorkoutView';
 import { notifyUnauthorized } from '@/lib/api';
+import { useSpatialNav } from '@/lib/spatial-nav';
 import { errMessage } from '@/lib/errors';
 import { createRideSocket } from '@/lib/ride-socket';
 import type { CommandName, Tick } from '@/lib/ws-types';
@@ -37,6 +38,10 @@ export function RidePage() {
     document.documentElement.classList.add('ride-dark');
     return () => document.documentElement.classList.remove('ride-dark');
   }, []);
+
+  // D-pad: arrows move focus (Up/Down tune the level while focus is on the page or the level buttons).
+  const screen = useRef<HTMLDivElement>(null);
+  useSpatialNav(screen);
 
   const subscribe = useCallback((cb: () => void) => socket.onStatus(cb), [socket]);
   const status = useSyncExternalStore(subscribe, () => socket.getStatus());
@@ -110,11 +115,19 @@ export function RidePage() {
   const { connected, state, bike } = status;
   // Stays mounted from picking the route into the ride, so pressing Start does not cancel the save.
   const pillRoute = routeMode ? routeId : state === 'ready' && choice.kind === 'route' ? choice.id : 0;
+  // Focus the primary action (Start, Pause, Resume) whenever focus is lost to the page, and when the
+  // bike becomes ready while focus is still on Connect (React reuses that button as Release).
+  useEffect(() => {
+    const a = document.activeElement;
+    const onConnect = state === 'ready' && a instanceof HTMLButtonElement && !!a.closest('.ride-top');
+    if (a && a !== document.body && document.contains(a) && !onConnect) return;
+    screen.current?.querySelector<HTMLElement>('[data-primary]:not(:disabled)')?.focus();
+  }, [state, connected]);
   const ergMode = mode === 'erg';
   const active = state === 'ready' || state === 'riding' || state === 'paused';
 
   return (
-    <div className={`ride-screen ${routeMode || workoutId !== 0 ? '' : 'ride-flat'}`}>
+    <div ref={screen} className={`ride-screen ${routeMode || workoutId !== 0 ? '' : 'ride-flat'}`}>
       <h1 className="sr-only">Ride</h1>
       <div className="ride-top">
         <BikeBar bike={bike} connected={connected} state={state} ticks={socket.ticks} />

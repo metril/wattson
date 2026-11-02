@@ -79,11 +79,11 @@ export function RoutesPage() {
             }}
           />
         </label>
-        <Link to="/routes/new/draw" className={`${btn} border border-line bg-raised hover:border-accent`}>
+        <Link to="/routes/new/draw" data-nav className={`${btn} border border-line bg-raised hover:border-accent`}>
           <PenLine aria-hidden className="size-5" />
           Draw
         </Link>
-        <Link to="/routes/new/synthetic" className={`${btn} border border-line bg-raised hover:border-accent`}>
+        <Link to="/routes/new/synthetic" data-nav className={`${btn} border border-line bg-raised hover:border-accent`}>
           <SlidersHorizontal aria-hidden className="size-5" />
           Synthetic
         </Link>
@@ -119,6 +119,7 @@ export function RoutesPage() {
                   <td className="p-0">
                     <Link
                       to={`/routes/${r.id}`}
+                      data-nav
                       className="flex min-h-14 items-center px-4 text-lg font-medium text-chalk hover:text-accent"
                     >
                       {r.name}

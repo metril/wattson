@@ -14,6 +14,7 @@ export function Select({
       </label>
       <select
         id={id}
+        data-nav
         aria-describedby={hint ? `${id}-hint` : undefined}
         className="min-h-touch w-full rounded-control border border-line bg-raised px-3 text-chalk"
         {...rest}

@@ -57,6 +57,15 @@ export function RideControls({
   }, [state]);
   useEffect(() => () => clearTimeout(settle.current), []);
 
+  // A button that disables itself while its command is in flight drops focus; give it back.
+  const focused = useRef<HTMLElement | null>(null);
+  const remember = (e: { currentTarget: HTMLElement }) => (focused.current = e.currentTarget);
+  useEffect(() => {
+    if (busy !== null || (document.activeElement && document.activeElement !== document.body)) return;
+    const back = focused.current?.isConnected ? focused.current : document.querySelector<HTMLElement>('[data-primary]');
+    back?.focus();
+  }, [busy]);
+
   async function run(command: CommandName) {
     if (locked.current || disabled) return;
     locked.current = true;
@@ -101,6 +110,8 @@ export function RideControls({
     <div className={shell}>
       <Button
         variant="primary"
+        data-primary
+        onFocus={remember}
         className={big}
         disabled={disabled || busy !== null}
         onClick={() => void run(primary.command)}
@@ -111,6 +122,7 @@ export function RideControls({
       {canStop && (
         <Button
           variant={armed ? 'danger' : 'secondary'}
+          onFocus={remember}
           className={big}
           disabled={disabled || busy !== null}
           onClick={stop}

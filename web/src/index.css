@@ -247,10 +247,10 @@ select {
   background-repeat: no-repeat;
 }
 
-/* MapLibre draws its own small controls; leave their size alone. */
-.maplibregl-map button {
-  min-height: 0;
-  min-width: 0;
+/* MapLibre's own controls (zoom buttons) are 29 px; make them 48 px targets. */
+.maplibregl-map .maplibregl-ctrl-group button {
+  width: 48px;
+  height: 48px;
 }
 
 /*

@@ -10,7 +10,7 @@ const OPTIONS: { v: ViewMode; label: string }[] = [
 
 /**
  * A "View" button that opens an inline radio group (no hover, works with
- * arrows and Enter). Arrows only move focus; Enter or Space selects, so a
+ * arrows and Enter). Arrows (and Home/End) only move focus; Enter or Space selects, so a
  * D-pad pass over 3D never builds a WebGL map on the way.
  */
 export function ViewMenu(p: {
@@ -27,22 +27,28 @@ export function ViewMenu(p: {
 
   useEffect(() => {
     if (!open) return;
+    // On document, so it runs (and marks the key used) before the page's window-level "back" handler.
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       setOpen(false);
       btn.current?.focus();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
   const onArrow = (e: KeyboardEvent<HTMLDivElement>) => {
     const dir = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
-    if (!dir) return;
+    const edge = e.key === 'Home' || e.key === 'End';
+    if (!dir && !edge) return;
     e.preventDefault(); // also keeps the ride's arrow keys from changing resistance
     const items = Array.from(group.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
     if (!items.length) return;
+    if (edge) {
+      items[e.key === 'Home' ? 0 : items.length - 1].focus();
+      return;
+    }
     const at = items.indexOf(document.activeElement as HTMLButtonElement);
     items[(at + dir + items.length) % items.length].focus();
   };
@@ -52,6 +58,7 @@ export function ViewMenu(p: {
       <button
         ref={btn}
         type="button"
+        data-nav
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen((o) => !o)}
@@ -70,6 +77,7 @@ export function ViewMenu(p: {
                 <button
                   key={v}
                   type="button"
+                  data-nav
                   role="radio"
                   aria-checked={checked}
                   aria-labelledby={`${id}-${v}-l`}
@@ -102,6 +110,7 @@ export function ViewMenu(p: {
               Terrain height
               <input
                 type="range"
+                data-nav
                 min={1}
                 max={3}
                 step={0.25}

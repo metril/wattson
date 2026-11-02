@@ -58,12 +58,50 @@ describe('RidePage', () => {
     expect(ws.commands.at(-1)).toMatchObject({ command: 'stop' });
   });
 
-  it('ArrowUp sends level_delta 1; Enter in ready sends start', async () => {
+  it('ready: focus starts on Start; Enter sends start, ArrowUp moves focus', async () => {
     const { ws } = await setup({ state: 'ready' }, { state: 'ready' });
+    expect(screen.getByRole('button', { name: 'Start' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(ws.commands.filter((c) => c.command === 'level_delta')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Start' })).not.toHaveFocus();
+    (document.activeElement as HTMLElement).blur();
     await userEvent.keyboard('{ArrowUp}');
     expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: 1 });
     await userEvent.keyboard('{Enter}');
     expect(ws.commands.at(-1)).toMatchObject({ command: 'start' });
+  });
+
+  it('riding with focus on the page: ArrowUp/ArrowDown change the level by 1', async () => {
+    const { ws } = await setup({ state: 'riding' }, { state: 'riding' });
+    (document.activeElement as HTMLElement).blur();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: 1 });
+    await userEvent.keyboard('{ArrowDown}');
+    expect(ws.commands.at(-1)).toMatchObject({ command: 'level_delta', value: -1 });
+  });
+
+  it('riding: ArrowRight moves focus from Pause to Stop and sends nothing', async () => {
+    const { ws } = await setup({ state: 'riding' }, { state: 'riding' });
+    const pause = screen.getByRole('button', { name: 'Pause' });
+    expect(pause).toHaveFocus();
+    const before = ws.commands.length;
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByRole('button', { name: 'Stop' })).toHaveFocus();
+    expect(ws.commands).toHaveLength(before);
+  });
+
+  it('Escape and Backspace go back; Escape in a text field does not', async () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    await setup({ state: 'ready' }, { state: 'ready' });
+    await userEvent.keyboard('{Escape}');
+    expect(back).toHaveBeenCalledTimes(1);
+    await userEvent.keyboard('{Backspace}');
+    expect(back).toHaveBeenCalledTimes(2);
+    await userEvent.click(screen.getByLabelText('Ride'));
+    back.mockClear();
+    await userEvent.keyboard('{Escape}{Backspace}');
+    expect(back).not.toHaveBeenCalled();
+    back.mockRestore();
   });
 
   it('disconnected: every ride button is disabled and Reconnecting is shown', async () => {

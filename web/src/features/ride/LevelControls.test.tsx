@@ -28,17 +28,30 @@ describe('LevelControls', () => {
     expect(send).toHaveBeenLastCalledWith('level_delta', -1);
   });
 
-  it('arrow keys change the level; Left/Down lower it', async () => {
-    const ticks = new TickStore();
+  it('ArrowUp/ArrowDown change the level; ArrowLeft/Right do not', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
-    render(<LevelControls socket={{ send, ticks }} />);
+    render(<LevelControls socket={{ send, ticks: new TickStore() }} />);
     await userEvent.keyboard('{ArrowUp}{ArrowRight}{ArrowDown}{ArrowLeft}');
     expect(send.mock.calls).toEqual([
       ['level_delta', 1],
-      ['level_delta', 1],
-      ['level_delta', -1],
       ['level_delta', -1],
     ]);
+  });
+
+  it('the arrows still tune the level with focus on a level button, but not on other controls', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    render(
+      <>
+        <button>elsewhere</button>
+        <LevelControls socket={{ send, ticks: new TickStore() }} />
+      </>,
+    );
+    screen.getByRole('button', { name: 'Increase level' }).focus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(send).toHaveBeenCalledTimes(1);
+    screen.getByRole('button', { name: 'elsewhere' }).focus();
+    await userEvent.keyboard('{ArrowUp}{ArrowDown}');
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('is inert when disabled', async () => {

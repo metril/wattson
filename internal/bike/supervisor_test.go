@@ -859,3 +859,83 @@ func TestCloseFloorClampedToSessionMax(t *testing.T) {
 		sup.Close(ctxb())
 	})
 }
+
+func TestWatchdogFloorNotReplacedByRacingSetLevel(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{})
+		time.Sleep(5 * time.Second)
+		synctest.Wait()
+		// The trip and a SetLevel land before the serve loop runs.
+		sup.tripWatchdog()
+		sup.SetLevel(ctxb(), 9)
+		synctest.Wait()
+		wantWrites(t, s, 1, 1)
+		time.Sleep(990 * time.Millisecond)
+		synctest.Wait()
+		wantWrites(t, s, 1, 1)
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
+		wantWrites(t, s, 1, 1, 9)
+		sup.Close(ctxb())
+	})
+}
+
+func TestWatchdogBypassesWriteGate(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{WatchdogTimeout: 500 * time.Millisecond})
+		sup.SetLevel(ctxb(), 9) // gated until 1s
+		time.Sleep(500 * time.Millisecond)
+		synctest.Wait()
+		wantWrites(t, s, 1, 1)
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 1 {
+			t.Fatalf("watchdog events %d", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestNewWriteCancelsPendingConfirmation(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		s.fixed = 1
+		sup := start(t, s, SupervisorOptions{})
+		sup.SetLevel(ctxb(), 5) // written at 1s, retry would be due at 3s
+		time.Sleep(1500 * time.Millisecond)
+		sup.SetLevel(ctxb(), 6) // written at 2s
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5, 6, 6)
+		var alerts []Event
+		for _, e := range drainEventsFull(sup.Events()) {
+			if e.Kind == EventLevelUnconfirmed {
+				alerts = append(alerts, e)
+			}
+		}
+		if len(alerts) != 1 || alerts[0].Want != 6 {
+			t.Fatalf("alerts %+v", alerts)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestConfirmRetryRespectsWriteGate(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		s.fixed = 1
+		sup := start(t, s, SupervisorOptions{ConfirmWindow: 100 * time.Millisecond})
+		sup.SetLevel(ctxb(), 5) // written at 1s
+		time.Sleep(1500 * time.Millisecond)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5)
+		time.Sleep(500 * time.Millisecond) // 2s: one MinWriteInterval after the write
+		synctest.Wait()
+		wantWrites(t, s, 1, 5, 5)
+		sup.Close(ctxb())
+	})
+}

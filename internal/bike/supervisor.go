@@ -44,9 +44,10 @@ type Supervisor struct {
 
 	mu     sync.Mutex
 	target int
-	// forceFloor asks the serve loop to write target now, bypassing the
-	// write rate limit (set by the watchdog).
-	forceFloor bool
+	// forceLevel (0 = none) is a level the serve loop must write exactly,
+	// now, bypassing the write rate limit (set by the watchdog). Later
+	// targets go through the gated path.
+	forceLevel int
 	caps       Caps
 	sess       Session // current session; closed by whoever clears it
 	started    bool
@@ -309,7 +310,11 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 	s.caps = Caps{Protocol: sess.Protocol(), MinLevel: ClampLevel(s.floor, s.floor, max), MaxLevel: max}
 	s.target = ClampLevel(s.target, s.floor, max)
 	target := s.target
-	s.forceFloor = false // the reconnect write below already asserts target
+	first := target
+	if s.forceLevel > 0 { // a watchdog trip while disconnected: floor first
+		first = ClampLevel(s.forceLevel, s.floor, max)
+		s.forceLevel = 0
+	}
 	s.mu.Unlock()
 
 	obs := make(chan Telemetry, supObsBuf)
@@ -341,17 +346,17 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 		return r != wOK
 	}
 
-	l := &link{s: s, ctx: ctx, sess: sess, obs: obs, reset: resetBackoff, reported: 0}
-	gate, confirm := time.NewTimer(time.Hour), time.NewTimer(time.Hour)
+	l := &link{s: s, ctx: ctx, sess: sess, obs: obs, reset: resetBackoff}
+	gate, confT := time.NewTimer(time.Hour), time.NewTimer(time.Hour)
 	gate.Stop()
-	confirm.Stop()
+	confT.Stop()
 	defer gate.Stop()
-	defer confirm.Stop()
+	defer confT.Stop()
 
 	// The first write on every (re)connect re-asserts the target, bypassing
 	// the session's dedup and the rate limit.
-	l.handled = target
-	if r, err := l.write(target, true, 1); fail(r, err) {
+	l.handled = first
+	if r, err := l.write(first, true, 1); fail(r, err) {
 		return r == wEnded
 	}
 	s.mu.Lock()
@@ -364,7 +369,7 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 		if r, err := l.act(); fail(r, err) {
 			return r == wEnded
 		}
-		l.arm(gate, confirm)
+		l.arm(gate, confT)
 		select {
 		case <-ctx.Done():
 			end(true)
@@ -379,7 +384,7 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 			l.sample(t)
 		case <-s.kick:
 		case <-gate.C:
-		case <-confirm.C:
+		case <-confT.C:
 		}
 	}
 }
@@ -455,7 +460,8 @@ func (l *link) write(level int, resend bool, attempt int) (writeRes, error) {
 	now := time.Now()
 	l.lastWrite = now
 	l.conf = confirm{}
-	deadline := now.Add(l.s.o.ConfirmWindow)
+	// The retry is a write: never schedule it inside the rate-limit gate.
+	deadline := now.Add(max(l.s.o.ConfirmWindow, l.s.o.MinWriteInterval))
 	switch {
 	case err == nil:
 		l.reset()
@@ -489,13 +495,17 @@ func (l *link) act() (writeRes, error) {
 		}
 	}
 	l.s.mu.Lock()
-	target, force := l.s.target, l.s.forceFloor
-	l.s.forceFloor = false
+	target, force := l.s.target, l.s.forceLevel
+	l.s.forceLevel = 0
 	l.s.mu.Unlock()
 	switch {
-	case force:
-		l.handled = target
-		return l.write(target, true, 1)
+	case force > 0:
+		// Exactly the forced level; a newer target follows through the gate.
+		l.handled = force
+		if r, err := l.write(force, true, 1); r != wOK || target == force {
+			return r, err
+		}
+		fallthrough
 	case target != l.handled:
 		if wait := l.lastWrite.Add(l.s.o.MinWriteInterval).Sub(time.Now()); wait > 0 {
 			l.gateWait = wait
@@ -508,17 +518,35 @@ func (l *link) act() (writeRes, error) {
 }
 
 // arm schedules the next wake-up for the rate-limit gate and confirmation.
-func (l *link) arm(gate, confirm *time.Timer) {
+func (l *link) arm(gate, confT *time.Timer) {
 	if l.gateWait > 0 {
 		gate.Reset(l.gateWait)
 	} else {
 		gate.Stop()
 	}
 	if l.conf.active {
-		confirm.Reset(max(0, time.Until(l.conf.deadline)))
+		confT.Reset(max(0, time.Until(l.conf.deadline)))
 	} else {
-		confirm.Stop()
+		confT.Stop()
 	}
+}
+
+// tripWatchdog retargets the floor and forces its write. It reports false
+// when the supervisor is closed.
+func (s *Supervisor) tripWatchdog() bool {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
+	s.target = s.caps.MinLevel
+	s.forceLevel = s.caps.MinLevel
+	s.mu.Unlock()
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
+	return true
 }
 
 // watchdog trips when no sample with Cadence > 0 arrived for WatchdogTimeout
@@ -535,17 +563,14 @@ func (s *Supervisor) watchdog(ctx context.Context) {
 		case <-s.wdArm:
 			t.Reset(s.o.WatchdogTimeout)
 		case <-t.C:
-			s.mu.Lock()
-			if s.closed {
-				s.mu.Unlock()
-				return
-			}
-			s.target = s.caps.MinLevel
-			s.forceFloor = true
-			s.mu.Unlock()
-			select {
-			case s.kick <- struct{}{}:
+			select { // a sample racing the expiry wins
+			case <-s.wdArm:
+				t.Reset(s.o.WatchdogTimeout)
+				continue
 			default:
+			}
+			if !s.tripWatchdog() {
+				return
 			}
 			s.emit(Event{Kind: EventWatchdog})
 		}

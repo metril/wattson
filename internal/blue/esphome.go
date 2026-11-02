@@ -29,11 +29,19 @@ const (
 // transport therefore holds one advertisement subscription for its whole
 // lifetime; adverts are ignored unless a Scan is running.
 func NewESPHome(ctx context.Context, hostport, key string) (Transport, error) {
+	return NewESPHomeWith(ctx, hostport, key)
+}
+
+// NewESPHomeWith is NewESPHome with options.
+func NewESPHomeWith(ctx context.Context, hostport, key string, opts ...ESPHomeOption) (Transport, error) {
 	c, err := esphomeapi.Dial(ctx, hostport, key)
 	if err != nil {
 		return nil, err
 	}
-	t := &espTransport{c: c, scans: map[*dropQueue[esphomeapi.RawAdv]]struct{}{}}
+	t := &espTransport{c: c, scans: map[*dropQueue[esphomeapi.RawAdv]]struct{}{}, probeTimeout: defaultProbeTimeout}
+	for _, o := range opts {
+		o(t)
+	}
 	// Never cancelled: only Close ends the subscription (see Close).
 	if err := c.SubscribeAdvertisements(context.Background(), t.onAdv); err != nil {
 		_ = c.Close()
@@ -42,11 +50,73 @@ func NewESPHome(ctx context.Context, hostport, key string) (Transport, error) {
 	return t, nil
 }
 
+// defaultProbeTimeout is how long Connect waits for the proxy's slot report
+// before concluding another client holds the subscription.
+const defaultProbeTimeout = 3 * time.Second
+
+// ESPHomeOption tunes NewESPHome.
+type ESPHomeOption func(*espTransport)
+
+// WithProbeTimeout sets how long Connect waits for the proxy's slot report
+// before it fails with ErrProxyHeld (default 3 s).
+func WithProbeTimeout(d time.Duration) ESPHomeOption {
+	return func(t *espTransport) { t.probeTimeout = d }
+}
+
 type espTransport struct {
 	c *esphomeapi.Client
 
 	mu    sync.RWMutex
 	scans map[*dropQueue[esphomeapi.RawAdv]]struct{} // active Scan queues
+
+	// probeTimeout bounds the slot report Connect asks for before connecting.
+	probeTimeout time.Duration
+}
+
+var _ Proxy = (*espTransport)(nil)
+
+// Done is closed when the API link to the proxy is gone.
+func (t *espTransport) Done() <-chan struct{} { return t.c.Done() }
+
+// ProxyStatus reports the proxy's identity and connection slots. The proxy
+// answers only the client holding its advertisement subscription, so an
+// unanswered query while the link is up (ctx deadline) means another API
+// client took the subscription: Subscribed is false and the error nil.
+func (t *espTransport) ProxyStatus(ctx context.Context) (ProxyStatus, error) {
+	info := t.c.Info()
+	st := ProxyStatus{Name: info.Name, MAC: info.MAC, Version: info.ESPHomeVersion, Flags: info.BTProxyFlags}
+	r, err := t.c.ConnectionsFree(ctx)
+	select {
+	case <-t.c.Done():
+		return st, fmt.Errorf("proxy status: %w: %v", ErrDisconnected, t.c.Err())
+	default:
+	}
+	switch {
+	case err == nil:
+		st.Subscribed = true
+		st.Free, st.Limit = int(r.Free), int(r.Limit)
+		for _, a := range r.Allocated {
+			st.Allocated = append(st.Allocated, addrFromUint64(a, 0))
+		}
+		return st, nil
+	case errors.Is(err, context.DeadlineExceeded):
+		return st, nil
+	default:
+		return st, espErr("proxy status", err)
+	}
+}
+
+// checkHeld returns ErrProxyHeld (with a hint) when the proxy does not answer
+// within probeTimeout although ctx is still live. It never re-subscribes:
+// taking the proxy back would only start a fight with the other client.
+func (t *espTransport) checkHeld(ctx context.Context, addr Address) error {
+	pctx, cancel := context.WithTimeout(ctx, t.probeTimeout)
+	defer cancel()
+	st, err := t.ProxyStatus(pctx)
+	if err != nil || st.Subscribed || ctx.Err() != nil {
+		return nil // dead link and cancellation are reported by the connect itself
+	}
+	return ProxyHeldError("connect "+addr.String(), st.Name)
 }
 
 // onAdv runs on the API read goroutine: fan out without blocking.
@@ -165,6 +235,9 @@ func (t *espTransport) Scan(ctx context.Context, fn func(Advertisement)) error {
 
 func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) {
 	op := "connect " + addr.String()
+	if err := t.checkHeld(ctx, addr); err != nil {
+		return nil, err
+	}
 	a := addr.Uint64()
 	c := &espConn{t: t, addr: addr, a: a, done: make(chan struct{})}
 	// Registered before the connect request so a drop at any later point

@@ -2,6 +2,7 @@ package esphometest
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,8 +98,12 @@ type bleState struct {
 	// Advertisements (the real proxy's api_connection_); nil when none or
 	// after Unsubscribe. Subscribing replaces any previous subscriber.
 	subscriber *session
-	dropped    int // BLE replies dropped because nobody was subscribed
-	flush      sync.Once
+	// foreign is set while another API client holds the subscription (see
+	// SetForeignSubscriber): subscribe requests are ignored and subscriber is
+	// the foreignSession sentinel.
+	foreign bool
+	dropped int // BLE replies dropped because nobody was subscribed
+	flush   sync.Once
 }
 
 func (s *Server) ble() *bleState {
@@ -141,9 +146,53 @@ func (s *Server) BLEDroppedReplies() int {
 	return st.dropped
 }
 
+// foreignSession stands for another API client (e.g. Home Assistant) that
+// holds the advertisement subscription; it never matches the test client.
+var foreignSession = &session{}
+
+// SetForeignSubscriber makes another API client the advertisement subscriber,
+// as when Home Assistant subscribes to the proxy. It models real firmware:
+// the newest subscriber wins (so a client already subscribed loses it at once:
+// its BLE replies are dropped) and, while the foreign client holds it, the test
+// client's subscribe requests are ignored (bluetooth_proxy's "Only one API
+// subscription is allowed at a time"). The BLE message handlers are installed.
+func (s *Server) SetForeignSubscriber() {
+	st := s.ensureBLE()
+	st.mu.Lock()
+	st.foreign = true
+	st.subscriber = foreignSession
+	st.mu.Unlock()
+}
+
+// ClearForeignSubscriber ends SetForeignSubscriber: the foreign client goes
+// away and nobody is subscribed until the test client subscribes again.
+func (s *Server) ClearForeignSubscriber() {
+	st := s.ensureBLE()
+	st.mu.Lock()
+	st.foreign = false
+	if st.subscriber == foreignSession {
+		st.subscriber = nil
+	}
+	st.mu.Unlock()
+}
+
+// ensureBLE returns the BLE state with the bluetooth_proxy handlers installed.
+func (s *Server) ensureBLE() *bleState {
+	st := s.ble()
+	st.mu.Lock()
+	install := !st.installd
+	st.installd = true
+	st.mu.Unlock()
+	if install {
+		s.installBLE(st)
+	}
+	return st
+}
+
 // HandleHello answers Hello and DeviceInfo like a device with the given
-// bluetooth_proxy feature flags.
+// bluetooth_proxy feature flags, and installs the bluetooth_proxy handlers.
 func (s *Server) HandleHello(flags uint32) {
+	s.ensureBLE()
 	s.Handle(tHelloRequest, func([]byte) []Reply {
 		var b []byte
 		b = protowire.AppendTag(b, 1, protowire.VarintType)
@@ -174,15 +223,10 @@ func (s *Server) HandleHello(flags uint32) {
 // message handlers (idempotent). The device is reported to advertisement
 // subscribers and can be connected to with its GATT services.
 func (s *Server) AddBLEDevice(adv RawAdv, svcs []GATTService) {
-	st := s.ble()
+	st := s.ensureBLE()
 	st.mu.Lock()
 	st.devs[adv.Address] = &bleDev{adv: adv, svcs: svcs, values: map[uint32][]byte{}, notifying: map[uint32]bool{}}
-	install := !st.installd
-	st.installd = true
 	st.mu.Unlock()
-	if install {
-		s.installBLE(st)
-	}
 }
 
 // SetBLEValue sets the value returned for GATT reads of handle on addr.
@@ -293,7 +337,7 @@ func (s *Server) DropBLE(addr uint64) {
 		d.notifying = map[uint32]bool{}
 		st.free++
 	}
-	free, limit := st.free, st.limit
+	free, limit, alloc := st.free, st.limit, st.allocated()
 	sub := s.subscribed(st)
 	if !sub {
 		st.dropped += 2
@@ -303,7 +347,7 @@ func (s *Server) DropBLE(addr uint64) {
 		return
 	}
 	s.Push(tDeviceConnection, encConn(addr, false, 0, 0))
-	s.Push(tFreeResp, encFree(free, limit))
+	s.Push(tFreeResp, encFree(free, limit, alloc...))
 }
 
 func (s *Server) installBLE(st *bleState) {
@@ -319,8 +363,11 @@ func (s *Server) installBLE(st *bleState) {
 		s.mu.Unlock()
 		st.mu.Lock()
 		defer st.mu.Unlock()
-		st.subs++
 		st.advFlags = append(st.advFlags, flags)
+		if st.foreign {
+			return nil // another client holds the subscription: ignored
+		}
+		st.subs++
 		st.subscriber = cur // newest subscriber wins
 		return s.advBatch(st)
 	})
@@ -341,7 +388,7 @@ func (s *Server) installBLE(st *bleState) {
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		st.freeSubs++
-		return []Reply{{Type: tFreeResp, Payload: encFree(st.free, st.limit)}}
+		return s.gate(st, []Reply{{Type: tFreeResp, Payload: encFree(st.free, st.limit, st.allocated()...)}})
 	})
 	s.Handle(tDeviceRequest, func(p []byte) []Reply {
 		var r ConnRequest
@@ -377,7 +424,7 @@ func (s *Server) installBLE(st *bleState) {
 			}
 			return []Reply{
 				{Type: tDeviceConnection, Payload: encConn(r.Address, true, 247, 0)},
-				{Type: tFreeResp, Payload: encFree(st.free, st.limit)},
+				{Type: tFreeResp, Payload: encFree(st.free, st.limit, st.allocated()...)},
 			}
 		case 1: // disconnect
 			if d != nil && d.connected {
@@ -387,7 +434,7 @@ func (s *Server) installBLE(st *bleState) {
 			}
 			return s.gate(st, []Reply{
 				{Type: tDeviceConnection, Payload: encConn(r.Address, false, 0, 0)},
-				{Type: tFreeResp, Payload: encFree(st.free, st.limit)},
+				{Type: tFreeResp, Payload: encFree(st.free, st.limit, st.allocated()...)},
 			})
 		}
 		return nil
@@ -621,12 +668,29 @@ func encConn(addr uint64, connected bool, mtu uint32, errCode int32) []byte {
 	return b
 }
 
-func encFree(free, limit uint32) []byte {
+func encFree(free, limit uint32, allocated ...uint64) []byte {
 	var b []byte
 	b = protowire.AppendTag(b, 1, protowire.VarintType)
 	b = protowire.AppendVarint(b, uint64(free))
 	b = protowire.AppendTag(b, 2, protowire.VarintType)
-	return protowire.AppendVarint(b, uint64(limit))
+	b = protowire.AppendVarint(b, uint64(limit))
+	for _, a := range allocated {
+		b = protowire.AppendTag(b, 3, protowire.VarintType)
+		b = protowire.AppendVarint(b, a)
+	}
+	return b
+}
+
+// allocated lists the addresses of connected devices, ascending. st.mu must be held.
+func (st *bleState) allocated() []uint64 {
+	var out []uint64
+	for a, d := range st.devs {
+		if d.connected {
+			out = append(out, a)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func encAdv(a RawAdv) []byte {

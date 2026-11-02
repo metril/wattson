@@ -24,6 +24,12 @@ type BLEConfig struct {
 	ConnectTimeout time.Duration // bound on Connect and Subscribe; default 30s
 	BackoffMin     time.Duration // default 1s
 	BackoffMax     time.Duration // default 30s
+	// ProxyCheck is how often a live connection through a blue.Proxy checks
+	// the proxy still answers us; default 15s. A proxy that stops answering
+	// (another client took its Bluetooth subscription) ends the connection
+	// with blue.ErrProxyHeld. The monitor only reports this and retries with
+	// backoff; it never takes the subscription back.
+	ProxyCheck time.Duration
 }
 
 // BLEMonitor reads heart rate from a BLE heart rate monitor, reconnecting with
@@ -57,6 +63,7 @@ func NewBLE(c BLEConfig) *BLEMonitor {
 	def(&c.ConnectTimeout, 30*time.Second)
 	def(&c.BackoffMin, time.Second)
 	def(&c.BackoffMax, 30*time.Second)
+	def(&c.ProxyCheck, 15*time.Second)
 	m := &BLEMonitor{c: c}
 	m.target = m.targetString(c.Addr)
 	return m
@@ -137,11 +144,34 @@ func (m *BLEMonitor) resolve(ctx context.Context) (blue.Address, error) {
 	if ctx.Err() != nil {
 		return blue.Address{}, ctx.Err()
 	}
+	// A proxy held by another client delivers no adverts at all.
+	if herr := m.proxyHeld(ctx); herr != nil {
+		return blue.Address{}, herr
+	}
 	if err != nil {
 		return blue.Address{}, fmt.Errorf("scan for %s: %w", m.targetString(m.c.Addr), err)
 	}
 	return blue.Address{}, fmt.Errorf("heart rate monitor %s not seen in %s: %w", m.targetString(m.c.Addr), m.c.ResolveScan, blue.ErrNotFound)
 }
+
+// proxyHeld returns blue.ErrProxyHeld when the transport is a proxy that does
+// not answer us; nil otherwise, including when the transport is no proxy.
+func (m *BLEMonitor) proxyHeld(ctx context.Context) error {
+	p, ok := m.c.Transport.(blue.Proxy)
+	if !ok {
+		return nil
+	}
+	pctx, cancel := context.WithTimeout(ctx, min(proxyProbe, m.c.ProxyCheck))
+	defer cancel()
+	st, err := p.ProxyStatus(pctx)
+	if err != nil || st.Subscribed || ctx.Err() != nil {
+		return nil
+	}
+	return blue.ProxyHeldError("heart rate monitor "+m.targetString(m.c.Addr), st.Name)
+}
+
+// proxyProbe bounds one proxy liveness query.
+const proxyProbe = 3 * time.Second
 
 func hasHR(svcs []blue.Service) bool {
 	for _, s := range svcs {
@@ -191,10 +221,26 @@ func (m *BLEMonitor) attempt(ctx context.Context) (got bool, err error) {
 		return false, err
 	}
 	m.set(func() { m.connected, m.errText = true, "" })
-	select {
-	case <-ctx.Done():
-		return gotAny.Load(), nil
-	case <-conn.Done():
+	var check <-chan time.Time
+	if _, ok := m.c.Transport.(blue.Proxy); ok {
+		tk := time.NewTicker(m.c.ProxyCheck)
+		defer tk.Stop()
+		check = tk.C
+	}
+wait:
+	for {
+		select {
+		case <-ctx.Done():
+			return gotAny.Load(), nil
+		case <-conn.Done():
+			break wait
+		case <-check:
+			if herr := m.proxyHeld(ctx); herr != nil {
+				// Report now: closing the conn waits on a proxy that no longer answers.
+				m.set(func() { m.connected, m.errText = false, herr.Error() })
+				return gotAny.Load(), herr
+			}
+		}
 	}
 	if cerr := conn.Err(); cerr != nil {
 		return gotAny.Load(), cerr

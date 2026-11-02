@@ -14,6 +14,10 @@ var (
 	ErrDisconnected     = errors.New("blue: disconnected")
 	ErrNoSlots          = errors.New("blue: no free connection slots")
 	ErrNoCharacteristic = errors.New("blue: no such characteristic")
+	// ErrProxyHeld means an ESPHome Bluetooth proxy is working for another API
+	// client: it allows one advertisement subscription at a time and answers
+	// only that client, so this one gets nothing back.
+	ErrProxyHeld = errors.New("blue: proxy bluetooth subscription held by another client")
 )
 
 // UUID is a 128-bit UUID in big-endian canonical byte order.
@@ -201,4 +205,33 @@ func ParseAdvertisingData(b []byte) (name string, services []UUID) {
 		}
 	}
 	return name, services
+}
+
+// ProxyHeldError wraps ErrProxyHeld for op on the named proxy with a hint on
+// what to do. Wattson never takes the subscription back: that would start a
+// fight with the other client.
+func ProxyHeldError(op, proxyName string) error {
+	return fmt.Errorf("%s: %w: %s did not answer; another client (Home Assistant's ESPHome integration, for one) is subscribed to its Bluetooth, and ESPHome allows only one. Disconnect it or give Wattson a dedicated proxy", op, ErrProxyHeld, proxyName)
+}
+
+// ProxyStatus is a snapshot of a Bluetooth proxy.
+type ProxyStatus struct {
+	Name, MAC, Version string // device name, MAC address and ESPHome version
+	Flags              uint32 // bluetooth_proxy feature flags
+	// Subscribed is false when the proxy did not answer: another API client
+	// holds its Bluetooth subscription (see ErrProxyHeld) or it is unresponsive.
+	Subscribed bool
+	Free       int       // free connection slots
+	Limit      int       // total connection slots
+	Allocated  []Address // devices holding a slot
+}
+
+// Proxy is implemented by transports that reach Bluetooth through a remote proxy.
+type Proxy interface {
+	// Done is closed when the link to the proxy is gone.
+	Done() <-chan struct{}
+	// ProxyStatus queries the proxy; the caller bounds ctx. When ctx expires
+	// while the link is alive it returns Subscribed false and a nil error; a dead
+	// link gives an error wrapping ErrDisconnected.
+	ProxyStatus(ctx context.Context) (ProxyStatus, error)
 }

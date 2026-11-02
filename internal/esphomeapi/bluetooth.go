@@ -190,37 +190,46 @@ func (c *Client) SubscribeAdvertisements(ctx context.Context, fn func(RawAdv)) e
 	return nil
 }
 
-// BLEConnect connects to addr (addrType is the ESPHome address type: 0 public,
-// 1 random) and returns the negotiated MTU. It returns ErrNoSlots without
-// sending a connect request when the proxy reports no free slot.
-func (c *Client) BLEConnect(ctx context.Context, addr uint64, addrType uint32) (uint32, error) {
-	freeCh := make(chan uint32, 1)
-	cancelFree := c.On(MsgBLEConnectionsFreeResponse, func(p []byte) {
+// ConnectionsFree asks the proxy for its connection-slot counts and the
+// addresses holding them. The proxy answers only the client that holds the
+// advertisement subscription, so when another client has taken it over (the
+// newest subscriber wins) no reply ever comes and the error is ctx's.
+func (c *Client) ConnectionsFree(ctx context.Context) (BLEConnectionsFreeResponse, error) {
+	ch := make(chan BLEConnectionsFreeResponse, 1)
+	cancel := c.On(MsgBLEConnectionsFreeResponse, func(p []byte) {
 		var m BLEConnectionsFreeResponse
 		if m.Unmarshal(p) != nil {
 			return
 		}
 		select {
-		case freeCh <- m.Free:
+		case ch <- m:
 		default:
 		}
 	})
-	err := c.Send(MsgSubscribeBLEConnectionsFree, Empty{})
-	if err == nil {
-		select {
-		case free := <-freeCh:
-			if free == 0 {
-				err = ErrNoSlots
-			}
-		case <-ctx.Done():
-			err = ctx.Err()
-		case <-c.done:
-			err = c.closedErr()
-		}
+	defer cancel()
+	if err := c.Send(MsgSubscribeBLEConnectionsFree, Empty{}); err != nil {
+		return BLEConnectionsFreeResponse{}, err
 	}
-	cancelFree()
+	select {
+	case m := <-ch:
+		return m, nil
+	case <-ctx.Done():
+		return BLEConnectionsFreeResponse{}, ctx.Err()
+	case <-c.done:
+		return BLEConnectionsFreeResponse{}, c.closedErr()
+	}
+}
+
+// BLEConnect connects to addr (addrType is the ESPHome address type: 0 public,
+// 1 random) and returns the negotiated MTU. It returns ErrNoSlots without
+// sending a connect request when the proxy reports no free slot.
+func (c *Client) BLEConnect(ctx context.Context, addr uint64, addrType uint32) (uint32, error) {
+	r, err := c.ConnectionsFree(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if r.Free == 0 {
+		return 0, ErrNoSlots
 	}
 
 	ch, cancel := c.watch(addr, 0, watchSpec{typ: MsgBLEDeviceConnectionResponse})

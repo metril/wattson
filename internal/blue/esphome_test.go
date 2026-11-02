@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +36,11 @@ type espEnv struct {
 
 func newESPEnv(t *testing.T, dev blue.Address) espEnv {
 	t.Helper()
+	return newESPEnvOpts(t, dev, blue.WithProbeTimeout(100*time.Millisecond))
+}
+
+func newESPEnvOpts(t *testing.T, dev blue.Address, opts ...blue.ESPHomeOption) espEnv {
+	t.Helper()
 	k := bytes.Repeat([]byte{7}, 32)
 	srv := esphometest.Start(t, k)
 	srv.HandleHello(0x3f)
@@ -50,7 +56,7 @@ func newESPEnv(t *testing.T, dev blue.Address) espEnv {
 	srv.SetBLEValue(dev.Uint64(), hRead, []byte("MRK"))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	tr, err := blue.NewESPHome(ctx, srv.Addr(), base64.StdEncoding.EncodeToString(k))
+	tr, err := blue.NewESPHomeWith(ctx, srv.Addr(), base64.StdEncoding.EncodeToString(k), opts...)
 	if err != nil {
 		t.Fatalf("NewESPHome: %v", err)
 	}
@@ -364,5 +370,113 @@ func TestESPHomeScanThenConnectKeepsSubscription(t *testing.T) {
 			t.Fatal("transport Close did not unsubscribe")
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// espProxyEnv dials a transport to srv (already configured by the caller).
+func espProxy(t *testing.T, srv *esphometest.Server, k []byte) blue.Transport {
+	t.Helper()
+	tr, err := blue.NewESPHome(ctx2s(t), srv.Addr(), base64.StdEncoding.EncodeToString(k))
+	if err != nil {
+		t.Fatalf("NewESPHome: %v", err)
+	}
+	t.Cleanup(func() { tr.Close() })
+	return tr
+}
+
+func proxyOf(t *testing.T, tr blue.Transport) blue.Proxy {
+	t.Helper()
+	p, ok := tr.(blue.Proxy)
+	if !ok {
+		t.Fatal("ESPHome transport does not implement blue.Proxy")
+	}
+	return p
+}
+
+func TestConnectionsFreeViaProxyStatus(t *testing.T) {
+	t.Parallel()
+	e := newESPEnv(t, espDev)
+	c, err := e.tr.Connect(ctx2s(t), e.dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	st, err := proxyOf(t, e.tr).ProxyStatus(ctx2s(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Subscribed || st.Free != 2 || st.Limit != 3 || len(st.Allocated) != 1 || st.Allocated[0].MAC != e.dev.MAC { // the proxy does not report address types
+		t.Fatalf("status = %+v", st)
+	}
+}
+
+func TestProxyStatusSubscribed(t *testing.T) {
+	t.Parallel()
+	k := bytes.Repeat([]byte{7}, 32)
+	srv := esphometest.Start(t, k)
+	srv.HandleHello(0x3f)
+	st, err := proxyOf(t, espProxy(t, srv, k)).ProxyStatus(ctx2s(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := blue.ProxyStatus{Name: esphometest.Name, MAC: esphometest.MAC, Version: "2026.10.1", Flags: 0x3f, Subscribed: true, Free: 3, Limit: 3}
+	if st.Name != want.Name || st.MAC != want.MAC || st.Version != want.Version || st.Flags != want.Flags ||
+		!st.Subscribed || st.Free != 3 || st.Limit != 3 || len(st.Allocated) != 0 {
+		t.Fatalf("status = %+v, want %+v", st, want)
+	}
+}
+
+func TestProxyStatusForeign(t *testing.T) {
+	t.Parallel()
+	k := bytes.Repeat([]byte{7}, 32)
+	srv := esphometest.Start(t, k)
+	srv.HandleHello(0x3f)
+	srv.SetForeignSubscriber()
+	p := proxyOf(t, espProxy(t, srv, k))
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	st, err := p.ProxyStatus(ctx)
+	if err != nil || st.Subscribed || st.Name != esphometest.Name {
+		t.Fatalf("status = %+v, err %v; want Subscribed false and nil error", st, err)
+	}
+}
+
+func TestProxyStatusLinkDown(t *testing.T) {
+	t.Parallel()
+	k := bytes.Repeat([]byte{7}, 32)
+	srv := esphometest.Start(t, k)
+	srv.HandleHello(0x3f)
+	p := proxyOf(t, espProxy(t, srv, k))
+	srv.CloseClient()
+	select {
+	case <-p.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done not closed after the API link dropped")
+	}
+	if _, err := p.ProxyStatus(ctx2s(t)); !errors.Is(err, blue.ErrDisconnected) {
+		t.Fatalf("err = %v, want ErrDisconnected", err)
+	}
+}
+
+// Another client taking the subscription silences the proxy: Connect says so
+// instead of waiting out its timeout, and does not try to take it back.
+func TestESPHomeConnectProxyHeld(t *testing.T) {
+	t.Parallel()
+	e := newESPEnv(t, espDev)
+	c, err := e.tr.Connect(ctx2s(t), e.dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	e.srv.SetForeignSubscriber() // newest subscriber wins: we just lost it
+	_, err = e.tr.Connect(ctx2s(t), e.dev)
+	if !errors.Is(err, blue.ErrProxyHeld) {
+		t.Fatalf("err = %v, want ErrProxyHeld", err)
+	}
+	if !strings.Contains(err.Error(), "another client") {
+		t.Fatalf("err %q carries no hint", err)
+	}
+	if f := e.srv.BLEAdvFlags(); len(f) != 1 {
+		t.Fatalf("advert subscriptions = %v: Wattson must not re-subscribe", f)
 	}
 }

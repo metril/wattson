@@ -38,6 +38,12 @@ For a bike on this host's Bluetooth adapter, the container talks to the host's B
 
 Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` sits behind the `routing` profile and is not started by default.
 
+## Ride screen (web)
+
+Open the web app, pick a rider and tap Connect, then Start. Use the on-screen − / + buttons to change the level, and Pause, Resume and Stop (two taps) to control the ride.
+
+TV remote: the up and down arrows change the level and Enter starts, pauses or resumes. Stop and Release need touch or mouse, or the idle auto-release. Remote focus navigation for those arrives in M7.
+
 ## Quick start (CLI)
 
 ```

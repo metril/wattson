@@ -63,10 +63,10 @@ The TV layout is built for 3 m away: large numbers, a safe margin around the edg
 
 | Key | What it does |
 | --- | --- |
-| Up / Down | While riding: harder / easier by one level (on a route: shifts the level up or down from the route's own). |
+| Up / Down | Harder / easier by one level (on a route: shifts the level up or down from the route's own), but only while focus is on the page itself or on **Start**, **Pause**, **Resume** or **Stop**. On any other control, including **−** and **+**, they move the focus instead. |
 | Left / Right | Move the focus to the previous / next control. |
 | Enter (OK) | Press the focused control. On **Start**, **Pause** and **Resume** it is the quickest way. **Stop** needs Enter twice. |
-| Back (or Escape, Backspace) | Close the View menu or go back one screen. |
+| Back (or Escape, Backspace) | Close the View menu, or go back one screen. Going back from the ride screen mid-ride does not stop the ride: it keeps running on the server and the bike keeps its level. Open the ride screen again to see it and carry on. |
 
 In the View menu and in lists the arrows move through the choices; Enter picks one. Everything on the ride screen can be reached this way: pick a rider, **Connect**, **Start**, change the level, **Pause**, **Stop**.
 

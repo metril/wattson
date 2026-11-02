@@ -52,7 +52,7 @@ Open the web app, pick a rider and tap Connect, then Start. Use the on-screen âˆ
 
 On a route ride the **View** button switches between the 2D map, a 3D terrain flyover and Mapillary street photos (the choice is remembered per device). The 3D view drops to 2D by itself when the display is too slow. Layouts are tuned for a phone, a landscape tablet and a TV at 3 m. [User guide](docs/user-guide.md).
 
-TV remote: Up and Down change the level, Left and Right move the focus, Enter presses the focused control (Start, Pause, Resume; Stop needs it twice) and Back or Escape closes menus. Every ride action is reachable this way, so a paired TV needs no keyboard (Settings, Tokens, Pair a display).
+TV remote: Up and Down change the level while focus is on the page or on Start, Pause, Resume or Stop (on any other control they move the focus), Left and Right move the focus, Enter presses the focused control (Start, Pause, Resume; Stop needs it twice) and Back or Escape closes menus. Back on the ride screen with no menu open leaves the screen; the ride itself keeps running on the server, so open the ride screen again to carry on. Every ride action is reachable this way, so a paired TV needs no keyboard (Settings, Tokens, Pair a display).
 
 **Street photos** need a Mapillary client token (Settings, Integrations, Street imagery). The server fetches the photos; the token never reaches a browser. Photos are CC BY-SA 4.0 and credited on screen; panoramas show as flat images.
 

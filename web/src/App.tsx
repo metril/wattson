@@ -9,6 +9,8 @@ import { SettingsLayout } from '@/pages/settings/SettingsLayout';
 import { GeneralForm } from '@/pages/settings/General';
 import { BikeForm } from '@/pages/settings/Bike';
 import { IntegrationsForm } from '@/pages/settings/Integrations';
+import { AuthPage } from '@/pages/settings/Auth';
+import { UsersPage } from '@/pages/settings/Users';
 
 // Screens arrive in later tasks; each route renders a titled placeholder.
 function Page({ title }: { title: string }) {
@@ -69,8 +71,8 @@ export function AppRoutes() {
           <Route path="general" element={<GeneralForm />} />
           <Route path="bike" element={<BikeForm />} />
           <Route path="integrations" element={<IntegrationsForm />} />
-          <Route path="auth" element={<Page title="Authentication" />} />
-          <Route path="users" element={<Page title="Users" />} />
+          <Route path="auth" element={<AuthPage />} />
+          <Route path="users" element={<UsersPage />} />
           <Route path="*" element={<Navigate to="general" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

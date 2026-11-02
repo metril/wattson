@@ -83,3 +83,45 @@ export function settingsFixture(
   }
   return base;
 }
+
+export function providerFixture(
+  over: Partial<components['schemas']['ProviderOut']> = {},
+): components['schemas']['ProviderOut'] {
+  return {
+    id: 1,
+    slug: 'authentik',
+    display_name: 'Authentik',
+    discovery_url: 'https://auth.example/application/o/wattson/',
+    client_id: 'wattson',
+    client_secret_set: true,
+    scopes: 'openid profile email groups',
+    groups_claim: 'groups',
+    allowed_groups: [],
+    allowed_emails: [],
+    admin_group: '',
+    auto_create_users: false,
+    link_by_email: false,
+    enabled: true,
+    redirect_uri: 'https://w.example/api/auth/oidc/authentik/callback',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...over,
+  };
+}
+
+export function userFixture(
+  over: Partial<components['schemas']['UserOut']> = {},
+): components['schemas']['UserOut'] {
+  return {
+    id: 2,
+    username: 'bob',
+    display_name: 'Bob',
+    email: 'bob@example.com',
+    is_admin: false,
+    is_bootstrap: false,
+    disabled: false,
+    oidc: false,
+    created_at: '2026-01-01T00:00:00Z',
+    ...over,
+  };
+}

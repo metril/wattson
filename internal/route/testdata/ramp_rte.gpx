@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="wattson-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>Ramp</name></metadata>
+  <rte>
+    <name>Ramp</name>
+    <rtept lat="45.0000" lon="7.0000"><ele>100</ele></rtept>
+    <rtept lat="45.0009" lon="7.0000"><ele>105</ele></rtept>
+    <rtept lat="45.0018" lon="7.0000"><ele>110</ele></rtept>
+    <rtept lat="45.0027" lon="7.0000"><ele>115</ele></rtept>
+    <rtept lat="45.0036" lon="7.0000"><ele>120</ele></rtept>
+    <rtept lat="45.0045" lon="7.0000"><ele>125</ele></rtept>
+    <rtept lat="45.0054" lon="7.0000"><ele>130</ele></rtept>
+    <rtept lat="45.0063" lon="7.0000"><ele>135</ele></rtept>
+    <rtept lat="45.0072" lon="7.0000"><ele>140</ele></rtept>
+    <rtept lat="45.0081" lon="7.0000"><ele>145</ele></rtept>
+    <rtept lat="45.0090" lon="7.0000"><ele>150</ele></rtept>
+  </rte>
+</gpx>

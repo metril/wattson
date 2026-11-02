@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - name: go vet
+        run: go vet ./...
+
+  test:
+    name: Test (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: go test (shard)
+        env:
+          CGO_ENABLED: "1" # -race requires cgo
+        run: |
+          pkgs=$(go list ./... | awk -v s=${{ matrix.shard }} 'NR%4==s')
+          if [ -z "$pkgs" ]; then
+            echo "no packages in shard ${{ matrix.shard }}"
+            exit 0
+          fi
+          go test -race $pkgs
+
+  build:
+    name: Build (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: cross-compile
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -o /dev/null ./cmd/wattson
+
+  ci:
+    # Single required check for branch protection; aggregates every job.
+    name: CI
+    needs: [lint, test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs must succeed
+        run: |
+          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} build=${{ needs.build.result }}"
+          [ "${{ needs.lint.result }}" = "success" ] && \
+          [ "${{ needs.test.result }}" = "success" ] && \
+          [ "${{ needs.build.result }}" = "success" ]

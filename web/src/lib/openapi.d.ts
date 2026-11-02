@@ -2557,6 +2557,21 @@ export interface components {
              */
             bias: number;
             /**
+             * Format: int64
+             * @description Number of blocks in the workout being ridden; 0 outside a workout.
+             */
+            block_count: number;
+            /**
+             * Format: int64
+             * @description Zero-based index of the current workout block; 0 outside a workout.
+             */
+            block_index: number;
+            /**
+             * Format: double
+             * @description Seconds left in the current workout block; 0 outside a workout.
+             */
+            block_remaining_s: number;
+            /**
              * Format: double
              * @description Pedalling cadence in revolutions per minute.
              */
@@ -2625,6 +2640,16 @@ export interface components {
              * @enum {string}
              */
             state: "idle" | "connecting" | "ready" | "riding" | "paused" | "finished";
+            /**
+             * Format: double
+             * @description ERG target power in watts; 0 when the mode has no power target.
+             */
+            target_power_w: number;
+            /**
+             * Format: int64
+             * @description Identifier of the workout being ridden; 0 when not riding a workout.
+             */
+            workout_id: number;
         };
         TileOut: {
             /**

@@ -66,6 +66,11 @@ export const tickFixture = (over: Partial<Tick> = {}): Tick => ({
   route_length_m: 0,
   grade_ahead_pct: 0,
   bias: 0,
+  workout_id: 0,
+  block_index: 0,
+  block_count: 0,
+  block_remaining_s: 0,
+  target_power_w: 0,
   ...over,
 });
 

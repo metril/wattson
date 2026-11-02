@@ -19,6 +19,10 @@ type ModeOutput struct {
 	Grade      float64 // under the rider, fraction
 	GradeAhead float64 // at the lookahead point, fraction (route mode)
 	Done       bool    // the ride is complete and should finish
+
+	TargetW   float64       // ERG target power in watts; 0 when the mode has none
+	Block     int           // current workout block index
+	BlockLeft time.Duration // time left in the current workout block
 }
 
 // Mode decides resistance each tick.

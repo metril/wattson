@@ -22,6 +22,11 @@ export type Tick = {
   route_length_m: number;
   grade_ahead_pct: number;
   bias: number;
+  workout_id: number;
+  block_index: number;
+  block_count: number;
+  block_remaining_s: number;
+  target_power_w: number;
 };
 
 export type BikeStatus = components['schemas']['Status'];

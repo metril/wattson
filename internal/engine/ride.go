@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -40,6 +41,8 @@ const (
 	CmdStop       CmdKind = "stop"
 	CmdSetLevel   CmdKind = "set_level"
 	CmdLevelDelta CmdKind = "level_delta"
+	// CmdSetTargetPower sets the ERG target power in watts (Command.Value).
+	CmdSetTargetPower CmdKind = "set_target_power"
 )
 
 type Command struct {
@@ -63,24 +66,29 @@ type routedMode interface {
 // Tick is one published snapshot of the ride. While paused, Level is the
 // floor level the engine sent on pause, not the rider's manual level.
 type Tick struct {
-	At            time.Time `json:"at" doc:"When this snapshot was taken (RFC 3339)."`
-	State         State     `json:"state" enum:"idle,connecting,ready,riding,paused,finished" doc:"Ride state: idle, connecting, ready, riding, paused or finished."`
-	Mode          string    `json:"mode" doc:"Ride mode name, for example free."`
-	ElapsedS      float64   `json:"elapsed_s" doc:"Riding time in seconds."`
-	DistanceM     float64   `json:"distance_m" doc:"Simulated distance covered, in metres."`
-	SpeedKmh      float64   `json:"speed_kmh" doc:"Simulated speed in kilometres per hour."`
-	PowerW        float64   `json:"power_w" doc:"Rider power in watts."`
-	CadenceRpm    float64   `json:"cadence_rpm" doc:"Pedalling cadence in revolutions per minute."`
-	HeartRateBpm  int       `json:"heart_rate_bpm" doc:"Heart rate in beats per minute; 0 when there is no heart rate source or no reading in the last 5 s."`
-	GradePct      float64   `json:"grade_pct" doc:"Road grade of the current mode, in percent."`
-	Level         int       `json:"level" doc:"Resistance level (1 to 32) the engine last asked the bike for."`
-	ReportedLevel int       `json:"reported_level" doc:"Resistance level (1 to 32) the bike last reported; 0 when unknown."`
-	Connected     bool      `json:"connected" doc:"Whether the link to the bike is up right now."`
-	Alert         string    `json:"alert,omitempty" doc:"Warning for the rider, for example a stale reading; absent when none."`
-	RouteID       int64     `json:"route_id" doc:"Identifier of the route being ridden; 0 when not riding a route."`
-	RouteLengthM  float64   `json:"route_length_m" doc:"Length of the route being ridden, in metres; 0 when not riding a route."`
-	GradeAheadPct float64   `json:"grade_ahead_pct" doc:"Road grade at the lookahead point of the route, in percent; 0 when not riding a route."`
-	Bias          int       `json:"bias" doc:"Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode."`
+	At              time.Time `json:"at" doc:"When this snapshot was taken (RFC 3339)."`
+	State           State     `json:"state" enum:"idle,connecting,ready,riding,paused,finished" doc:"Ride state: idle, connecting, ready, riding, paused or finished."`
+	Mode            string    `json:"mode" doc:"Ride mode name, for example free."`
+	ElapsedS        float64   `json:"elapsed_s" doc:"Riding time in seconds."`
+	DistanceM       float64   `json:"distance_m" doc:"Simulated distance covered, in metres."`
+	SpeedKmh        float64   `json:"speed_kmh" doc:"Simulated speed in kilometres per hour."`
+	PowerW          float64   `json:"power_w" doc:"Rider power in watts."`
+	CadenceRpm      float64   `json:"cadence_rpm" doc:"Pedalling cadence in revolutions per minute."`
+	HeartRateBpm    int       `json:"heart_rate_bpm" doc:"Heart rate in beats per minute; 0 when there is no heart rate source or no reading in the last 5 s."`
+	GradePct        float64   `json:"grade_pct" doc:"Road grade of the current mode, in percent."`
+	Level           int       `json:"level" doc:"Resistance level (1 to 32) the engine last asked the bike for."`
+	ReportedLevel   int       `json:"reported_level" doc:"Resistance level (1 to 32) the bike last reported; 0 when unknown."`
+	Connected       bool      `json:"connected" doc:"Whether the link to the bike is up right now."`
+	Alert           string    `json:"alert,omitempty" doc:"Warning for the rider, for example a stale reading; absent when none."`
+	RouteID         int64     `json:"route_id" doc:"Identifier of the route being ridden; 0 when not riding a route."`
+	RouteLengthM    float64   `json:"route_length_m" doc:"Length of the route being ridden, in metres; 0 when not riding a route."`
+	GradeAheadPct   float64   `json:"grade_ahead_pct" doc:"Road grade at the lookahead point of the route, in percent; 0 when not riding a route."`
+	Bias            int       `json:"bias" doc:"Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode."`
+	WorkoutID       int64     `json:"workout_id" doc:"Identifier of the workout being ridden; 0 when not riding a workout."`
+	BlockIndex      int       `json:"block_index" doc:"Zero-based index of the current workout block; 0 outside a workout."`
+	BlockCount      int       `json:"block_count" doc:"Number of blocks in the workout being ridden; 0 outside a workout."`
+	BlockRemainingS float64   `json:"block_remaining_s" doc:"Seconds left in the current workout block; 0 outside a workout."`
+	TargetPowerW    float64   `json:"target_power_w" doc:"ERG target power in watts; 0 when the mode has no power target."`
 }
 
 // hrStaleAfter is how old a heart rate reading may be before it shows as 0.
@@ -93,8 +101,14 @@ type HeartRate interface {
 }
 
 type Config struct {
-	HeartRate  HeartRate // nil = none
-	Driver     bike.Driver
+	HeartRate HeartRate // nil = none
+	Driver    bike.Driver
+	// PowerMultiplier scales the bike's reported power (the rider's
+	// calibration); 0 or invalid = 1.
+	PowerMultiplier float64
+	// PowerModel learns the bike's power curve from settled samples; nil
+	// disables learning.
+	PowerModel *bike.PowerModel
 	Mode       Mode // default FreeMode
 	StartLevel int
 	Physics    Physics       // zero value = DefaultPhysics
@@ -119,6 +133,8 @@ type Engine struct {
 	mode  Mode
 	phys  Physics
 	every time.Duration
+	mult  float64
+	model *bike.PowerModel
 
 	cmds chan request
 	done chan struct{}
@@ -139,6 +155,13 @@ type Engine struct {
 	connected  bool
 	alert      string
 	lastTick   time.Time
+	lastOut    ModeOutput // the mode's latest output, for workout and target ticks
+
+	// Learning: the level seen in telemetry, since when, and whether the
+	// latest telemetry sample has been offered to the model yet.
+	seenLevel  int
+	levelSince time.Time
+	telFresh   bool
 
 	mu       sync.Mutex // guards snap, subs, closed, closeErr
 	closeErr error
@@ -157,8 +180,13 @@ func New(c Config) *Engine {
 	if c.TickEvery <= 0 {
 		c.TickEvery = time.Second
 	}
+	mult := c.PowerMultiplier
+	if !(mult > 0) || math.IsInf(mult, 0) {
+		mult = 1
+	}
 	e := &Engine{
 		drv: c.Driver, hr: c.HeartRate, mode: c.Mode, phys: c.Physics, every: c.TickEvery,
+		mult: mult, model: c.PowerModel,
 		cmds:   make(chan request),
 		done:   make(chan struct{}),
 		state:  StateIdle,
@@ -283,6 +311,8 @@ func (e *Engine) Run(ctx context.Context) (err error) {
 				continue
 			}
 			e.lastTel, e.telAt, e.haveTel = v, time.Now(), true
+			e.telFresh = true
+			e.trackLevel(e.telAt)
 		case v, ok := <-ev:
 			if !ok {
 				ev = nil
@@ -330,7 +360,7 @@ func (e *Engine) input(now time.Time) ModeInput {
 		Elapsed: e.elapsed, DistanceM: e.distance, SpeedMS: e.speed, Manual: e.manual, Bias: e.bias,
 	}
 	if e.haveTel && now.Sub(e.telAt) <= staleAfter {
-		in.PowerW, in.Cadence = e.lastTel.PowerW, e.lastTel.Cadence
+		in.PowerW, in.Cadence = e.lastTel.PowerW*e.mult, e.lastTel.Cadence
 	}
 	return in
 }
@@ -338,8 +368,43 @@ func (e *Engine) input(now time.Time) ModeInput {
 // apply requests the mode's level right now (used by commands).
 func (e *Engine) apply(ctx context.Context) {
 	out := e.mode.Step(e.input(time.Now()))
+	e.lastOut = out
 	e.gradeAhead = out.GradeAhead
 	e.send(ctx, out.Level)
+}
+
+// settleTime is how long the level must stay unchanged in telemetry before
+// its power readings are trusted for the power model.
+const settleTime = 3 * time.Second
+
+// effLevel is the level a telemetry sample belongs to: the bike's report, or
+// the last request when the bike does not report one.
+func (e *Engine) effLevel() int {
+	if e.lastTel.Level > 0 {
+		return e.lastTel.Level
+	}
+	return e.lastReq
+}
+
+// trackLevel restarts the settle timer whenever the effective level changes.
+func (e *Engine) trackLevel(now time.Time) {
+	if l := e.effLevel(); l != e.seenLevel {
+		e.seenLevel, e.levelSince = l, now
+	}
+}
+
+// learn offers the latest fresh, settled telemetry sample (raw power, before
+// the rider multiplier) to the power model, at most once per sample.
+func (e *Engine) learn(now time.Time) {
+	e.trackLevel(now)
+	if e.model == nil || !e.telFresh || !e.haveTel || now.Sub(e.telAt) > staleAfter {
+		return
+	}
+	e.telFresh = false
+	if e.seenLevel < 1 || now.Sub(e.levelSince) < settleTime {
+		return
+	}
+	e.model.Observe(e.seenLevel, e.lastTel.Cadence, e.lastTel.PowerW)
 }
 
 // routeLength is the length of the route being ridden, 0 outside route mode.
@@ -374,6 +439,7 @@ func (e *Engine) tick(ctx context.Context, now time.Time) {
 		e.elapsed += dt
 		in.Elapsed = e.elapsed
 		out := e.mode.Step(in)
+		e.lastOut = out
 		e.grade, e.gradeAhead = out.Grade, out.GradeAhead
 		e.speed = e.phys.Step(e.speed, in.PowerW, out.Grade, dt)
 		e.distance += e.speed * dt.Seconds()
@@ -386,6 +452,7 @@ func (e *Engine) tick(ctx context.Context, now time.Time) {
 			return
 		}
 		e.send(ctx, out.Level)
+		e.learn(now)
 	}
 	e.refresh(now)
 	e.publish()
@@ -437,6 +504,7 @@ func (e *Engine) command(ctx context.Context, c Command) error {
 		if c.Mode != nil {
 			e.mode = c.Mode
 			e.bias, e.gradeAhead = 0, 0
+			e.lastOut = ModeOutput{}
 		}
 		lo, hi := e.caps()
 		e.manual = clampInt(e.manual, lo, hi)
@@ -460,9 +528,32 @@ func (e *Engine) command(ctx context.Context, c Command) error {
 	case CmdStop:
 		e.finish(ctx)
 		return nil
+	case CmdSetTargetPower:
+		t, ok := e.mode.(Targeted)
+		if !ok {
+			return ErrBadState
+		}
+		if e.state != StateReady && e.state != StateRiding && e.state != StatePaused {
+			return ErrBadState
+		}
+		if c.Value < MinTargetW || c.Value > MaxTargetW {
+			return ErrBadValue
+		}
+		if err := t.SetTarget(float64(c.Value)); err != nil {
+			return err
+		}
+		if e.state == StateRiding {
+			e.apply(ctx)
+		}
 	case CmdSetLevel, CmdLevelDelta:
 		lo, hi := e.caps()
+		t, targeted := e.mode.(Targeted)
 		switch {
+		case targeted:
+			if c.Kind == CmdSetLevel {
+				return ErrBadState
+			}
+			t.NudgeTarget(c.Value)
 		case e.usesBias():
 			if c.Kind == CmdSetLevel {
 				return ErrBadState
@@ -492,6 +583,13 @@ func (e *Engine) build(now time.Time) Tick {
 		Level: e.manual, ReportedLevel: e.lastTel.Level,
 		Connected: e.connected, Alert: e.alert,
 		GradeAheadPct: e.gradeAhead * 100, Bias: e.bias,
+		TargetPowerW: e.lastOut.TargetW,
+	}
+	if w, ok := e.mode.(WorkoutInfo); ok {
+		if id, n := w.WorkoutInfo(); n > 0 {
+			tk.WorkoutID, tk.BlockCount = id, n
+			tk.BlockIndex, tk.BlockRemainingS = e.lastOut.Block, e.lastOut.BlockLeft.Seconds()
+		}
 	}
 	if r, ok := e.mode.(routedMode); ok {
 		tk.RouteID, tk.RouteLengthM = r.RouteInfo()

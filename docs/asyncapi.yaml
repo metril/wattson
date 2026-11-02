@@ -404,6 +404,21 @@
             "format": "int64",
             "type": "integer"
           },
+          "block_count": {
+            "description": "Number of blocks in the workout being ridden; 0 outside a workout.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "block_index": {
+            "description": "Zero-based index of the current workout block; 0 outside a workout.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "block_remaining_s": {
+            "description": "Seconds left in the current workout block; 0 outside a workout.",
+            "format": "double",
+            "type": "number"
+          },
           "cadence_rpm": {
             "description": "Pedalling cadence in revolutions per minute.",
             "format": "double",
@@ -483,6 +498,16 @@
               "finished"
             ],
             "type": "string"
+          },
+          "target_power_w": {
+            "description": "ERG target power in watts; 0 when the mode has no power target.",
+            "format": "double",
+            "type": "number"
+          },
+          "workout_id": {
+            "description": "Identifier of the workout being ridden; 0 when not riding a workout.",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -502,7 +527,12 @@
           "route_id",
           "route_length_m",
           "grade_ahead_pct",
-          "bias"
+          "bias",
+          "workout_id",
+          "block_index",
+          "block_count",
+          "block_remaining_s",
+          "target_power_w"
         ],
         "type": "object"
       },

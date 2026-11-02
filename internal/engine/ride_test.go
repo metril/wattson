@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -946,6 +947,204 @@ func TestNilHR(t *testing.T) {
 		riding(t, f, e)
 		if tk := lastTick(t, advance(time.Second, sub)); tk.HeartRateBpm != 0 {
 			t.Fatalf("tick %+v", tk)
+		}
+	})
+}
+
+// stubMode is a Targeted, WorkoutInfo mode with a canned output.
+type stubMode struct {
+	mu      sync.Mutex
+	out     ModeOutput
+	blocks  int
+	targets []float64
+	nudges  []int
+}
+
+func (*stubMode) Name() string { return "stub" }
+func (s *stubMode) Step(ModeInput) ModeOutput {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.out
+}
+func (s *stubMode) SetTarget(w float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.targets = append(s.targets, w)
+	return nil
+}
+func (s *stubMode) NudgeTarget(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nudges = append(s.nudges, n)
+}
+func (s *stubMode) WorkoutInfo() (int64, int) { return 9, s.blocks }
+
+func startWith(t *testing.T, e *Engine, f *fakeDriver, m Mode) {
+	t.Helper()
+	f.connect()
+	synctest.Wait()
+	if err := e.Do(context.Background(), Command{Kind: "start", Mode: m}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPowerMultiplier(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ mult, want float64 }{{1.2, 120}, {0, 100}} {
+		synctest.Test(t, func(t *testing.T) {
+			f := newFake()
+			e := New(Config{Driver: f, PowerMultiplier: c.mult})
+			sub, cancelSub := e.Subscribe(64)
+			defer cancelSub()
+			_, stop := start(t, e)
+			defer stop()
+			riding(t, f, e)
+			f.tel <- bike.Telemetry{Level: 5, Cadence: 80, PowerW: 100}
+			if got := lastTick(t, advance(time.Second, sub)).PowerW; math.Abs(got-c.want) > 1e-9 {
+				t.Fatalf("mult %v: power %v, want %v", c.mult, got, c.want)
+			}
+		})
+	}
+}
+
+func TestLearnOnlySettled(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		pm := bike.NewPowerModel(bike.PowerModelState{A: 0.2, B: 0.4, P: [3]float64{1, 0, 1}})
+		e := New(Config{Driver: f, PowerModel: pm, PowerMultiplier: 1.5}) // multiplier must not leak into the fit
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		push := func(l int) {
+			f.tel <- bike.Telemetry{Level: l, Cadence: 80, PowerW: sim.Power(l, 80)}
+			advance(time.Second, sub)
+		}
+		push(5)
+		push(5)
+		for range 2 {
+			push(6)
+		}
+		if n := pm.State().N; n != 0 {
+			t.Fatalf("N = %d before settling, want 0", n)
+		}
+		for range 8 {
+			push(6)
+		}
+		if n := pm.State().N; n < 6 {
+			t.Fatalf("N = %d after 10 s at L6, want >= 6", n)
+		}
+		if a := pm.State().B; a == 0.4 {
+			t.Fatal("model did not move")
+		}
+	})
+}
+
+func TestSetTargetPowerNotErg(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := New(Config{Driver: f})
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		if err := do(t, e, CmdSetTargetPower, 200); !errors.Is(err, ErrBadState) {
+			t.Fatalf("got %v, want ErrBadState", err)
+		}
+	})
+}
+
+func TestSetTargetPowerRange(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		m := &stubMode{out: ModeOutput{Level: 5}}
+		e := New(Config{Driver: f, Mode: m})
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		for _, v := range []int{40, 1001, -5} {
+			if err := do(t, e, CmdSetTargetPower, v); !errors.Is(err, ErrBadValue) {
+				t.Fatalf("%d: got %v, want ErrBadValue", v, err)
+			}
+		}
+		if err := do(t, e, CmdSetTargetPower, 250); err != nil {
+			t.Fatal(err)
+		}
+		if len(m.targets) != 1 || m.targets[0] != 250 {
+			t.Fatalf("targets %v", m.targets)
+		}
+		if err := do(t, e, "start", 0); err != nil { // valid riding, too
+			t.Fatal(err)
+		}
+		if err := do(t, e, CmdSetTargetPower, 300); err != nil {
+			t.Fatal(err)
+		}
+		if err := do(t, e, "pause", 0); err != nil { // and paused
+			t.Fatal(err)
+		}
+		if err := do(t, e, CmdSetTargetPower, 310); err != nil {
+			t.Fatal(err)
+		}
+		if len(m.targets) != 3 {
+			t.Fatalf("targets %v", m.targets)
+		}
+	})
+}
+
+func TestLevelDeltaNudgesTarget(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		m := &stubMode{out: ModeOutput{Level: 5}}
+		e := New(Config{Driver: f, Mode: m})
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		if err := do(t, e, "level_delta", 1); err != nil {
+			t.Fatal(err)
+		}
+		if len(m.nudges) != 1 || m.nudges[0] != 1 {
+			t.Fatalf("nudges %v", m.nudges)
+		}
+		if err := do(t, e, "set_level", 3); !errors.Is(err, ErrBadState) {
+			t.Fatalf("set_level: %v, want ErrBadState", err)
+		}
+	})
+}
+
+func TestWorkoutTickFields(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		m := &stubMode{blocks: 3, out: ModeOutput{Level: 5, TargetW: 200, Block: 1, BlockLeft: 12 * time.Second}}
+		e := New(Config{Driver: f})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		if tk := lastTick(t, advance(time.Second, sub)); tk.WorkoutID != 0 || tk.BlockCount != 0 || tk.BlockIndex != 0 || tk.BlockRemainingS != 0 || tk.TargetPowerW != 0 {
+			t.Fatalf("free-ride tick has workout fields: %+v", tk)
+		}
+		if err := e.Do(context.Background(), Command{Kind: "start", Mode: m}); err != nil {
+			t.Fatal(err)
+		}
+		tk := lastTick(t, advance(time.Second, sub))
+		if tk.WorkoutID != 9 || tk.BlockCount != 3 || tk.BlockIndex != 1 || tk.BlockRemainingS != 12 || tk.TargetPowerW != 200 {
+			t.Fatalf("workout tick: %+v", tk)
+		}
+		// A mode that is not a workout (0 blocks) still reports its target.
+		m.mu.Lock()
+		m.blocks = 0
+		m.mu.Unlock()
+		tk = lastTick(t, advance(time.Second, sub))
+		if tk.WorkoutID != 0 || tk.BlockCount != 0 || tk.BlockIndex != 0 || tk.TargetPowerW != 200 {
+			t.Fatalf("non-workout tick: %+v", tk)
 		}
 	})
 }

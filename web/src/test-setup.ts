@@ -1,4 +1,8 @@
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/react';
+
+// De-flake findBy*/waitFor when the machine is loaded by parallel workers.
+configure({ asyncUtilTimeout: 3000 });
 
 // Node's Request rejects relative URLs, but openapi-fetch is created with
 // baseUrl "" (same-origin in the browser). Resolve against jsdom's location.

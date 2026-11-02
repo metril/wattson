@@ -7,7 +7,10 @@ export function errMessage(e: unknown): string {
     return e.message;
   }
   // fetch() rejects with a TypeError when the network is down.
-  if (e instanceof TypeError) return "Couldn't reach the server.";
+  if (e instanceof TypeError) {
+    console.error(e);
+    return "Couldn't reach the server.";
+  }
   console.error(e);
   return e instanceof Error && e.message ? e.message : 'Something went wrong.';
 }

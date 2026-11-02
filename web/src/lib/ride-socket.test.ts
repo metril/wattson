@@ -14,11 +14,17 @@ const mk = (over: Partial<ConstructorParameters<typeof RideSocket>[0]> = {}) => 
 };
 const stateMsg = (over = {}) => ({ type: 'state', bike: bikeFixture(), tick: tickFixture(over) });
 
+const meStatus = (status: number) => vi.fn(async () => new Response(null, { status }));
+
 beforeEach(() => {
   vi.useFakeTimers();
   FakeWebSocket.reset();
+  vi.stubGlobal('fetch', meStatus(200));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('RideSocket', () => {
   it('sends wattson.v1 and bearer protocol', () => {
@@ -169,5 +175,62 @@ describe('RideSocket', () => {
     ws.receive({ type: 'state', bike: bikeFixture({ state: 'idle', connected: false }), tick: tickFixture({ state: 'idle' }) });
     ws.receive({ type: 'bike', bike: bikeFixture({ state: 'connecting' }) });
     expect(s.getStatus().state).toBe('connecting');
+  });
+
+  describe('session probe', () => {
+    it('after 2 closes without opening, a 401 from /api/auth/me stops reconnecting', async () => {
+      const fetchMock = meStatus(401);
+      vi.stubGlobal('fetch', fetchMock);
+      const { s, onUnauthorized } = mk({ token: 'wat_k' });
+      s.start();
+      FakeWebSocket.last.drop(1006);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fetchMock).not.toHaveBeenCalled();
+      FakeWebSocket.last.drop(1006);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe('/api/auth/me');
+      expect(init.headers).toEqual({ Authorization: 'Bearer wat_k' });
+      expect(onUnauthorized).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+    });
+
+    it('keeps reconnecting when the session is still valid', async () => {
+      const { s, onUnauthorized } = mk();
+      s.start();
+      FakeWebSocket.last.drop(1006);
+      await vi.advanceTimersByTimeAsync(1000);
+      FakeWebSocket.last.drop(1006);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      expect(FakeWebSocket.instances).toHaveLength(3);
+    });
+
+    it('does not probe when connections did open', async () => {
+      const fetchMock = meStatus(401);
+      vi.stubGlobal('fetch', fetchMock);
+      const { s } = mk();
+      s.start();
+      for (let i = 0; i < 3; i++) {
+        FakeWebSocket.last.open();
+        FakeWebSocket.last.drop(1006);
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('a network error while probing keeps retrying', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+      const { s, onUnauthorized } = mk();
+      s.start();
+      FakeWebSocket.last.drop(1006);
+      await vi.advanceTimersByTimeAsync(1000);
+      FakeWebSocket.last.drop(1006);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      expect(FakeWebSocket.instances).toHaveLength(3);
+    });
   });
 });

@@ -96,15 +96,25 @@ describe('RidePage', () => {
     expect(screen.getByText(/lower resistance at the console/i)).toBeInTheDocument();
   });
 
-  it('shows a tick alert for 10 s', async () => {
+  it('keeps a tick alert while present and at least 10 s', async () => {
     const { ws } = await setup({ state: 'riding' }, { state: 'riding' });
     vi.useFakeTimers();
+    const advance = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
     push(ws, { type: 'tick', tick: tickFixture({ state: 'riding', alert: 'No reading from the bike' }) });
     expect(screen.getByText('No reading from the bike')).toBeInTheDocument();
-    act(() => void vi.advanceTimersByTime(9_999));
+    advance(30_000); // still reported: still shown
     expect(screen.getByText('No reading from the bike')).toBeInTheDocument();
-    act(() => void vi.advanceTimersByTime(1));
+    push(ws, { type: 'tick', tick: tickFixture({ state: 'riding' }) }); // cleared after 30 s: gone at once
+    advance(0);
     expect(screen.queryByText('No reading from the bike')).not.toBeInTheDocument();
+
+    push(ws, { type: 'tick', tick: tickFixture({ state: 'riding', alert: 'Stale' }) });
+    advance(4_000);
+    push(ws, { type: 'tick', tick: tickFixture({ state: 'riding' }) });
+    advance(5_999);
+    expect(screen.getByText('Stale')).toBeInTheDocument();
+    advance(1);
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
   });
 
   it('a rejected command is shown', async () => {

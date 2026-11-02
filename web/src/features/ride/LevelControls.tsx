@@ -32,6 +32,7 @@ export function LevelControls({
   }
 
   useRideKey((key) => {
+    if (disabled) return false;
     if (key === 'ArrowUp' || key === 'ArrowRight') bump(1);
     else if (key === 'ArrowDown' || key === 'ArrowLeft') bump(-1);
     else return false;

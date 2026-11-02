@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RideControls } from './RideControls';
 
@@ -33,22 +33,62 @@ describe('RideControls', () => {
     expect(send).toHaveBeenCalledWith('stop');
   });
 
-  it('a button stays disabled until its ack', async () => {
+  it('stays disabled until acked, then until the state changes', async () => {
     let ack!: () => void;
     const send = vi.fn(() => new Promise<void>((r) => (ack = r)));
-    render(<RideControls state="ready" send={send} />);
+    const { rerender } = render(<RideControls state="ready" send={send} />);
     await userEvent.click(screen.getByRole('button', { name: 'Start' }));
     expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
     await act(async () => ack());
+    // acked but the state has not flipped yet: a second Start would be stale
+    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+    rerender(<RideControls state="riding" send={send} />);
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
+  });
+
+  it('re-enables 2 s after the ack when the state never changes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<RideControls state="ready" send={vi.fn().mockResolvedValue(undefined)} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+      expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+      await act(async () => void vi.advanceTimersByTime(2000));
+      expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-enables at once when the command is rejected', async () => {
+    const onError = vi.fn();
+    render(<RideControls state="ready" send={vi.fn().mockRejectedValue(new Error('x'))} onError={onError} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(onError).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
   });
 
-  it('Enter and Space run the primary action once', async () => {
-    const { send } = setup('riding');
+  it('ignores auto-repeat keydown events', () => {
+    const { send } = setup('ready');
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true });
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a held Enter does not repeat the command', async () => {
+    const { send } = setup('ready');
+    await userEvent.keyboard('{Enter>3/}');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter and Space run the primary action', async () => {
+    const a = setup('riding');
     await userEvent.keyboard('{Enter}');
-    expect(send).toHaveBeenCalledWith('pause');
+    expect(a.send).toHaveBeenCalledWith('pause');
+    a.unmount();
+    const b = setup('paused');
     await userEvent.keyboard(' ');
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(b.send).toHaveBeenCalledWith('resume');
   });
 
   it('Enter on a focused button does not also fire the primary action', async () => {

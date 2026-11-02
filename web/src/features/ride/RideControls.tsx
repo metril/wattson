@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, Square } from 'lucide-react';
 import { Button } from '@/components/Button';
 import type { CommandName, RideState } from '@/lib/ws-types';
@@ -12,6 +12,8 @@ const PRIMARY: Partial<Record<RideState, { command: CommandName; label: string }
 
 const big = 'h-[4.5rem] flex-1 text-xl min-[1600px]:h-24 min-[1600px]:text-3xl';
 const CONFIRM_MS = 4000;
+// After an ack the state flips on the next tick; hold the buttons until then.
+const SETTLE_MS = 2000;
 
 /**
  * Start / Pause / Resume / Stop for the current ride state. A button stays
@@ -41,15 +43,31 @@ export function RideControls({
   }, [armed]);
   useEffect(() => setArmed(false), [state]);
 
+  // busy lasts from the tap until the state changes after the ack, or SETTLE_MS.
+  const locked = useRef(false);
+  const acked = useRef(false);
+  const settle = useRef<ReturnType<typeof setTimeout>>();
+  const release = () => {
+    clearTimeout(settle.current);
+    locked.current = acked.current = false;
+    setBusy(null);
+  };
+  useEffect(() => {
+    if (acked.current) release();
+  }, [state]);
+  useEffect(() => () => clearTimeout(settle.current), []);
+
   async function run(command: CommandName) {
-    if (busy || disabled) return;
+    if (locked.current || disabled) return;
+    locked.current = true;
     setBusy(command);
     try {
       await send(command);
+      acked.current = true;
+      settle.current = setTimeout(release, SETTLE_MS);
     } catch (e) {
       onError?.(e);
-    } finally {
-      setBusy(null);
+      release();
     }
   }
 
@@ -62,9 +80,10 @@ export function RideControls({
     void run('stop');
   }
 
-  useRideKey((key) => {
+  useRideKey((key, repeat) => {
     if ((key !== 'Enter' && key !== ' ') || !primary) return false;
-    void run(primary.command);
+    // A held key must not toggle start/pause over and over.
+    if (!repeat) void run(primary.command);
     return true;
   });
 

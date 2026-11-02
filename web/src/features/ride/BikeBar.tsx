@@ -5,6 +5,7 @@ import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { api, ApiError, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
+import { isFloorUnconfirmed } from '@/lib/bike-warnings';
 import { getSelectedRiderId, setSelectedRiderId } from '@/lib/rider';
 import type { TickStore } from '@/lib/tick-store';
 import type { BikeStatus, RideState } from '@/lib/ws-types';
@@ -18,9 +19,6 @@ const stateStyle: Record<RideState, string> = {
   paused: 'border-warn text-warn',
   finished: 'border-line text-chalk',
 };
-
-/** The bike's own words about a level it could not confirm. */
-const FLOOR_RE = /minimum level|confirm/i;
 
 /**
  * Top strip of the ride screen: who rides, connect and release, the link
@@ -74,7 +72,7 @@ export function BikeBar({
   });
 
   const lastError = bike?.last_error;
-  const floorBike = !!lastError && FLOOR_RE.test(lastError);
+  const floorBike = isFloorUnconfirmed(lastError);
 
   return (
     <section aria-label="Bike" className="flex flex-col gap-3">

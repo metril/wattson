@@ -47,6 +47,9 @@ export class RideSocket {
   private listeners = new Set<(s: RideStatus) => void>();
   private status: RideStatus = { connected: false, bike: null, state: 'idle' };
   private bikeKey = '';
+  /** Consecutive connections that closed without ever opening. */
+  private failStreak = 0;
+  private probing = false;
 
   constructor(opts: Opts) {
     this.opts = opts;
@@ -102,10 +105,16 @@ export class RideSocket {
     const protocols = token ? ['wattson.v1', `bearer.${token}`] : ['wattson.v1'];
     const ws = new Impl(url, protocols);
     this.ws = ws;
+    let opened = false;
+    ws.onopen = () => {
+      opened = true;
+      this.failStreak = 0;
+    };
     ws.onmessage = (ev) => this.onMessage(ev.data);
     ws.onclose = (ev) => {
       if (this.ws !== ws) return;
       this.ws = null;
+      if (!opened) this.failStreak++;
       this.failPending('disconnected', 'The connection to the bike closed.');
       this.update({ connected: false });
       if (ev.code === 4401) {
@@ -114,12 +123,39 @@ export class RideSocket {
         return;
       }
       if (this.closed) return;
+      if (this.failStreak >= 2) void this.probeSession();
       const delay = BACKOFF_S[Math.min(this.attempt, BACKOFF_S.length - 1)] * 1000;
       this.attempt++;
       this.retry = setTimeout(() => {
         if (!this.closed) this.connect();
       }, delay);
     };
+  }
+
+  /**
+   * A browser never sees the HTTP status of a failed WebSocket handshake, so
+   * after repeated failures to even open, ask the API whether the credential
+   * is still good. A 401 means reconnecting is pointless: sign in again.
+   */
+  private async probeSession(): Promise<void> {
+    if (this.probing) return;
+    this.probing = true;
+    try {
+      const { token } = this.opts;
+      const res = await globalThis.fetch('/api/auth/me', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: 'same-origin',
+      });
+      if (res.status === 401 && !this.closed) {
+        this.closed = true;
+        clearTimeout(this.retry);
+        this.opts.onUnauthorized();
+      }
+    } catch {
+      // server unreachable: keep retrying
+    } finally {
+      this.probing = false;
+    }
   }
 
   private onMessage(data: unknown): void {

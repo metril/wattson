@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Banner } from '@/components/Banner';
 import { BikeBar } from '@/features/ride/BikeBar';
 import { LevelControls } from '@/features/ride/LevelControls';
@@ -28,10 +28,16 @@ export function RidePage() {
   const status = useSyncExternalStore(subscribe, () => socket.getStatus());
 
   const [alert, setAlert] = useState<string | null>(null);
+  const shownAt = useRef(0);
+  // An alert stays while the tick carries it, and for at least ALERT_MS after it appeared.
   useEffect(() => {
-    if (!status.alert) return;
-    setAlert(status.alert);
-    const t = setTimeout(() => setAlert(null), ALERT_MS);
+    if (status.alert) {
+      shownAt.current = Date.now();
+      setAlert(status.alert);
+      return;
+    }
+    const left = Math.max(0, ALERT_MS - (Date.now() - shownAt.current));
+    const t = setTimeout(() => setAlert(null), left);
     return () => clearTimeout(t);
   }, [status.alert]);
 

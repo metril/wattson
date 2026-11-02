@@ -113,7 +113,7 @@ type conn struct {
 	// engine of the connection and saved whenever an engine's Run returns.
 	key    string
 	model  *bike.PowerModel
-	savedN int // sample count already stored; guarded by Manager.mu
+	savedN int // sample count already stored; guarded by Manager.pmMu
 
 	// Heart rate source, set by startHR before the first engine and stopped by finish.
 	hrMon    sensors.Monitor
@@ -155,6 +155,7 @@ type Manager struct {
 	stop context.CancelFunc
 	wg   sync.WaitGroup
 
+	pmMu     sync.Mutex // serialises power model saves and resets (store I/O under it; never held with mu while waiting)
 	mu       sync.Mutex
 	cur      *conn
 	status   Status

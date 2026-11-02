@@ -87,11 +87,12 @@ func (m *Manager) saveModel(c *conn) {
 	if m.d.PowerModels == nil || c.model == nil {
 		return
 	}
+	// pmMu makes read-state-then-Put atomic against ResetPowerModel, so a
+	// reset between the two cannot be undone by the stale Put.
+	m.pmMu.Lock()
+	defer m.pmMu.Unlock()
 	st := c.model.State()
-	m.mu.Lock()
-	same := st.N == c.savedN
-	m.mu.Unlock()
-	if same {
+	if st.N == c.savedN {
 		return
 	}
 	b, err := json.Marshal(st)
@@ -105,9 +106,7 @@ func (m *Manager) saveModel(c *conn) {
 		m.log.Warn("power model save failed", "key", c.key, "err", err)
 		return
 	}
-	m.mu.Lock()
 	c.savedN = st.N
-	m.mu.Unlock()
 }
 
 // PowerModelInfo returns the learned power model of the connected bike or,
@@ -133,6 +132,8 @@ func (m *Manager) PowerModelInfo(ctx context.Context) (PowerModelInfo, error) {
 // the configured) bike. A connected bike's live model returns to the seed in
 // place, so the running engine uses it at once.
 func (m *Manager) ResetPowerModel(ctx context.Context) error {
+	m.pmMu.Lock()
+	defer m.pmMu.Unlock()
 	m.mu.Lock()
 	c := m.cur
 	key := ""
@@ -142,7 +143,7 @@ func (m *Manager) ResetPowerModel(ctx context.Context) error {
 		c.savedN = 0
 	}
 	m.mu.Unlock()
-	if c == nil || key == "" {
+	if key == "" {
 		s, err := m.d.Settings(ctx)
 		if err != nil {
 			return err

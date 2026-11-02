@@ -199,3 +199,60 @@ func TestMultiplierApplied(t *testing.T) {
 		}
 	})
 }
+
+// gatedModels blocks PutPowerModel until released, after announcing itself.
+type gatedModels struct {
+	memModels
+	inPut   chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (g *gatedModels) PutPowerModel(ctx context.Context, key string, b []byte) error {
+	g.once.Do(func() { close(g.inPut) })
+	<-g.release
+	return g.memModels.PutPowerModel(ctx, key, b)
+}
+
+// A reset that arrives while a save is in flight must not be undone by the
+// save's stale Put.
+func TestResetDuringSaveDoesNotResurrect(t *testing.T) {
+	t.Parallel()
+	pm := &gatedModels{inPut: make(chan struct{}), release: make(chan struct{})}
+	m := newMgr(&simRec{}, 20*time.Millisecond, nil, Deps{PowerModels: pm})
+	defer m.Close(context.Background())
+	if _, err := m.Connect(t.Context(), testRider); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, m, "ready")
+	m.mu.Lock()
+	c := m.cur
+	m.mu.Unlock()
+	for i := range 5 {
+		if !c.model.Observe(3+i, 80, 80*(0.375+0.25*float64(3+i))) {
+			t.Fatal("sample rejected")
+		}
+	}
+	saved := make(chan struct{})
+	go func() { defer close(saved); m.saveModel(c) }()
+	<-pm.inPut // the save has read the learned state and is inside Put
+	reset := make(chan error, 1)
+	go func() { reset <- m.ResetPowerModel(t.Context()) }()
+	var rerr error
+	done := false
+	select {
+	case rerr, done = <-reset: // not serialised: the reset overtook the save
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(pm.release)
+	<-saved
+	if !done {
+		rerr = <-reset
+	}
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if _, ok := pm.state(t, "sim"); ok {
+		t.Error("the stale save resurrected the row after ResetPowerModel")
+	}
+}

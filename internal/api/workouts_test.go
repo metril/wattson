@@ -313,7 +313,7 @@ func TestEditWorkoutDuringRideNoEffect(t *testing.T) {
 		t.Fatalf("put: %d %s", resp.StatusCode, b)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if tk := ts.ride(t, admin); tk.BlockCount != 2 {
-		t.Errorf("block_count = %d after an edit, want the 2 resolved at start", tk.BlockCount)
+	if tk := ts.ride(t, admin); tk.BlockCount != 2 || tk.Level != 4 {
+		t.Errorf("block_count = %d level = %d after an edit, want the 2 blocks and level 4 resolved at start", tk.BlockCount, tk.Level)
 	}
 }

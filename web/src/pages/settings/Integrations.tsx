@@ -97,7 +97,7 @@ function Body({ s }: { s: SettingsOut }) {
           type: 'url',
           placeholder: BUNDLED_BROUTER,
           hint: remoteWithRegions
-            ? "Used to plan routes drawn on the map. Using a remote BRouter? Clear 'Map regions folder' so drawing doesn't require local regions."
+            ? "Used to plan routes drawn on the map. Using a remote BRouter? Clear 'Segments folder' so drawing doesn't require local regions."
             : 'Used to plan routes drawn on the map.',
         })}
         <Select

@@ -115,7 +115,7 @@ describe('IntegrationsForm', () => {
   });
 
   it('hints to clear the segments folder for a remote BRouter', async () => {
-    const hint = /clear 'map regions folder'/i;
+    const hint = /clear 'segments folder'/i;
     const bundled = settingsFixture({ brouter: { url: 'http://brouter:17777' } });
     stubApi({ 'GET /api/settings': [200, bundled] });
     const a = renderWithClient(<IntegrationsForm />);

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Bike, KeyRound, LogOut, Settings, Users } from 'lucide-react';
+import { Bike, KeyRound, LogOut, Settings, Unlink, Users } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
-import { api, unwrap } from '@/lib/api';
+import { api, setKioskToken, unwrap } from '@/lib/api';
 import { ME_KEY, useMe } from '@/lib/auth';
 
 const link =
@@ -18,6 +18,14 @@ export function Layout() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const isAdmin = !!me.data?.user.is_admin;
+  // A paired display (API token) sees the ride screen only.
+  const kiosk = me.data?.via === 'token';
+
+  function unpair() {
+    setKioskToken(null);
+    qc.setQueryData(ME_KEY, null);
+    navigate('/kiosk', { replace: true });
+  }
 
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -52,24 +60,33 @@ export function Layout() {
           <Bike aria-hidden className="size-6" />
           Ride
         </NavLink>
-        <NavLink to="/riders" className={link}>
-          <Users aria-hidden className="size-6" />
-          Riders
-        </NavLink>
-        {isAdmin && (
-          <NavLink to="/settings/general" className={link}>
-            <Settings aria-hidden className="size-6" />
-            Settings
-          </NavLink>
+        {kiosk ? (
+          <button type="button" onClick={unpair} className={`${link} md:mt-auto`}>
+            <Unlink aria-hidden className="size-6" />
+            Unpair
+          </button>
+        ) : (
+          <>
+            <NavLink to="/riders" className={link}>
+              <Users aria-hidden className="size-6" />
+              Riders
+            </NavLink>
+            {isAdmin && (
+              <NavLink to="/settings/general" className={link}>
+                <Settings aria-hidden className="size-6" />
+                Settings
+              </NavLink>
+            )}
+            <NavLink to="/settings/tokens" className={link}>
+              <KeyRound aria-hidden className="size-6" />
+              Tokens
+            </NavLink>
+            <button type="button" onClick={signOut} className={`${link} md:mt-auto`}>
+              <LogOut aria-hidden className="size-6" />
+              Sign out
+            </button>
+          </>
         )}
-        <NavLink to="/settings/tokens" className={link}>
-          <KeyRound aria-hidden className="size-6" />
-          Tokens
-        </NavLink>
-        <button type="button" onClick={signOut} className={`${link} md:mt-auto`}>
-          <LogOut aria-hidden className="size-6" />
-          Sign out
-        </button>
       </nav>
       <main className="min-w-0 flex-1 p-4 pb-24 md:p-8 md:pb-8">
         {signOutError && (

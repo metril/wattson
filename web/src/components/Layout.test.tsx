@@ -68,3 +68,38 @@ describe('Layout sign out', () => {
     expect(screen.getByTestId('loc')).toHaveTextContent('/riders');
   });
 });
+
+describe('Layout kiosk mode', () => {
+  afterEach(() => localStorage.clear());
+
+  it('shows only Ride and Unpair, and Unpair clears the token', async () => {
+    localStorage.setItem('wattson.kiosk_token', 'wat_x');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (req: Request) => {
+        const path = new URL(req.url).pathname;
+        const j = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
+        if (path === '/api/auth/providers') return j({ needs_setup: false, local_login: true, providers: [] });
+        if (path === '/api/auth/me') return j({ user, scopes: ['read', 'control'], via: 'token' });
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/']}>
+          <Probe />
+          <AppRoutes />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const unpair = await screen.findByRole('button', { name: 'Unpair' });
+    expect(screen.getByRole('link', { name: 'Ride' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Riders' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Tokens' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
+    await userEvent.click(unpair);
+    expect(localStorage.getItem('wattson.kiosk_token')).toBeNull();
+    expect(screen.getByTestId('loc')).toHaveTextContent('/kiosk');
+  });
+});

@@ -4,7 +4,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Layout } from '@/components/Layout';
 import { Card } from '@/components/Card';
 import { RequireAuth, ME_KEY } from '@/lib/auth';
-import { setUnauthorizedHandler } from '@/lib/api';
+import { getKioskToken, setKioskToken, setUnauthorizedHandler } from '@/lib/api';
+import { KioskPage } from '@/pages/Kiosk';
+import { TokensPage } from '@/pages/settings/Tokens';
 import { SettingsLayout } from '@/pages/settings/SettingsLayout';
 import { GeneralForm } from '@/pages/settings/General';
 import { BikeForm } from '@/pages/settings/Bike';
@@ -39,6 +41,12 @@ export function AppRoutes() {
   useEffect(() => {
     setUnauthorizedHandler((returnTo) => {
       qc.setQueryData(ME_KEY, null);
+      // A paired display whose token was revoked goes back to the pairing hint.
+      if (getKioskToken()) {
+        setKioskToken(null);
+        navigate('/kiosk', { replace: true });
+        return;
+      }
       navigate(`/login?return_to=${encodeURIComponent(returnTo)}`, { replace: true });
     });
     return () => setUnauthorizedHandler(() => {});
@@ -48,7 +56,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Standalone title="Sign in" />} />
       <Route path="/setup" element={<Standalone title="Set up Wattson" />} />
-      <Route path="/kiosk" element={<Standalone title="Kiosk" />} />
+      <Route path="/kiosk" element={<KioskPage />} />
       <Route
         element={
           <RequireAuth>
@@ -58,7 +66,7 @@ export function AppRoutes() {
       >
         <Route index element={<Page title="Ride" />} />
         <Route path="riders" element={<Page title="Riders" />} />
-        <Route path="settings/tokens" element={<Page title="API tokens" />} />
+        <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings"
           element={

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -92,6 +93,12 @@ type bleState struct {
 	freeSubs      int
 	advFlags      []uint32
 	onGetServices func()
+	// subscriber is the session that sent the newest SubscribeBluetoothLE-
+	// Advertisements (the real proxy's api_connection_); nil when none or
+	// after Unsubscribe. Subscribing replaces any previous subscriber.
+	subscriber *session
+	dropped    int // BLE replies dropped because nobody was subscribed
+	flush      sync.Once
 }
 
 func (s *Server) ble() *bleState {
@@ -101,6 +108,37 @@ func (s *Server) ble() *bleState {
 		s.bleSt = &bleState{devs: map[uint64]*bleDev{}, free: 3, limit: 3, writes: map[uint64][][]byte{}}
 	}
 	return s.bleSt
+}
+
+// subscribed reports whether the current client is the advertisement
+// subscriber. st.mu must be held. Mirrors bluetooth_proxy.cpp: every BLE reply
+// (device connection, services, read/write/notify acks, notify data, GATT
+// errors, connection-free updates) goes only to api_connection_ and is dropped
+// when that is unset or belongs to another connection.
+func (s *Server) subscribed(st *bleState) bool {
+	s.mu.Lock()
+	cur := s.cur
+	s.mu.Unlock()
+	return cur != nil && st.subscriber == cur
+}
+
+// gate returns rs when the current client is the subscriber, else drops them.
+// st.mu must be held.
+func (s *Server) gate(st *bleState, rs []Reply) []Reply {
+	if len(rs) == 0 || s.subscribed(st) {
+		return rs
+	}
+	st.dropped += len(rs)
+	return nil
+}
+
+// BLEDroppedReplies returns how many BLE replies the simulated proxy dropped
+// because the client had not subscribed to advertisements.
+func (s *Server) BLEDroppedReplies() int {
+	st := s.ble()
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.dropped
 }
 
 // HandleHello answers Hello and DeviceInfo like a device with the given
@@ -228,7 +266,14 @@ func (s *Server) NotifyBLE(addr uint64, handle uint32, data []byte) {
 	st.mu.Lock()
 	d := st.devs[addr]
 	ok := d != nil && d.connected && d.notifying[handle]
+	sub := s.subscribed(st)
+	if ok && !sub {
+		st.dropped++
+	}
 	st.mu.Unlock()
+	if ok && !sub {
+		return
+	}
 	if !ok {
 		s.t.Errorf("esphometest: NotifyBLE(%x, %d): not connected or notify not enabled", addr, handle)
 		return
@@ -249,8 +294,12 @@ func (s *Server) DropBLE(addr uint64) {
 		st.free++
 	}
 	free, limit := st.free, st.limit
+	sub := s.subscribed(st)
+	if !sub {
+		st.dropped += 2
+	}
 	st.mu.Unlock()
-	if !was {
+	if !was || !sub {
 		return
 	}
 	s.Push(tDeviceConnection, encConn(addr, false, 0, 0))
@@ -265,26 +314,29 @@ func (s *Server) installBLE(st *bleState) {
 				flags = uint32(v)
 			}
 		})
+		s.mu.Lock()
+		cur := s.cur
+		s.mu.Unlock()
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		st.subs++
 		st.advFlags = append(st.advFlags, flags)
-		var b []byte
-		for _, d := range st.devs {
-			b = protowire.AppendTag(b, 1, protowire.BytesType)
-			b = protowire.AppendBytes(b, encAdv(d.adv))
-		}
-		if b == nil {
-			return nil
-		}
-		return []Reply{{Type: tRawAdvs, Payload: b}}
+		st.subscriber = cur // newest subscriber wins
+		return s.advBatch(st)
 	})
 	s.Handle(tUnsubscribeAdv, func([]byte) []Reply {
+		s.mu.Lock()
+		cur := s.cur
+		s.mu.Unlock()
 		st.mu.Lock()
 		st.unsubs++
+		if st.subscriber == cur { // only the subscriber can unsubscribe
+			st.subscriber = nil
+		}
 		st.mu.Unlock()
 		return nil
 	})
+	s.startFlush(st)
 	s.Handle(tSubscribeFree, func([]byte) []Reply {
 		st.mu.Lock()
 		defer st.mu.Unlock()
@@ -314,6 +366,11 @@ func (s *Server) installBLE(st *bleState) {
 			if d == nil || st.free == 0 {
 				return nil // a real proxy keeps trying until the client gives up
 			}
+			if !s.subscribed(st) {
+				// loop() tears down connections owned by no subscriber.
+				st.dropped += 2
+				return nil
+			}
 			if !d.connected {
 				d.connected = true
 				st.free--
@@ -328,10 +385,10 @@ func (s *Server) installBLE(st *bleState) {
 				d.notifying = map[uint32]bool{}
 				st.free++
 			}
-			return []Reply{
+			return s.gate(st, []Reply{
 				{Type: tDeviceConnection, Payload: encConn(r.Address, false, 0, 0)},
 				{Type: tFreeResp, Payload: encFree(st.free, st.limit)},
-			}
+			})
 		}
 		return nil
 	})
@@ -353,7 +410,7 @@ func (s *Server) installBLE(st *bleState) {
 		d := st.devs[addr]
 		if d == nil || !d.connected {
 			// Real bluetooth_proxy.cpp: GATT error ESP_GATT_NOT_CONNECTED, handle 0.
-			return []Reply{{Type: tErrorResp, Payload: encErr(addr, 0, ErrCodeNotConnected)}}
+			return s.gate(st, []Reply{{Type: tErrorResp, Payload: encErr(addr, 0, ErrCodeNotConnected)}})
 		}
 		var out []Reply
 		for _, sv := range d.svcs {
@@ -367,13 +424,13 @@ func (s *Server) installBLE(st *bleState) {
 		var b []byte
 		b = protowire.AppendTag(b, 1, protowire.VarintType)
 		b = protowire.AppendVarint(b, addr)
-		return append(out, Reply{Type: tServicesDone, Payload: b})
+		return s.gate(st, append(out, Reply{Type: tServicesDone, Payload: b}))
 	})
 	// gatt looks up a connected device's handle; on failure returns the reply to send.
 	gatt := func(addr uint64, handle uint32) (*bleDev, []Reply) {
 		d := st.devs[addr]
 		if d == nil || !d.connected {
-			return nil, []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeNotConnected)}}
+			return nil, s.gate(st, []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeNotConnected)}})
 		}
 		for _, sv := range d.svcs {
 			for _, c := range sv.Chars {
@@ -382,7 +439,7 @@ func (s *Server) installBLE(st *bleState) {
 				}
 			}
 		}
-		return nil, []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeGATT)}}
+		return nil, s.gate(st, []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeGATT)}})
 	}
 	s.Handle(tReadReq, func(p []byte) []Reply {
 		addr, handle, _, _ := decAddrHandle(p)
@@ -394,9 +451,9 @@ func (s *Server) installBLE(st *bleState) {
 		}
 		v, ok := d.values[handle]
 		if !ok {
-			return []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeGATT)}}
+			return s.gate(st, []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeGATT)}})
 		}
-		return []Reply{{Type: tReadResp, Payload: encAddrHandleData(addr, handle, v)}}
+		return s.gate(st, []Reply{{Type: tReadResp, Payload: encAddrHandleData(addr, handle, v)}})
 	})
 	s.Handle(tWriteReq, func(p []byte) []Reply {
 		addr, handle, resp, data := decAddrHandle(p)
@@ -410,7 +467,7 @@ func (s *Server) installBLE(st *bleState) {
 		if !resp {
 			return nil
 		}
-		return []Reply{{Type: tWriteResp, Payload: encAddrHandle(addr, handle)}}
+		return s.gate(st, []Reply{{Type: tWriteResp, Payload: encAddrHandle(addr, handle)}})
 	})
 	s.Handle(tNotifyReq, func(p []byte) []Reply {
 		addr, handle, enable, _ := decAddrHandle(p)
@@ -422,7 +479,56 @@ func (s *Server) installBLE(st *bleState) {
 		}
 		// The proxy writes the CCCD itself; the client never does.
 		d.notifying[handle] = enable
-		return []Reply{{Type: tNotifyResp, Payload: encAddrHandle(addr, handle)}}
+		return s.gate(st, []Reply{{Type: tNotifyResp, Payload: encAddrHandle(addr, handle)}})
+	})
+}
+
+// advBatch is one BluetoothLERawAdvertisementsResponse listing every device
+// (nil when there are none). st.mu must be held.
+func (s *Server) advBatch(st *bleState) []Reply {
+	var b []byte
+	for _, d := range st.devs {
+		b = protowire.AppendTag(b, 1, protowire.BytesType)
+		b = protowire.AppendBytes(b, encAdv(d.adv))
+	}
+	if b == nil {
+		return nil
+	}
+	return []Reply{{Type: tRawAdvs, Payload: b}}
+}
+
+// startFlush emulates the proxy's periodic advertisement flush: while a client
+// is subscribed, every device keeps being reported (a real proxy reports each
+// advertisement it hears), so a scan started later still sees devices.
+func (s *Server) startFlush(st *bleState) {
+	st.flush.Do(func() {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			t := time.NewTicker(10 * time.Millisecond)
+			defer t.Stop()
+			for {
+				select {
+				case <-s.stop:
+					return
+				case <-t.C:
+				}
+				s.mu.Lock()
+				cur := s.cur
+				s.mu.Unlock()
+				st.mu.Lock()
+				var rs []Reply
+				if cur != nil && st.subscriber == cur {
+					rs = s.advBatch(st)
+				}
+				st.mu.Unlock()
+				for _, r := range rs {
+					if cur.write(r.Type, r.Payload) != nil {
+						break
+					}
+				}
+			}
+		}()
 	})
 }
 

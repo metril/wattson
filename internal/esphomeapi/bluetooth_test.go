@@ -36,6 +36,19 @@ func tctx(t *testing.T) context.Context {
 	return ctx
 }
 
+// bleClient dials and holds an advertisement subscription for the test: the
+// proxy sends every BLE reply only to the subscribed client.
+func bleClient(t *testing.T, srv *esphometest.Server) *Client {
+	t.Helper()
+	c := dialOpts(t, srv, DialOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if err := c.SubscribeAdvertisements(ctx, func(RawAdv) {}); err != nil {
+		t.Fatalf("SubscribeAdvertisements: %v", err)
+	}
+	return c
+}
+
 func connected(t *testing.T, c *Client, addr uint64) {
 	t.Helper()
 	if _, err := c.BLEConnect(tctx(t), addr, 1); err != nil {
@@ -85,7 +98,7 @@ func TestSubscribeAdvertisementsRawAndUnsubscribe(t *testing.T) {
 func TestBLEConnectServicesWriteReadNotifyDisconnect(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	ctx := tctx(t)
 
 	mtu, err := c.BLEConnect(ctx, devA, 1)
@@ -144,7 +157,7 @@ func TestBLEConnectNoSlots(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
 	srv.SetFreeSlots(0)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	if _, err := c.BLEConnect(tctx(t), devA, 0); !errors.Is(err, ErrNoSlots) {
 		t.Fatalf("err = %v, want ErrNoSlots", err)
 	}
@@ -156,7 +169,7 @@ func TestBLEConnectNoSlots(t *testing.T) {
 func TestBLEConnectUnknownHonoursContext(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -171,7 +184,7 @@ func TestBLEConnectUnknownHonoursContext(t *testing.T) {
 func TestGATTErrorMapped(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	err := c.GATTWrite(tctx(t), devA, 99, []byte{1}, true)
 	var ge *GATTError
@@ -183,7 +196,7 @@ func TestGATTErrorMapped(t *testing.T) {
 func TestOnBLEDisconnectLinkLoss(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	connected(t, c, devB)
 	gotA, gotB := make(chan error, 1), make(chan error, 1)
@@ -208,7 +221,7 @@ func TestOnBLEDisconnectLinkLoss(t *testing.T) {
 func TestOpsOnNotConnectedDeviceReportGATTNotConnected(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	ctx := tctx(t)
 	// Real bluetooth_proxy replies GATT error -1: handle 0 for get-services,
 	// the request handle for read/write/notify.
@@ -230,7 +243,7 @@ func TestOpsOnNotConnectedDeviceReportGATTNotConnected(t *testing.T) {
 func TestOpAfterDropFailsPromptly(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	srv.DropBLE(devA)
 	start := time.Now()
@@ -247,7 +260,7 @@ func TestOpAfterDropFailsPromptly(t *testing.T) {
 func TestOversizeMessageDoesNotCloseClient(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	if err := c.GATTWrite(tctx(t), devA, 6, make([]byte, 70000), false); !errors.Is(err, errTooLarge) {
 		t.Fatalf("err = %v, want errTooLarge", err)
@@ -265,7 +278,7 @@ func TestOversizeMessageDoesNotCloseClient(t *testing.T) {
 func TestNotifyFilteredByAddress(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	connected(t, c, devB)
 	a, b := make(chan []byte, 4), make(chan []byte, 4)
@@ -292,7 +305,7 @@ func TestNotifyFilteredByAddress(t *testing.T) {
 func TestNotifyHandlerRemovedAfterDisconnect(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	ctx := tctx(t)
 	connected(t, c, devA)
 	old := make(chan []byte, 4)
@@ -317,7 +330,7 @@ func TestNotifyHandlerRemovedAfterDisconnect(t *testing.T) {
 func TestConcurrentWritesSameHandleDoNotCross(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	ctx := tctx(t)
 	errs := make(chan error, 8)
@@ -337,11 +350,60 @@ func TestConcurrentWritesSameHandleDoNotCross(t *testing.T) {
 func TestOpsOnClosedClient(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
-	c := dialOpts(t, srv, DialOptions{})
+	c := bleClient(t, srv)
 	connected(t, c, devA)
 	srv.CloseClient()
 	waitDone(t, c, 2*time.Second)
 	if err := c.GATTWrite(tctx(t), devA, 6, []byte{1}, true); !errors.Is(err, ErrClosed) {
 		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+}
+
+// The proxy replies to BLE requests only for the advertisement subscriber.
+func TestProxyDropsBLERepliesWithoutSubscription(t *testing.T) {
+	t.Parallel()
+	srv := bleServer(t)
+	c := dialOpts(t, srv, DialOptions{})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := c.BLEConnect(ctx, devA, 1); err == nil {
+		t.Fatal("BLEConnect succeeded without an advertisement subscription")
+	}
+	if n := len(srv.BLEConnRequests()); n != 1 {
+		t.Fatalf("proxy saw %d connect requests, want 1", n)
+	}
+	if srv.BLEConnected(devA) {
+		t.Fatal("proxy connected a device for an unsubscribed client")
+	}
+	if srv.BLEDroppedReplies() == 0 {
+		t.Fatal("proxy did not record dropped replies")
+	}
+	// Subscribing makes the same request work.
+	sctx, scancel := context.WithCancel(context.Background())
+	defer scancel()
+	if err := c.SubscribeAdvertisements(sctx, func(RawAdv) {}); err != nil {
+		t.Fatal(err)
+	}
+	connected(t, c, devA)
+}
+
+// After Unsubscribe the proxy drops replies again.
+func TestProxyDropsBLERepliesAfterUnsubscribe(t *testing.T) {
+	t.Parallel()
+	srv := bleServer(t)
+	c := dialOpts(t, srv, DialOptions{})
+	sctx, scancel := context.WithCancel(context.Background())
+	if err := c.SubscribeAdvertisements(sctx, func(RawAdv) {}); err != nil {
+		t.Fatal(err)
+	}
+	connected(t, c, devA)
+	scancel()
+	for srv.BLEUnsubscribes() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := c.GATTServices(ctx, devA); err == nil {
+		t.Fatal("GATTServices answered after Unsubscribe")
 	}
 }

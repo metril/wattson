@@ -301,3 +301,68 @@ func TestESPHomeCloseAfterRemoteDrop(t *testing.T) {
 		t.Fatalf("Err = %v", c.Err())
 	}
 }
+
+// Connect works without any prior Scan only because the transport holds an
+// advertisement subscription: the proxy sends every BLE reply to the
+// subscriber alone.
+func TestESPHomeConnectWithoutScanUsesLifetimeSubscription(t *testing.T) {
+	t.Parallel()
+	e := newESPEnv(t, espDev)
+	c, err := e.tr.Connect(ctx2s(t), e.dev)
+	if err != nil {
+		t.Fatalf("Connect without Scan: %v", err)
+	}
+	defer c.Close()
+	if f := e.srv.BLEAdvFlags(); len(f) != 1 || f[0] != 1 {
+		t.Fatalf("advert subscriptions = %v, want exactly one (flags=1)", f)
+	}
+	if n := e.srv.BLEDroppedReplies(); n != 0 {
+		t.Fatalf("proxy dropped %d replies", n)
+	}
+}
+
+// Scan must leave the subscription in place: Connect after the scan context
+// ended still gets its replies, and Unsubscribe is sent only by Close.
+func TestESPHomeScanThenConnectKeepsSubscription(t *testing.T) {
+	t.Parallel()
+	e := newESPEnv(t, espDev)
+	sctx, stop := context.WithCancel(ctx2s(t))
+	seen := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- e.tr.Scan(sctx, func(blue.Advertisement) {
+			select {
+			case seen <- struct{}{}:
+			default:
+			}
+		})
+	}()
+	select {
+	case <-seen:
+	case <-sctx.Done():
+		t.Fatal("scan saw nothing")
+	}
+	stop()
+	if err := <-done; err != nil {
+		t.Fatalf("Scan = %v", err)
+	}
+	if n := e.srv.BLEUnsubscribes(); n != 0 {
+		t.Fatalf("Scan sent %d Unsubscribe(s); only Close may", n)
+	}
+	c, err := e.tr.Connect(ctx2s(t), e.dev)
+	if err != nil {
+		t.Fatalf("Connect after Scan: %v", err)
+	}
+	c.Close()
+	if f := e.srv.BLEAdvFlags(); len(f) != 1 {
+		t.Fatalf("advert subscriptions = %v, want one for the transport lifetime", f)
+	}
+	e.tr.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for e.srv.BLEUnsubscribes() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("transport Close did not unsubscribe")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

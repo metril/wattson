@@ -22,15 +22,41 @@ const (
 // NewESPHome dials an ESPHome device running bluetooth_proxy over the
 // Noise-encrypted native API (key is the base64 PSK) and returns a Transport
 // that scans and connects through it.
+//
+// bluetooth_proxy routes every BLE reply (connection state, GATT services,
+// reads, write/notify acks, notification data, GATT errors) only to the API
+// client that subscribed to advertisements, and drops them otherwise. The
+// transport therefore holds one advertisement subscription for its whole
+// lifetime; adverts are ignored unless a Scan is running.
 func NewESPHome(ctx context.Context, hostport, key string) (Transport, error) {
 	c, err := esphomeapi.Dial(ctx, hostport, key)
 	if err != nil {
 		return nil, err
 	}
-	return &espTransport{c: c}, nil
+	t := &espTransport{c: c, scans: map[*dropQueue[esphomeapi.RawAdv]]struct{}{}}
+	// Never cancelled: only Close ends the subscription (see Close).
+	if err := c.SubscribeAdvertisements(context.Background(), t.onAdv); err != nil {
+		_ = c.Close()
+		return nil, espErr("subscribe to proxy", err)
+	}
+	return t, nil
 }
 
-type espTransport struct{ c *esphomeapi.Client }
+type espTransport struct {
+	c *esphomeapi.Client
+
+	mu    sync.RWMutex
+	scans map[*dropQueue[esphomeapi.RawAdv]]struct{} // active Scan queues
+}
+
+// onAdv runs on the API read goroutine: fan out without blocking.
+func (t *espTransport) onAdv(r esphomeapi.RawAdv) {
+	t.mu.RLock()
+	for q := range t.scans {
+		q.push(r)
+	}
+	t.mu.RUnlock()
+}
 
 // dropQueue is a bounded FIFO that drops its oldest entry when full. push
 // never blocks, so it is safe on the API client's read goroutine; run delivers
@@ -108,8 +134,6 @@ func addrFromUint64(v uint64, typ uint32) Address {
 }
 
 func (t *espTransport) Scan(ctx context.Context, fn func(Advertisement)) error {
-	sctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	q := newDropQueue[esphomeapi.RawAdv](scanQueueLen)
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -121,17 +145,19 @@ func (t *espTransport) Scan(ctx context.Context, fn func(Advertisement)) error {
 			fn(Advertisement{Addr: addrFromUint64(r.Address, r.AddressType), Name: name, RSSI: int(r.RSSI), Services: svcs})
 		})
 	}()
-	err := t.c.SubscribeAdvertisements(sctx, q.push)
-	if err == nil {
-		select {
-		case <-ctx.Done():
-		case <-t.c.Done():
-			err = fmt.Errorf("scan: %w: %v", ErrDisconnected, t.c.Err())
-		}
-	} else {
-		err = espErr("scan", err)
+	t.mu.Lock()
+	t.scans[q] = struct{}{}
+	t.mu.Unlock()
+	var err error
+	select {
+	case <-ctx.Done():
+	case <-t.c.Done():
+		err = fmt.Errorf("scan: %w: %v", ErrDisconnected, t.c.Err())
 	}
-	cancel() // removes the handler and sends Unsubscribe
+	// The lifetime subscription stays: it also carries GATT replies.
+	t.mu.Lock()
+	delete(t.scans, q)
+	t.mu.Unlock()
 	close(stop)
 	wg.Wait()
 	return err
@@ -193,7 +219,11 @@ func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) 
 	return c, nil
 }
 
-func (t *espTransport) Close() error { return t.c.Close() }
+func (t *espTransport) Close() error {
+	// Explicit, synchronous Unsubscribe (best effort) before the link goes down.
+	_ = t.c.Send(esphomeapi.MsgUnsubscribeBLEAdvertisements, esphomeapi.Empty{})
+	return t.c.Close()
+}
 
 // espErr annotates err with op, mapping loss of the BLE or proxy link to ErrDisconnected.
 func espErr(op string, err error) error {

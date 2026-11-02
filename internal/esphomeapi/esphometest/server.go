@@ -63,7 +63,8 @@ type Server struct {
 	active   net.Conn      // accepted conn, tracked from accept so shutdown can close it mid-handshake
 	ready    chan struct{} // closed once cur is set; replaced when cur clears
 	closed   bool
-	bleSt    *bleState // simulated bluetooth_proxy, created lazily
+	bleSt    *bleState     // simulated bluetooth_proxy, created lazily
+	stop     chan struct{} // closed at shutdown
 }
 
 // Start listens on 127.0.0.1:0 and serves until the test ends.
@@ -77,6 +78,7 @@ func Start(t testing.TB, key []byte) *Server {
 		t: t, ln: ln, key: append([]byte(nil), key...),
 		handlers: map[uint16]func([]byte) []Reply{},
 		ready:    make(chan struct{}),
+		stop:     make(chan struct{}),
 	}
 	s.wg.Add(1)
 	go s.acceptLoop()
@@ -137,6 +139,7 @@ func (s *Server) Close() { s.once.Do(s.shutdown) }
 func (s *Server) shutdown() {
 	s.mu.Lock()
 	s.closed = true
+	close(s.stop)
 	active := s.active
 	s.mu.Unlock()
 	_ = s.ln.Close()

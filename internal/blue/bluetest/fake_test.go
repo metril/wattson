@@ -18,9 +18,11 @@ var (
 	readCh   = blue.UUID16(0x2a00)
 )
 
-func newTestFake() (*Fake, *Device) {
+func newTestFake() (*Fake, *Device) { return newTestFakeAt(testAddr) }
+
+func newTestFakeAt(addr blue.Address) (*Fake, *Device) {
 	dev := &Device{
-		Adv: blue.Advertisement{Addr: testAddr, Name: "MRK-S29R2", RSSI: -60, Services: []blue.UUID{svcUUID}},
+		Adv: blue.Advertisement{Addr: addr, Name: "MRK-S29R2", RSSI: -60, Services: []blue.UUID{svcUUID}},
 		Services: []blue.Service{{UUID: svcUUID, Chars: []blue.Characteristic{
 			{UUID: notifyCh, Handle: 3, Props: blue.PropNotify},
 			{UUID: writeCh, Handle: 5, Props: blue.PropWrite | blue.PropWriteNoResp},
@@ -33,18 +35,25 @@ func newTestFake() (*Fake, *Device) {
 
 func TestFakeContract(t *testing.T) {
 	t.Parallel()
-	RunContract(t, func(t *testing.T) Harness {
-		f, _ := newTestFake()
-		t.Cleanup(func() { f.Close() })
-		return Harness{
-			Transport: f, Dev: testAddr,
-			NotifyChar: notifyCh, WriteChar: writeCh,
-			ReadChar: readCh, ReadValue: []byte("MRK"),
-			Push:   func(b []byte) { f.Notify(testAddr, notifyCh, b) },
-			Drop:   func() { f.DropLink(testAddr) },
-			Writes: func() [][]byte { return f.Writes(testAddr) },
-		}
-	})
+	random := testAddr
+	random.Type = blue.AddrRandom
+	for name, addr := range map[string]blue.Address{"public": testAddr, "random": random} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			RunContract(t, func(t *testing.T) Harness {
+				f, _ := newTestFakeAt(addr)
+				t.Cleanup(func() { f.Close() })
+				return Harness{
+					Transport: f, Dev: addr,
+					NotifyChar: notifyCh, WriteChar: writeCh,
+					ReadChar: readCh, ReadValue: []byte("MRK"),
+					Push:   func(b []byte) { f.Notify(addr, notifyCh, b) },
+					Drop:   func() { f.DropLink(addr) },
+					Writes: func() [][]byte { return f.Writes(addr) },
+				}
+			})
+		})
+	}
 }
 
 func TestFakeOnWriteAndWrites(t *testing.T) {

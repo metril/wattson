@@ -133,7 +133,7 @@ func TestClientKeepaliveStaysUp(t *testing.T) {
 		pings <- struct{}{}
 		return []esphometest.Reply{{Type: MsgPingResponse}}
 	})
-	c := dialOpts(t, srv, DialOptions{PingInterval: 10 * time.Millisecond})
+	c := dialOpts(t, srv, DialOptions{PingInterval: 30 * time.Millisecond})
 	for i := 0; i < 5; i++ {
 		select {
 		case <-pings:

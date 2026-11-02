@@ -63,6 +63,7 @@ type Server struct {
 	active   net.Conn      // accepted conn, tracked from accept so shutdown can close it mid-handshake
 	ready    chan struct{} // closed once cur is set; replaced when cur clears
 	closed   bool
+	bleSt    *bleState // simulated bluetooth_proxy, created lazily
 }
 
 // Start listens on 127.0.0.1:0 and serves until the test ends.

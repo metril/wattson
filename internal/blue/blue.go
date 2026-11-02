@@ -167,7 +167,8 @@ type Conn interface {
 	Subscribe(ctx context.Context, ch UUID, fn func([]byte)) error
 	// Done is closed on local Close or remote disconnect.
 	Done() <-chan struct{}
-	// Err is nil after local Close; wraps ErrDisconnected otherwise.
+	// Err is nil until Done is closed; then nil after a local Close and
+	// wrapping ErrDisconnected otherwise.
 	Err() error
 	Close() error
 }

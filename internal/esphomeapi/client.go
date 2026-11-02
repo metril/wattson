@@ -25,7 +25,14 @@ const (
 	clientInfo          = "wattson"
 	apiMajor, apiMinor  = 1, 10
 	closeWriteTimeout   = time.Second
+	minWriteTimeout     = time.Second
 )
+
+// writeTimeout is the per-write deadline for a keepalive interval: 2x the
+// interval, at least one second.
+func writeTimeout(interval time.Duration) time.Duration {
+	return max(2*interval, minWriteTimeout)
+}
 
 // DialOptions tunes Dial. The zero value is production-ready.
 type DialOptions struct {
@@ -50,6 +57,9 @@ type Client struct {
 	hmu      sync.RWMutex
 	handlers map[uint16]map[uint64]func([]byte)
 	nextID   uint64
+
+	opMu  sync.Mutex // guards opSem
+	opSem map[opKey]chan struct{}
 
 	rx   chan struct{} // inbound-traffic signal for the keepalive loop
 	done chan struct{}
@@ -82,6 +92,7 @@ func Dial(ctx context.Context, hostport, key string, opts ...DialOptions) (*Clie
 		_ = conn.Close()
 		return nil, err
 	}
+	sc.wtimeout = writeTimeout(o.PingInterval)
 	c := &Client{
 		sc: sc, interval: o.PingInterval,
 		handlers: map[uint16]map[uint64]func([]byte){},
@@ -170,7 +181,9 @@ func (c *Client) Err() error {
 	return nil
 }
 
-// Send marshals and sends one message.
+// Send marshals and sends one message. A write that fails or exceeds the write
+// deadline (2x the ping interval, at least 1 s) closes the client, since a
+// partial write leaves the encrypted stream unusable.
 func (c *Client) Send(typ uint16, m interface{ Marshal() []byte }) error {
 	select {
 	case <-c.done:
@@ -183,15 +196,16 @@ func (c *Client) Send(typ uint16, m interface{ Marshal() []byte }) error {
 			return ErrClosed
 		default:
 		}
+		c.closeWith(err)
 		return err
 	}
 	return nil
 }
 
 // On registers fn for every inbound message of type typ and returns a cancel
-// func. Handlers run on the read goroutine in registration order of arrival:
-// they must be quick, must not block on the connection, and must not call
-// Close.
+// func. Handlers run on the read goroutine, in unspecified order relative to
+// each other for one message: they must never block (hand off with a
+// non-blocking send), must not wait on the connection, and must not call Close.
 func (c *Client) On(typ uint16, fn func([]byte)) (cancel func()) {
 	c.hmu.Lock()
 	id := c.nextID
@@ -216,8 +230,7 @@ func (c *Client) Close() error {
 	select {
 	case <-c.done:
 	default:
-		_ = c.sc.c.SetWriteDeadline(time.Now().Add(closeWriteTimeout))
-		_ = c.sc.WriteMsg(MsgDisconnectRequest, nil)
+		_ = c.sc.writeMsg(MsgDisconnectRequest, nil, closeWriteTimeout)
 		c.closeWith(nil)
 	}
 	c.wg.Wait()

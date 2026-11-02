@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,17 +50,22 @@ func RunContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 	run("ScanFindsDevice", func(t *testing.T, ctx context.Context, h Harness) {
 		sctx, stop := context.WithCancel(ctx)
 		defer stop()
-		found := false
+		// fn may run on another goroutine than Scan's caller.
+		var found atomic.Bool
 		err := h.Transport.Scan(sctx, func(a blue.Advertisement) {
-			if a.Addr == h.Dev {
-				found = true
-				stop()
+			if a.Addr.MAC != h.Dev.MAC {
+				return
 			}
+			if a.Addr.Type != h.Dev.Type {
+				t.Errorf("scanned address type = %d, want %d", a.Addr.Type, h.Dev.Type)
+			}
+			found.Store(true)
+			stop()
 		})
 		if err != nil {
 			t.Fatalf("Scan returned %v, want nil on ctx cancel", err)
 		}
-		if !found {
+		if !found.Load() {
 			t.Fatal("device not seen during scan")
 		}
 	})
@@ -138,6 +144,15 @@ func RunContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 		if err := c.Err(); !errors.Is(err, blue.ErrDisconnected) {
 			t.Fatalf("Err = %v, want ErrDisconnected", err)
+		}
+		if err := c.Write(ctx, h.WriteChar, []byte{1}, true); !errors.Is(err, blue.ErrDisconnected) {
+			t.Errorf("Write after drop = %v, want ErrDisconnected", err)
+		}
+		if _, err := c.Read(ctx, h.ReadChar); !errors.Is(err, blue.ErrDisconnected) {
+			t.Errorf("Read after drop = %v, want ErrDisconnected", err)
+		}
+		if err := c.Subscribe(ctx, h.NotifyChar, func([]byte) {}); !errors.Is(err, blue.ErrDisconnected) {
+			t.Errorf("Subscribe after drop = %v, want ErrDisconnected", err)
 		}
 	})
 

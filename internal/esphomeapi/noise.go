@@ -38,6 +38,10 @@ type secureConn struct {
 	send *noise.CipherState
 	rmu  sync.Mutex
 	recv *noise.CipherState
+
+	// wtimeout bounds each WriteMsg so a stalled peer cannot block a writer
+	// forever. Set before the conn is shared; zero disables the deadline.
+	wtimeout time.Duration
 }
 
 // clientHandshake performs the ESPHome Noise_NNpsk0_25519_ChaChaPoly_SHA256
@@ -174,8 +178,13 @@ func parseServerHello(f []byte) (ServerHello, error) {
 	return h, nil
 }
 
-// WriteMsg encrypts and sends one API message.
+// WriteMsg encrypts and sends one API message, failing after the conn's write timeout.
 func (s *secureConn) WriteMsg(typ uint16, payload []byte) error {
+	return s.writeMsg(typ, payload, s.wtimeout)
+}
+
+// writeMsg is WriteMsg with an explicit write deadline (0 = none).
+func (s *secureConn) writeMsg(typ uint16, payload []byte, d time.Duration) error {
 	if len(payload)+4+16 > maxFrame {
 		return fmt.Errorf("message too large: %d bytes", len(payload))
 	}
@@ -188,6 +197,9 @@ func (s *secureConn) WriteMsg(typ uint16, payload []byte) error {
 	ct, err := s.send.Encrypt(nil, nil, pt)
 	if err != nil {
 		return err
+	}
+	if d > 0 {
+		_ = s.c.SetWriteDeadline(time.Now().Add(d))
 	}
 	return writeFrame(s.c, ct)
 }

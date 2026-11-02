@@ -484,8 +484,9 @@ func (u UUID) String() string {
 		u[0]>>32, (u[0]>>16)&0xFFFF, u[0]&0xFFFF, u[1]>>48, u[1]&0xFFFFFFFFFFFF)
 }
 
-// uuidFromWords builds a UUID from the wire's repeated uint64. The firmware
-// omits zero words, so missing words are zero.
+// uuidFromWords builds a UUID from the wire's repeated uint64 (high, low).
+// Firmware that only sends a short_uuid (API >= 1.12) sends no words at all;
+// any missing word is left zero and resolveUUID falls back to the short form.
 func uuidFromWords(w []uint64) UUID {
 	var u UUID
 	copy(u[:], w)

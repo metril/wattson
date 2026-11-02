@@ -26,6 +26,11 @@ export function setUnauthorizedHandler(fn: (returnTo: string) => void): void {
   onUnauthorized = fn;
 }
 
+/** Runs the app's 401 handling for failures that do not come through fetch (the ride socket's 4401). */
+export function notifyUnauthorized(returnTo: string): void {
+  onUnauthorized(returnTo);
+}
+
 // These two endpoints answer 401 as part of normal operation.
 const NO_REDIRECT = new Set(['/api/auth/login', '/api/auth/me']);
 // Already on a public screen: a 401 there must not bounce the user around.

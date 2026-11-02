@@ -2,13 +2,13 @@ import { useEffect } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Layout } from '@/components/Layout';
-import { Card } from '@/components/Card';
 import { RequireAuth, ME_KEY } from '@/lib/auth';
 import { getKioskToken, setKioskToken, setUnauthorizedHandler } from '@/lib/api';
 import { KioskPage } from '@/pages/Kiosk';
 import { LoginPage } from '@/pages/Login';
 import { SetupPage } from '@/pages/Setup';
 import { RidersPage } from '@/pages/Riders';
+import { RidePage } from '@/pages/Ride';
 import { TokensPage } from '@/pages/settings/Tokens';
 import { SettingsLayout } from '@/pages/settings/SettingsLayout';
 import { GeneralForm } from '@/pages/settings/General';
@@ -16,16 +16,6 @@ import { BikeForm } from '@/pages/settings/Bike';
 import { IntegrationsForm } from '@/pages/settings/Integrations';
 import { AuthPage } from '@/pages/settings/Auth';
 import { UsersPage } from '@/pages/settings/Users';
-
-// Screens arrive in later tasks; each route renders a titled placeholder.
-function Page({ title }: { title: string }) {
-  return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <h1 className="numeral text-2xl">{title}</h1>
-      <Card className="text-dim">Coming soon.</Card>
-    </div>
-  );
-}
 
 export function AppRoutes() {
   const qc = useQueryClient();
@@ -58,7 +48,7 @@ export function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Page title="Ride" />} />
+        <Route index element={<RidePage />} />
         <Route path="riders" element={<RidersPage />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route

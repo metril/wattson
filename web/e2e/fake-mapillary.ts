@@ -17,6 +17,8 @@ export interface FakeMapillary {
   requests: string[];
   /** While true, photo downloads (`/img/*`) answer 502. */
   fail: boolean;
+  /** JPEG served for every photo; the committed 64x48 fixture when null. */
+  image: Buffer | null;
   close(): Promise<void>;
 }
 
@@ -25,7 +27,7 @@ export async function startFakeMapillary(): Promise<FakeMapillary> {
   const jpeg = readFileSync(resolve(DIR, 'img.jpg'));
   const requests: string[] = [];
   let self = '';
-  const fake = { requests, fail: false } as FakeMapillary;
+  const fake = { requests, fail: false, image: null } as FakeMapillary;
 
   const srv = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://x').pathname;
@@ -52,8 +54,9 @@ export async function startFakeMapillary(): Promise<FakeMapillary> {
         res.writeHead(502).end();
         return;
       }
-      res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': jpeg.length });
-      res.end(jpeg);
+      const body = fake.image ?? jpeg;
+      res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': body.length });
+      res.end(body);
     } else {
       res.writeHead(404).end();
     }

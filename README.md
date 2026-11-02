@@ -2,6 +2,14 @@
 
 Go CLI to probe and drive a Merach exercise bike (S29R2) over BLE, locally via BlueZ or through an ESPHome Bluetooth proxy.
 
+<p>
+  <img src="docs/images/ride-tv-3d.png" alt="The ride screen on a TV, 3D flyover" width="49%">
+  <img src="docs/images/ride-tablet-2d.png" alt="The ride screen on a tablet, 2D map and elevation profile" width="30%">
+  <img src="docs/images/ride-phone.png" alt="The ride screen on a phone" width="15%">
+</p>
+
+**New here? Read the [user guide](docs/user-guide.md)**: first ride, routes, the 2D, 3D and street-photo views, using a TV, offline maps and troubleshooting.
+
 ```
 wattson serve | admin | healthcheck | scan | probe | drive | ride | version
 ```
@@ -24,7 +32,7 @@ Everything else is configured through the API and stored in SQLite. Stop it with
 ./wattson healthcheck                    # for Docker HEALTHCHECK
 ```
 
-Docs: [authentication and OIDC](docs/auth.md), [Strava](docs/strava.md), [API quick start](docs/api.md), [openapi.json](docs/openapi.json), [asyncapi.yaml](docs/asyncapi.yaml).
+Docs: [user guide](docs/user-guide.md), [authentication and OIDC](docs/auth.md), [Strava](docs/strava.md), [API quick start](docs/api.md), [openapi.json](docs/openapi.json), [asyncapi.yaml](docs/asyncapi.yaml).
 
 ## Docker
 
@@ -42,7 +50,15 @@ Stopping the container returns the bike to its minimum level first, so compose g
 
 Open the web app, pick a rider and tap Connect, then Start. Use the on-screen − / + buttons to change the level, and Pause, Resume and Stop (two taps) to control the ride.
 
-TV remote: the up and down arrows change the level and Enter starts, pauses or resumes. Stop and Release need touch or mouse, or the idle auto-release. Remote focus navigation for those arrives in M7.
+On a route ride the **View** button switches between the 2D map, a 3D terrain flyover and Mapillary street photos (the choice is remembered per device). The 3D view drops to 2D by itself when the display is too slow. Layouts are tuned for a phone, a landscape tablet and a TV at 3 m. [User guide](docs/user-guide.md).
+
+TV remote: Up and Down change the level, Left and Right move the focus, Enter presses the focused control (Start, Pause, Resume; Stop needs it twice) and Back or Escape closes menus. Every ride action is reachable this way, so a paired TV needs no keyboard (Settings, Tokens, Pair a display).
+
+**Street photos** need a Mapillary client token (Settings, Integrations, Street imagery). The server fetches the photos; the token never reaches a browser. Photos are CC BY-SA 4.0 and credited on screen; panoramas show as flat images.
+
+**Offline map cache**: the browser saves the map tiles along a route you pick, so the ride keeps its map if the internet drops. This needs HTTPS or localhost; over plain `http://` on a LAN address there is no cache and maps still work online.
+
+The big numerals use Barlow Condensed SemiBold, self-hosted, under the SIL Open Font License 1.1 (licence text in `web/src/assets/fonts/OFL.txt`).
 
 ## Integrations and hardware
 
@@ -135,5 +151,10 @@ make build     # build ./wattson
 make go-test   # go vet + go test -race ./...
 make serve     # build and run the server on :8080 with ./data
 make lint      # gofmt check + go vet + web type-check
-make e2e       # Playwright smoke over the simulator (npx playwright install chromium once)
+make e2e       # Playwright over the simulator, in phone, tablet and TV sizes (npx playwright install chromium once)
+make perf      # Lighthouse budgets (mobile) against the built binary; reports in web/lighthouse-report
+cd web && npm run size          # main bundle < 400 KB gz; maplibre, ride3d and photo chunk budgets
+cd web && npm run screenshots   # regenerates docs/images with real map tiles (needs internet and `make build`)
 ```
+
+CI shards the end-to-end tests three ways and runs the Lighthouse job; the single required check is `CI`.

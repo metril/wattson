@@ -15,6 +15,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/oidcauth"
@@ -41,6 +42,10 @@ type Deps struct {
 	// connection (ridectl.Manager.RiderInUse); deleting that rider is refused
 	// with 409 rider_in_use. Nil means no rider is ever in use.
 	RiderInUse func(riderID int64) bool
+	// RouteInUse reports whether a route is in use by the active ride;
+	// deleting that route is refused with 409 route_in_use. Nil means no
+	// route is ever in use.
+	RouteInUse func(routeID int64) bool
 	// Bike is the single bike manager the bike, ride and WebSocket endpoints
 	// drive. When RiderInUse is nil, Bike.RiderInUse is used.
 	Bike *ridectl.Manager
@@ -77,7 +82,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	d.ws = &wsGate{}
 	d.oidcState = newStateCodec(d)
 	r := chi.NewRouter()
-	r.Use(d.recoverer, securityHeaders, withLogger(d.Logger))
+	r.Use(d.recoverer, securityHeaders, middleware.Compress(5, "application/json"), withLogger(d.Logger))
 	if d.Auth != nil {
 		r.Use(d.Auth.Middleware)
 	}
@@ -111,7 +116,8 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	return r, nil
 }
 
-const csp = "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+const csp = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; " +
+	"worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

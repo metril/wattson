@@ -125,7 +125,7 @@ func TestSecurityHeaders(t *testing.T) {
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "same-origin",
 		"X-Frame-Options":         "DENY",
-		"Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 	}
 	for k, v := range want {
 		if got := resp.Header.Get(k); got != v {
@@ -184,7 +184,7 @@ func TestAPIPrefixIsJSON404(t *testing.T) {
 func TestContentSecurityPolicy(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)
-	const strict = "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+	const strict = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 	for _, path := range []string{"/healthz", "/riders", "/api/nope", "/openapi.json"} {
 		resp, _ := ts.do(t, nil, "GET", path, nil)
 		if got := resp.Header.Get("Content-Security-Policy"); got != strict {

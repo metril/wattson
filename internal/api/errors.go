@@ -99,7 +99,7 @@ func newHumaError(status int, msg string, errs ...error) huma.StatusError {
 	case http.StatusConflict:
 		code = "conflict"
 	case http.StatusRequestEntityTooLarge:
-		code = "payload_too_large"
+		code = "too_large"
 	case http.StatusUnsupportedMediaType:
 		code = "unsupported_media_type"
 	case http.StatusTooManyRequests:

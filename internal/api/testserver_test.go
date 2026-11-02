@@ -63,6 +63,7 @@ type tsOpt func(*tsConfig)
 type tsConfig struct {
 	extra      []func(huma.API)
 	riderInUse func(int64) bool
+	routeInUse func(int64) bool
 	openLocal  func() (blue.Transport, error)
 	wsRecheck  time.Duration
 	simDial    func(sim.Config) bike.Dial
@@ -90,6 +91,11 @@ func withWSRecheck(d time.Duration) tsOpt {
 // withRiderInUse sets Deps.RiderInUse.
 func withRiderInUse(f func(int64) bool) tsOpt {
 	return func(c *tsConfig) { c.riderInUse = f }
+}
+
+// withRouteInUse sets Deps.RouteInUse.
+func withRouteInUse(f func(int64) bool) tsOpt {
+	return func(c *tsConfig) { c.routeInUse = f }
 }
 
 // withOps registers extra (test-only) operations on the server's huma API.
@@ -121,7 +127,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
 		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
 	d := Deps{Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
-		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, Bike: mgr, WSRecheck: cfg.wsRecheck}
+		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck}
 	if cfg.noBike {
 		d.Bike = nil
 	}

@@ -679,6 +679,36 @@
         ],
         "type": "object"
       },
+      "LineStringOut": {
+        "additionalProperties": false,
+        "properties": {
+          "coordinates": {
+            "description": "Track as [longitude, latitude] pairs in degrees, simplified to about 2 metres.",
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "type": {
+            "description": "Always LineString.",
+            "enum": [
+              "LineString"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "type": "object"
+      },
       "LoginInBody": {
         "additionalProperties": false,
         "properties": {
@@ -979,6 +1009,21 @@
         },
         "type": "object"
       },
+      "PatchRouteInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "New display name, 1 to 100 characters.",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "PatchUserInBody": {
         "additionalProperties": false,
         "properties": {
@@ -991,6 +1036,68 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "ProfileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ele_m": {
+            "description": "Smoothed elevation of each sample in metres, 1 decimal.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "grade_pct": {
+            "description": "Road grade at each sample in percent, 2 decimals.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "lat": {
+            "description": "Latitude of each sample in degrees, 6 decimals.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "length_m": {
+            "description": "Route length in metres; the last sample may be closer than step_m to the one before.",
+            "format": "double",
+            "type": "number"
+          },
+          "lon": {
+            "description": "Longitude of each sample in degrees, 6 decimals.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "route_id": {
+            "description": "Route ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "step_m": {
+            "description": "Distance between samples in metres.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "route_id",
+          "step_m",
+          "length_m",
+          "lat",
+          "lon",
+          "ele_m",
+          "grade_pct"
+        ],
         "type": "object"
       },
       "ProviderButton": {
@@ -1253,6 +1360,203 @@
         ],
         "type": "object"
       },
+      "RouteDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "ascent_m": {
+            "description": "Total climb in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "bbox": {
+            "description": "Bounding box as [west, south, east, north] in degrees.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "descent_m": {
+            "description": "Total descent in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "distance_m": {
+            "description": "Route length in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "geojson": {
+            "$ref": "#/components/schemas/LineStringOut",
+            "description": "The route as a GeoJSON LineString."
+          },
+          "id": {
+            "description": "Route ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_grade_pct": {
+            "description": "Steepest climb as a percent grade.",
+            "format": "double",
+            "type": "number"
+          },
+          "min_grade_pct": {
+            "description": "Steepest descent as a percent grade (negative or zero).",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "Display name of the route.",
+            "type": "string"
+          },
+          "owner_id": {
+            "description": "ID of the user who added the route; 0 when that user has since been deleted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "description": "How the route was made: an imported gpx, tcx or fit file, drawn on the map, or built from synthetic segments.",
+            "enum": [
+              "gpx",
+              "tcx",
+              "fit",
+              "draw",
+              "synthetic"
+            ],
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/RouteSpec",
+            "description": "How the route was built; empty for imported files."
+          }
+        },
+        "required": [
+          "bbox",
+          "geojson",
+          "spec",
+          "id",
+          "name",
+          "source",
+          "owner_id",
+          "distance_m",
+          "ascent_m",
+          "descent_m",
+          "min_grade_pct",
+          "max_grade_pct",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "RouteOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ascent_m": {
+            "description": "Total climb in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "descent_m": {
+            "description": "Total descent in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "distance_m": {
+            "description": "Route length in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "description": "Route ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_grade_pct": {
+            "description": "Steepest climb as a percent grade.",
+            "format": "double",
+            "type": "number"
+          },
+          "min_grade_pct": {
+            "description": "Steepest descent as a percent grade (negative or zero).",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "Display name of the route.",
+            "type": "string"
+          },
+          "owner_id": {
+            "description": "ID of the user who added the route; 0 when that user has since been deleted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "description": "How the route was made: an imported gpx, tcx or fit file, drawn on the map, or built from synthetic segments.",
+            "enum": [
+              "gpx",
+              "tcx",
+              "fit",
+              "draw",
+              "synthetic"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source",
+          "owner_id",
+          "distance_m",
+          "ascent_m",
+          "descent_m",
+          "min_grade_pct",
+          "max_grade_pct",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "RouteSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "description": "Routing profile used to draw the route (drawn routes).",
+            "type": "string"
+          },
+          "segments": {
+            "description": "Segments the route was built from (synthetic routes).",
+            "items": {
+              "$ref": "#/components/schemas/SegmentIn"
+            },
+            "type": "array"
+          },
+          "waypoints": {
+            "description": "Waypoints as [longitude, latitude] pairs (drawn routes).",
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ScanInBody": {
         "additionalProperties": false,
         "properties": {
@@ -1296,6 +1600,30 @@
         },
         "required": [
           "devices"
+        ],
+        "type": "object"
+      },
+      "SegmentIn": {
+        "additionalProperties": false,
+        "properties": {
+          "grade_pct": {
+            "description": "Constant grade of the segment in percent, -25 to 25.",
+            "format": "double",
+            "maximum": 25,
+            "minimum": -25,
+            "type": "number"
+          },
+          "length_m": {
+            "description": "Segment length in metres, 10 to 100000.",
+            "format": "double",
+            "maximum": 100000,
+            "minimum": 10,
+            "type": "number"
+          }
+        },
+        "required": [
+          "length_m",
+          "grade_pct"
         ],
         "type": "object"
       },
@@ -1515,6 +1843,31 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "SyntheticInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Route name, 1 to 100 characters.",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "segments": {
+            "description": "Segments ridden in order, 1 to 100. The total length must not exceed 500 km.",
+            "items": {
+              "$ref": "#/components/schemas/SegmentIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "segments"
+        ],
         "type": "object"
       },
       "TestBLEInBody": {
@@ -3856,6 +4209,679 @@
         "summary": "Update a rider",
         "tags": [
           "riders"
+        ]
+      }
+    },
+    "/api/routes": {
+      "get": {
+        "description": "Returns every route, newest first, without geometry. Routes are shared: every signed-in user sees all of them. Requires the `read` scope.",
+        "operationId": "listRoutes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RouteOut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List routes",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
+    "/api/routes/import": {
+      "post": {
+        "description": "Uploads a GPX, TCX or FIT file (multipart/form-data, field `file`, at most 20 MiB) and stores it as a route owned by the caller. Tracks without elevation, or above 60 degrees latitude, are looked up at OpenTopoData when that is enabled in Settings. Errors: 400 `unsupported_format` or `no_track`; 413 `too_large`; 422 `no_elevation` (enable OpenTopoData elevation in Settings → Integrations), `route_too_short` (under 50 m), `route_too_long` (over 500 km) or `too_many_points`; 502 `elevation_unavailable` (the elevation service failed). Requires the `control` scope.",
+        "operationId": "importRoute",
+        "parameters": [
+          {
+            "description": "Route name. Defaults to the name stored in the file, else the file name without its extension.",
+            "explode": false,
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "description": "Route name. Defaults to the name stored in the file, else the file name without its extension.",
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "contentType": "application/octet-stream"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "contentEncoding": "binary",
+                    "contentMediaType": "application/octet-stream",
+                    "description": "The route file: GPX, TCX or FIT, at most 20 MiB. The format is detected from the content, then the file name.",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDetail"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Import a route file",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
+    "/api/routes/synthetic": {
+      "post": {
+        "description": "Creates a route from constant-grade segments ridden in order, for example to train a specific climb. The route starts at 100 m elevation. The total length may not exceed 500 km (422 `route_too_long`). Requires the `control` scope.",
+        "operationId": "createSyntheticRoute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyntheticInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDetail"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Build a synthetic route",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
+    "/api/routes/{id}": {
+      "delete": {
+        "description": "Deletes a route. Only the route's owner or an admin may do this (403 `not_owner` otherwise). A route the connected ride is using cannot be deleted (409 `route_in_use`); stop the ride first. Requires the `control` scope.",
+        "operationId": "deleteRoute",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete a route",
+        "tags": [
+          "routes"
+        ]
+      },
+      "get": {
+        "description": "Returns a route with its bounding box, simplified GeoJSON line and spec. Any signed-in user may read any route. Requires the `read` scope.",
+        "operationId": "getRoute",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a route",
+        "tags": [
+          "routes"
+        ]
+      },
+      "patch": {
+        "description": "Changes the route's name. Only the route's owner or an admin may do this; anyone else gets 403 `not_owner`. Requires the `control` scope.",
+        "operationId": "renameRoute",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchRouteInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Rename a route",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
+    "/api/routes/{id}/profile": {
+      "get": {
+        "description": "Returns the route resampled every `step_m` metres as parallel arrays (latitude, longitude, elevation, grade). The response is gzip-compressed when the client sends `Accept-Encoding: gzip`. Requires the `read` scope.",
+        "operationId": "getRouteProfile",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a route's elevation profile",
+        "tags": [
+          "routes"
         ]
       }
     },

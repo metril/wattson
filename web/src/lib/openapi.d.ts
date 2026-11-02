@@ -408,6 +408,114 @@ export interface paths {
         patch: operations["updateRider"];
         trace?: never;
     };
+    "/api/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List routes
+         * @description Returns every route, newest first, without geometry. Routes are shared: every signed-in user sees all of them. Requires the `read` scope.
+         */
+        get: operations["listRoutes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a route file
+         * @description Uploads a GPX, TCX or FIT file (multipart/form-data, field `file`, at most 20 MiB) and stores it as a route owned by the caller. Tracks without elevation, or above 60 degrees latitude, are looked up at OpenTopoData when that is enabled in Settings. Errors: 400 `unsupported_format` or `no_track`; 413 `too_large`; 422 `no_elevation` (enable OpenTopoData elevation in Settings → Integrations), `route_too_short` (under 50 m), `route_too_long` (over 500 km) or `too_many_points`; 502 `elevation_unavailable` (the elevation service failed). Requires the `control` scope.
+         */
+        post: operations["importRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/synthetic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build a synthetic route
+         * @description Creates a route from constant-grade segments ridden in order, for example to train a specific climb. The route starts at 100 m elevation. The total length may not exceed 500 km (422 `route_too_long`). Requires the `control` scope.
+         */
+        post: operations["createSyntheticRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a route
+         * @description Returns a route with its bounding box, simplified GeoJSON line and spec. Any signed-in user may read any route. Requires the `read` scope.
+         */
+        get: operations["getRoute"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a route
+         * @description Deletes a route. Only the route's owner or an admin may do this (403 `not_owner` otherwise). A route the connected ride is using cannot be deleted (409 `route_in_use`); stop the ride first. Requires the `control` scope.
+         */
+        delete: operations["deleteRoute"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a route
+         * @description Changes the route's name. Only the route's owner or an admin may do this; anyone else gets 403 `not_owner`. Requires the `control` scope.
+         */
+        patch: operations["renameRoute"];
+        trace?: never;
+    };
+    "/api/routes/{id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a route's elevation profile
+         * @description Returns the route resampled every `step_m` metres as parallel arrays (latitude, longitude, elevation, grade). The response is gzip-compressed when the client sends `Accept-Encoding: gzip`. Requires the `read` scope.
+         */
+        get: operations["getRouteProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -961,6 +1069,15 @@ export interface components {
             /** @description Server build version. */
             version: string;
         };
+        LineStringOut: {
+            /** @description Track as [longitude, latitude] pairs in degrees, simplified to about 2 metres. */
+            coordinates: number[][];
+            /**
+             * @description Always LineString.
+             * @enum {string}
+             */
+            type: "LineString";
+        };
         LoginInBody: {
             /** @description Password. */
             password: string;
@@ -1098,11 +1215,40 @@ export interface components {
              */
             weight_kg?: number;
         };
+        PatchRouteInBody: {
+            /** @description New display name, 1 to 100 characters. */
+            name: string;
+        };
         PatchUserInBody: {
             /** @description Disable or re-enable the account. Disabling deletes the user's sessions. */
             disabled?: boolean;
             /** @description Grant or revoke the admin scope. */
             is_admin?: boolean;
+        };
+        ProfileOut: {
+            /** @description Smoothed elevation of each sample in metres, 1 decimal. */
+            ele_m: number[];
+            /** @description Road grade at each sample in percent, 2 decimals. */
+            grade_pct: number[];
+            /** @description Latitude of each sample in degrees, 6 decimals. */
+            lat: number[];
+            /**
+             * Format: double
+             * @description Route length in metres; the last sample may be closer than step_m to the one before.
+             */
+            length_m: number;
+            /** @description Longitude of each sample in degrees, 6 decimals. */
+            lon: number[];
+            /**
+             * Format: int64
+             * @description Route ID.
+             */
+            route_id: number;
+            /**
+             * Format: double
+             * @description Distance between samples in metres.
+             */
+            step_m: number;
         };
         ProviderButton: {
             /** @description Text for the sign-in button. */
@@ -1249,6 +1395,118 @@ export interface components {
              */
             weight_kg: number;
         };
+        RouteDetail: {
+            /**
+             * Format: double
+             * @description Total climb in metres.
+             */
+            ascent_m: number;
+            /** @description Bounding box as [west, south, east, north] in degrees. */
+            bbox: number[];
+            /**
+             * Format: date-time
+             * @description Creation time, UTC.
+             */
+            created_at: string;
+            /**
+             * Format: double
+             * @description Total descent in metres.
+             */
+            descent_m: number;
+            /**
+             * Format: double
+             * @description Route length in metres.
+             */
+            distance_m: number;
+            /** @description The route as a GeoJSON LineString. */
+            geojson: components["schemas"]["LineStringOut"];
+            /**
+             * Format: int64
+             * @description Route ID.
+             */
+            id: number;
+            /**
+             * Format: double
+             * @description Steepest climb as a percent grade.
+             */
+            max_grade_pct: number;
+            /**
+             * Format: double
+             * @description Steepest descent as a percent grade (negative or zero).
+             */
+            min_grade_pct: number;
+            /** @description Display name of the route. */
+            name: string;
+            /**
+             * Format: int64
+             * @description ID of the user who added the route; 0 when that user has since been deleted.
+             */
+            owner_id: number;
+            /**
+             * @description How the route was made: an imported gpx, tcx or fit file, drawn on the map, or built from synthetic segments.
+             * @enum {string}
+             */
+            source: "gpx" | "tcx" | "fit" | "draw" | "synthetic";
+            /** @description How the route was built; empty for imported files. */
+            spec: components["schemas"]["RouteSpec"];
+        };
+        RouteOut: {
+            /**
+             * Format: double
+             * @description Total climb in metres.
+             */
+            ascent_m: number;
+            /**
+             * Format: date-time
+             * @description Creation time, UTC.
+             */
+            created_at: string;
+            /**
+             * Format: double
+             * @description Total descent in metres.
+             */
+            descent_m: number;
+            /**
+             * Format: double
+             * @description Route length in metres.
+             */
+            distance_m: number;
+            /**
+             * Format: int64
+             * @description Route ID.
+             */
+            id: number;
+            /**
+             * Format: double
+             * @description Steepest climb as a percent grade.
+             */
+            max_grade_pct: number;
+            /**
+             * Format: double
+             * @description Steepest descent as a percent grade (negative or zero).
+             */
+            min_grade_pct: number;
+            /** @description Display name of the route. */
+            name: string;
+            /**
+             * Format: int64
+             * @description ID of the user who added the route; 0 when that user has since been deleted.
+             */
+            owner_id: number;
+            /**
+             * @description How the route was made: an imported gpx, tcx or fit file, drawn on the map, or built from synthetic segments.
+             * @enum {string}
+             */
+            source: "gpx" | "tcx" | "fit" | "draw" | "synthetic";
+        };
+        RouteSpec: {
+            /** @description Routing profile used to draw the route (drawn routes). */
+            profile?: string;
+            /** @description Segments the route was built from (synthetic routes). */
+            segments?: components["schemas"]["SegmentIn"][];
+            /** @description Waypoints as [longitude, latitude] pairs (drawn routes). */
+            waypoints?: number[][];
+        };
         ScanInBody: {
             /**
              * Format: int64
@@ -1269,6 +1527,18 @@ export interface components {
         ScanOut: {
             /** @description Devices seen while scanning, supported bikes first, then by signal strength. */
             devices: components["schemas"]["Device"][];
+        };
+        SegmentIn: {
+            /**
+             * Format: double
+             * @description Constant grade of the segment in percent, -25 to 25.
+             */
+            grade_pct: number;
+            /**
+             * Format: double
+             * @description Segment length in metres, 10 to 100000.
+             */
+            length_m: number;
         };
         SettingsOut: {
             /** @description Sign-in settings. */
@@ -1361,6 +1631,12 @@ export interface components {
             client_id?: string;
             /** @description Strava client secret. Omit to keep the stored secret; an empty string clears it. */
             client_secret?: string;
+        };
+        SyntheticInBody: {
+            /** @description Route name, 1 to 100 characters. */
+            name: string;
+            /** @description Segments ridden in order, 1 to 100. The total length must not exceed 500 km. */
+            segments: components["schemas"]["SegmentIn"][];
         };
         TestBLEInBody: {
             /** @description Bike Bluetooth address to look for, such as AA:BB:CC:DD:EE:FF. Empty uses the stored address; with none, only the adapter is checked. */
@@ -3084,6 +3360,501 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRoutes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importRoute: {
+        parameters: {
+            query?: {
+                /** @description Route name. Defaults to the name stored in the file, else the file name without its extension. */
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The route file: GPX, TCX or FIT, at most 20 MiB. The format is detected from the content, then the file name.
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createSyntheticRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyntheticInBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    renameRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchRouteInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRouteProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

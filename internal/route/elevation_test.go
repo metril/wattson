@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -99,31 +100,60 @@ func TestOpenTopoDataMostlyNull(t *testing.T) {
 
 func TestOpenTopoDataSharedLimiter(t *testing.T) {
 	t.Parallel()
-	var mu sync.Mutex
-	var times []time.Time
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		times = append(times, time.Now())
-		mu.Unlock()
+		hits.Add(1)
 		fmt.Fprint(w, `{"status":"OK","results":[{"elevation":1},{"elevation":2}]}`)
 	}))
 	defer srv.Close()
+	const interval = 30 * time.Millisecond
 	var wg sync.WaitGroup
+	start := time.Now()
 	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			o := OpenTopoData{BaseURL: srv.URL, Interval: 30 * time.Millisecond}
+			o := OpenTopoData{BaseURL: srv.URL, Interval: interval}
 			if err := o.Fill(context.Background(), northTrack(3, 10, 10)); err != nil {
 				t.Error(err)
 			}
 		}()
 	}
 	wg.Wait()
-	slices.SortFunc(times, func(a, b time.Time) int { return a.Compare(b) })
-	if len(times) != 3 || times[1].Sub(times[0]) < 25*time.Millisecond || times[2].Sub(times[1]) < 25*time.Millisecond {
-		t.Fatalf("requests not spaced: %v", times)
+	// Three request starts are at least two intervals apart, so the last
+	// one cannot finish earlier than 2*interval after we began. Measured on
+	// the client side, this lower bound does not depend on scheduler jitter.
+	if got := time.Since(start); hits.Load() != 3 || got < 2*interval {
+		t.Fatalf("hits=%d elapsed=%v, want 3 hits and >= %v", hits.Load(), got, 2*interval)
 	}
+}
+
+func TestLimiterSpacesWaitersExactly(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		l := &limiter{}
+		start := time.Now()
+		var mu sync.Mutex
+		var offs []time.Duration
+		var wg sync.WaitGroup
+		for range 3 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := l.wait(context.Background(), 30*time.Millisecond); err != nil {
+					t.Error(err)
+				}
+				mu.Lock()
+				offs = append(offs, time.Since(start))
+				mu.Unlock()
+			}()
+		}
+		wg.Wait()
+		slices.Sort(offs)
+		if !slices.Equal(offs, []time.Duration{0, 30 * time.Millisecond, 60 * time.Millisecond}) {
+			t.Fatalf("offsets = %v", offs)
+		}
+	})
 }
 
 type failFiller struct{ err error }

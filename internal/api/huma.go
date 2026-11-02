@@ -52,6 +52,12 @@ type route struct {
 	Scope                                       auth.Scope // "" = public
 	Status                                      int        // success status; 0 means 200 (204 without a body)
 	Errors                                      []int      // statuses beyond the defaults
+	// MaxBody bounds the request body in bytes; 0 means 1 MiB.
+	MaxBody int64
+	// Multipart marks a multipart/form-data upload (the input declares a
+	// huma.MultipartFormFiles RawBody): the JSON Content-Type pre-check is
+	// skipped and 400 is documented.
+	Multipart bool
 }
 
 var jsonBodyMethods = map[string]bool{http.MethodPost: true, http.MethodPut: true, http.MethodPatch: true}
@@ -130,7 +136,11 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 		desc += " Requires the `" + string(rt.Scope) + "` scope."
 	}
 	_, hasBody := reflect.TypeFor[I]().FieldByName("Body")
-	jsonBody := hasBody && jsonBodyMethods[rt.Method]
+	jsonBody := hasBody && !rt.Multipart && jsonBodyMethods[rt.Method]
+	maxBody := rt.MaxBody
+	if maxBody == 0 {
+		maxBody = 1 << 20
+	}
 	op := huma.Operation{
 		OperationID:   rt.ID,
 		Method:        rt.Method,
@@ -139,9 +149,9 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 		Description:   desc,
 		Tags:          []string{rt.Tag},
 		DefaultStatus: rt.Status,
-		MaxBodyBytes:  1 << 20,
+		MaxBodyBytes:  maxBody,
 		Security:      []map[string][]string{},
-		Errors:        routeErrors(rt, jsonBody),
+		Errors:        routeErrors(rt, jsonBody || rt.Multipart, jsonBody),
 	}
 	if rt.Scope != "" {
 		op.Security = []map[string][]string{{"bearer": {}}, {"cookie": {}}}
@@ -187,7 +197,7 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 }
 
 // routeErrors lists the error statuses an operation documents.
-func routeErrors(rt route, hasBody bool) []int {
+func routeErrors(rt route, hasBody, jsonBody bool) []int {
 	errs := map[int]bool{}
 	if rt.Scope != "" {
 		errs[http.StatusUnauthorized] = true
@@ -199,7 +209,7 @@ func routeErrors(rt route, hasBody bool) []int {
 	if strings.Contains(rt.Path, "{") {
 		errs[http.StatusNotFound] = true
 	}
-	if hasBody {
+	if jsonBody {
 		errs[http.StatusUnsupportedMediaType] = true
 	}
 	for _, e := range rt.Errors {

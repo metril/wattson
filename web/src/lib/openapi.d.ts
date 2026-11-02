@@ -325,7 +325,7 @@ export interface paths {
         };
         /**
          * Check the Bluetooth path
-         * @description Checks the host's Bluetooth adapter or the ESPHome Bluetooth proxy that the bike and heart rate monitor use, with the exact fix for each problem found, and lists the configured devices. While a bike is connected the check reuses its live transport; when idle it opens a temporary one and closes it again, and a bike connect or scan arriving meanwhile gets 409 `bike_busy`. It never returns 409 itself: a running scan is reported as code `busy`. With `scan_s` above 0 it scans for that long and reports each device's signal strength (`rssi`), absent when the device was not seen. It briefly subscribes to an idle ESPHome proxy, which takes the proxy from another client (such as Home Assistant) until it closes. No secret appears in the result. Requires the `admin` scope.
+         * @description Checks the host's Bluetooth adapter or the ESPHome Bluetooth proxy that the bike and heart rate monitor use, with the exact fix for each problem found, and lists the configured devices. While a bike is connected the check reuses its live transport; when idle it opens a temporary one and closes it again, and a bike connect or scan arriving meanwhile gets 409 `bike_busy`. It never returns 409 itself: a running scan is reported as code `busy`. With `scan_s` above 0 it scans for that long and reports each device's signal strength (`rssi`), absent when the device was not seen. On a local adapter the scan holds the adapter's scan slot for `scan_s`, which delays the heart rate monitor's search and a bike reconnect meanwhile. It briefly subscribes to an idle ESPHome proxy, which takes the proxy from another client (such as Home Assistant) until it closes. No secret appears in the result. Requires the `admin` scope.
          */
         get: operations["getBluetoothDiagnostics"];
         put?: never;
@@ -1513,7 +1513,7 @@ export interface components {
             type: "LineString";
         };
         LocalDiag: {
-            /** @description Machine-readable cause when status is error: dbus_socket_missing, dbus_denied, bluez_not_running, no_adapter or adapter_error. */
+            /** @description Machine-readable cause when status is error: dbus_socket_missing, dbus_denied, bluez_not_running, no_adapter, adapter_error, or busy (a scan or another diagnostics run holds the adapter). */
             code?: string;
             /** @description Exact steps that fix the problem; absent when status is ok or the cause is unknown. */
             fix?: string;
@@ -1765,7 +1765,7 @@ export interface components {
         ProxyDiag: {
             /** @description Addresses of the devices holding a slot. */
             allocated: string[];
-            /** @description Machine-readable cause when status is error: unreachable, bad_key, plaintext, no_proxy, held or no_slots. */
+            /** @description Machine-readable cause when status is error: no_host, unreachable, bad_key, plaintext, no_proxy, held, no_slots, or busy (a scan or another diagnostics run holds the proxy). */
             code?: string;
             /** @description Exact steps that fix the problem; absent when status is ok. */
             fix?: string;
@@ -1773,12 +1773,12 @@ export interface components {
             flags: string[];
             /**
              * Format: int64
-             * @description Free connection slots.
+             * @description Free connection slots; 0 together with limit 0 when the proxy did not report its slots in time.
              */
             free: number;
             /**
              * Format: int64
-             * @description Total connection slots.
+             * @description Total connection slots; 0 when the proxy did not report them in time.
              */
             limit: number;
             /** @description The device's MAC address. */

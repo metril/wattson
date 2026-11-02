@@ -1,6 +1,7 @@
 package ridectl
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"strings"
@@ -31,7 +32,7 @@ type Diagnostics struct {
 // LocalDiag is the result of opening this host's Bluetooth adapter.
 type LocalDiag struct {
 	Status  string `json:"status" enum:"ok,error" doc:"ok when the adapter opened, otherwise error."`
-	Code    string `json:"code,omitempty" doc:"Machine-readable cause when status is error: dbus_socket_missing, dbus_denied, bluez_not_running, no_adapter or adapter_error."`
+	Code    string `json:"code,omitempty" doc:"Machine-readable cause when status is error: dbus_socket_missing, dbus_denied, bluez_not_running, no_adapter, adapter_error, or busy (a scan or another diagnostics run holds the adapter)."`
 	Message string `json:"message" doc:"What was found, or the raw error."`
 	Fix     string `json:"fix,omitempty" doc:"Exact steps that fix the problem; absent when status is ok or the cause is unknown."`
 }
@@ -39,7 +40,7 @@ type LocalDiag struct {
 // ProxyDiag is the result of querying the ESPHome Bluetooth proxy.
 type ProxyDiag struct {
 	Status       string   `json:"status" enum:"ok,error" doc:"ok when the proxy is usable, otherwise error."`
-	Code         string   `json:"code,omitempty" doc:"Machine-readable cause when status is error: unreachable, bad_key, plaintext, no_proxy, held or no_slots."`
+	Code         string   `json:"code,omitempty" doc:"Machine-readable cause when status is error: no_host, unreachable, bad_key, plaintext, no_proxy, held, no_slots, or busy (a scan or another diagnostics run holds the proxy)."`
 	Message      string   `json:"message" doc:"What was found, or the raw error."`
 	Fix          string   `json:"fix,omitempty" doc:"Exact steps that fix the problem; absent when status is ok."`
 	Name         string   `json:"name,omitempty" doc:"The device's ESPHome name."`
@@ -48,8 +49,8 @@ type ProxyDiag struct {
 	Flags        []string `json:"flags" doc:"Bluetooth proxy features the firmware reports: passive_scan, active_connections, remote_caching, pairing, cache_clearing, raw_advertisements, state_and_mode."`
 	MissingFlags []string `json:"missing_flags" doc:"Features Wattson needs that the firmware lacks: active_connections and raw_advertisements."`
 	Subscription string   `json:"subscription" enum:"ok,held_by_other,unknown" doc:"ok while Wattson receives the proxy's Bluetooth data; held_by_other when another client (usually Home Assistant) took it; unknown when Wattson has no connection open yet, so it just subscribed and cannot tell."`
-	Free         int      `json:"free" doc:"Free connection slots."`
-	Limit        int      `json:"limit" doc:"Total connection slots."`
+	Free         int      `json:"free" doc:"Free connection slots; 0 together with limit 0 when the proxy did not report its slots in time."`
+	Limit        int      `json:"limit" doc:"Total connection slots; 0 when the proxy did not report them in time."`
 	Allocated    []string `json:"allocated" doc:"Addresses of the devices holding a slot."`
 }
 
@@ -75,8 +76,9 @@ const (
 	fixPlaintext   = "Enable `api: encryption:` in the proxy YAML."
 	fixNoProxy     = "Set `bluetooth_proxy: active: true` in the proxy YAML and flash it."
 	fixNoSlots     = "All connection slots are in use. Set `connection_slots: 3` in the proxy YAML."
-	fixScanRunning = "Wait for the running scan to finish, then run the diagnostics again."
-	msgScanRunning = "A Bluetooth scan is running and one adapter or proxy cannot serve two at once."
+	fixScanRunning = "Wait for the running scan or diagnostics to finish, then run the diagnostics again."
+	fixNoHost      = "Enter the ESPHome proxy host (host or host:port) in the Bluetooth settings."
+	msgScanRunning = "A Bluetooth scan or another diagnostics run is in progress, and one adapter or proxy cannot serve two at once."
 )
 
 // classifyLocal names why opening or using the local adapter failed and the
@@ -106,6 +108,8 @@ func classifyLocal(err error) (code, fix string) {
 // classifyProxy names why reaching the ESPHome proxy failed.
 func classifyProxy(err error) (code, fix string) {
 	switch {
+	case errors.Is(err, ErrNoHost):
+		return "no_host", fixNoHost
 	case errors.Is(err, esphomeapi.ErrBadKey), errors.Is(err, esphomeapi.ErrHandshake):
 		return "bad_key", fixBadKey
 	case strings.Contains(strings.ToLower(err.Error()), "plaintext"):
@@ -233,6 +237,10 @@ func (m *Manager) Diagnose(ctx context.Context, scan time.Duration) Diagnostics 
 	switch {
 	case busy:
 		openErr = errBusyScan
+	case c != nil && shared == nil:
+		// A live connection always has its shared transport; never open a
+		// temporary one next to it (it would take the proxy from the connection).
+		openErr = errors.New("the bike connection has no shared Bluetooth transport")
 	case shared != nil:
 		if _, openErr = shared.get(octx); openErr == nil {
 			tr = shared
@@ -315,7 +323,7 @@ func (m *Manager) proxyDiag(ctx context.Context, tr blue.Transport, live bool, o
 		p.Status, p.Message = "ok", "The transport reports no proxy details."
 		return p
 	}
-	qctx, cancel := context.WithTimeout(ctx, diagProxyBound)
+	qctx, cancel := context.WithTimeout(ctx, cmp.Or(m.diagProxy, diagProxyBound))
 	defer cancel()
 	ps, err := px.ProxyStatus(qctx)
 	if errors.Is(err, errNotProxy) {
@@ -355,11 +363,13 @@ func (m *Manager) proxyDiag(ctx context.Context, tr blue.Transport, live bool, o
 	case p.Subscription == "held_by_other":
 		p.Code, p.Fix = "held", hintFor(blue.ErrProxyHeld)
 		p.Message = "Another client holds this proxy's Bluetooth subscription, so it sends Wattson nothing."
-	case ps.Free == 0 && !holdsSlot:
+	case ps.Limit > 0 && ps.Free == 0 && !holdsSlot:
 		p.Code, p.Fix = "no_slots", fixNoSlots
 		p.Message = "The proxy has no free connection slots."
 	case scanErr != nil:
 		return fail(scanErr)
+	case ps.Limit == 0: // ConnectionsFree was not answered in time: slots unknown
+		p.Status, p.Message = "ok", "The proxy is reachable and usable; it did not report its connection slots in time."
 	default:
 		p.Status, p.Message = "ok", "The proxy is reachable and usable."
 	}

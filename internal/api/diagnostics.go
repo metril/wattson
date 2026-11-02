@@ -27,6 +27,7 @@ func (d Deps) registerDiagnostics(api huma.API) {
 			"While a bike is connected the check reuses its live transport; when idle it opens a temporary one and closes it again, " +
 			"and a bike connect or scan arriving meanwhile gets 409 `bike_busy`. It never returns 409 itself: a running scan is reported as code `busy`. " +
 			"With `scan_s` above 0 it scans for that long and reports each device's signal strength (`rssi`), absent when the device was not seen. " +
+			"On a local adapter the scan holds the adapter's scan slot for `scan_s`, which delays the heart rate monitor's search and a bike reconnect meanwhile. " +
 			"It briefly subscribes to an idle ESPHome proxy, which takes the proxy from another client (such as Home Assistant) until it closes. " +
 			"No secret appears in the result.",
 		Scope: auth.ScopeAdmin, Errors: []int{http.StatusServiceUnavailable}},

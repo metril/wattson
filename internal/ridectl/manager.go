@@ -145,7 +145,9 @@ type Manager struct {
 	cur      *conn
 	status   Status
 	scanning bool
-	closed   bool
+
+	diagProxy time.Duration // ProxyStatus bound for diagnostics; zero means diagProxyBound (tests shorten it)
+	closed    bool
 }
 
 // New returns an idle Manager.

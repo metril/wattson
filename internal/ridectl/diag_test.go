@@ -17,6 +17,7 @@ import (
 
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/blue/bluetest"
+	"github.com/metril/wattson/internal/esphomeapi/esphometest"
 	"github.com/metril/wattson/internal/settings"
 )
 
@@ -99,8 +100,11 @@ func TestDiagnoseLocalOK(t *testing.T) {
 		if bk.RSSI == nil || *bk.RSSI != -50 {
 			t.Errorf("bike rssi = %v", bk.RSSI)
 		}
-		if opens := fake.closes; opens != 0 {
-			t.Errorf("the live transport was closed %d times", opens)
+		fake.mu.Lock()
+		closes := fake.closes
+		fake.mu.Unlock()
+		if closes != 0 {
+			t.Errorf("the live transport was closed %d times", closes)
 		}
 		// Without a scan nothing is "seen".
 		if d := m.Diagnose(t.Context(), 0); d.Devices[1].RSSI != nil {
@@ -277,6 +281,35 @@ func TestDiagnoseProxyNoSlots(t *testing.T) {
 	p := m.Diagnose(t.Context(), 0).Proxy
 	if p == nil || p.Code != "no_slots" || p.Fix != fixNoSlots {
 		t.Fatalf("proxy = %+v", p)
+	}
+}
+
+// A proxy that does not report its slots in time is not "out of slots".
+func TestDiagnoseProxySlotsUnknown(t *testing.T) {
+	t.Parallel()
+	srv, key := proxyServer(t)
+	// Swallow the connections-free request so ProxyStatus times out.
+	srv.Handle(80, func([]byte) []esphometest.Reply { return nil })
+	m := newMgr(nil, 20*time.Millisecond, espSettings(srv, key, false), Deps{})
+	m.diagProxy = 100 * time.Millisecond
+	defer m.Close(context.Background())
+	p := m.Diagnose(t.Context(), 0).Proxy
+	if p == nil || p.Status != "ok" || p.Code != "" || p.Fix != "" || p.Free != 0 || p.Limit != 0 {
+		t.Fatalf("proxy = %+v", p)
+	}
+}
+
+// HR over ESPHome with no host configured points at the missing setting.
+func TestDiagnoseHROnlyNoHost(t *testing.T) {
+	t.Parallel()
+	m := newMgr(&simRec{}, 20*time.Millisecond, func(s *settings.Settings) {
+		withHR(s)
+		s.Bike.Transport, s.Bike.ESPHomeHost = "esphome", ""
+	}, Deps{})
+	defer m.Close(context.Background())
+	d := m.Diagnose(t.Context(), 0)
+	if d.Transport != "esphome" || d.Proxy == nil || d.Proxy.Code != "no_host" || d.Proxy.Fix != fixNoHost {
+		t.Fatalf("diagnostics = %+v / %+v", d, d.Proxy)
 	}
 }
 

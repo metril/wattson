@@ -21,6 +21,7 @@ import (
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/history"
+	"github.com/metril/wattson/internal/integrations/strava"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
@@ -209,8 +210,11 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	// aborts a stalled transfer itself) and cancelled on shutdown below.
 	tiles := maptiles.New(svc.Get, &http.Client{})
 	defer tiles.Close()
+	stravaSvc := strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: svc, Logger: logger,
+		Client: strava.NewClient(strava.Prod, &http.Client{Timeout: 30 * time.Second})})
 	h, err := api.NewServer(api.Deps{Store: st, Settings: svc, Box: box, Auth: au,
-		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr, Tiles: tiles})
+		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr, Tiles: tiles,
+		Strava: stravaSvc})
 	if err != nil {
 		releaseBike()
 		return err

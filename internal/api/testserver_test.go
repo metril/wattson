@@ -23,6 +23,8 @@ import (
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/history"
+	"github.com/metril/wattson/internal/integrations/strava"
+	"github.com/metril/wattson/internal/integrations/strava/stravatest"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth/oidctest"
 	"github.com/metril/wattson/internal/ridectl"
@@ -42,6 +44,8 @@ type testServer struct {
 	Log      *syncBuf // everything the server logged
 	Bike     *ridectl.Manager
 	Tiles    *maptiles.Manager // reads its directory and server from the settings
+	Strava   *strava.Service   // set by withStrava
+	Fake     *stravatest.Fake  // the fake Strava behind Strava
 }
 
 // syncBuf is a goroutine-safe log sink.
@@ -73,7 +77,11 @@ type tsConfig struct {
 	simDial    func(sim.Config) bike.Dial
 	noBike     bool
 	drawLimit  time.Duration
+	strava     bool
 }
+
+// withStrava wires a strava.Service onto a fake Strava (ts.Strava, ts.Fake).
+func withStrava() tsOpt { return func(c *tsConfig) { c.strava = true } }
 
 // withDrawTimeout shortens the BRouter draw call limit.
 func withDrawTimeout(d time.Duration) tsOpt { return func(c *tsConfig) { c.drawLimit = d } }
@@ -141,6 +149,12 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	if cfg.noBike {
 		d.Bike = nil
 	}
+	var fake *stravatest.Fake
+	if cfg.strava {
+		fake = stravatest.New(t)
+		d.Strava = strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: svc, Logger: logger,
+			Client: strava.NewClient(fake.Endpoints(), nil), PollEvery: 10 * time.Millisecond, PollMax: 2 * time.Second})
+	}
 	h, err := newRouter(d, cfg.extra...)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +162,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { _ = mgr.Close(context.Background()) }) // runs first: ends WebSocket handlers
-	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles}
+	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles, Strava: d.Strava, Fake: fake}
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.

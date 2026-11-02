@@ -51,6 +51,7 @@ type Fake struct {
 	scope       string
 	deny        bool
 	unauth      bool
+	deauthCode  int // status /oauth/deauthorize answers; 0 means 200
 	polls       int
 	failStatus  int // next uploads-endpoint request answers this status
 	failMsg     string
@@ -114,6 +115,9 @@ func (f *Fake) DuplicateOf(activityID int64) { f.locked(func() { f.dupOf = activ
 
 // Unauthorized makes every uploads request answer 401 while on.
 func (f *Fake) Unauthorized(on bool) { f.locked(func() { f.unauth = on }) }
+
+// FailDeauthorize makes /oauth/deauthorize answer status (still recording the token).
+func (f *Fake) FailDeauthorize(status int) { f.locked(func() { f.deauthCode = status }) }
 
 // SetApp changes the accepted client credentials.
 func (f *Fake) SetApp(id, secret string) { f.locked(func() { f.appID, f.appSecret = id, secret }) }
@@ -210,8 +214,14 @@ func (f *Fake) deauth(w http.ResponseWriter, r *http.Request) {
 	if tok == "" {
 		tok = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	}
-	f.locked(func() { f.deauthorize = append(f.deauthorize, tok) })
-	jsonOut(w, http.StatusOK, map[string]any{"access_token": tok})
+	code := http.StatusOK
+	f.locked(func() {
+		f.deauthorize = append(f.deauthorize, tok)
+		if f.deauthCode != 0 {
+			code = f.deauthCode
+		}
+	})
+	jsonOut(w, code, map[string]any{"access_token": tok})
 }
 
 // gate applies the 401 and one-shot failure switches; true means the

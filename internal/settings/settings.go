@@ -208,10 +208,26 @@ func (s Settings) Validate() error {
 	if _, ok := parseURL(s.BRouter.PublicURL, "http", "https"); !ok {
 		return bad("brouter.public_url", "must be an absolute http(s) URL")
 	}
+	if v := s.Strava.ClientID; v != "" && !ValidStravaClientID(v) {
+		return bad("strava.client_id", "must be empty or up to 12 digits")
+	}
 	if _, ok := parseURL(s.Elevation.OpenTopoDataURL, "http", "https"); !ok {
 		return bad("elevation.opentopodata_url", "must be an absolute http(s) URL")
 	}
 	return nil
+}
+
+// ValidStravaClientID reports whether v is a Strava client ID: 1 to 12 digits.
+func ValidStravaClientID(v string) bool {
+	if v == "" || len(v) > 12 {
+		return false
+	}
+	for _, c := range v {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseURL(raw string, schemes ...string) (*url.URL, bool) {

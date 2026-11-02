@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -238,6 +239,15 @@ func (d Deps) registerRiders(api huma.API) {
 					return nil, err
 				}
 				return nil, apiErr(http.StatusConflict, "rider_in_use", "the rider is bound to the connected bike; disconnect it first")
+			}
+			if d.Strava != nil {
+				// Revoke at Strava before the cascade drops the tokens; a failure must not block the delete.
+				// Skipped when the delete will be refused (not theirs, or the last rider).
+				if rs, err := d.Store.ListRiders(ctx, id.User.ID); err == nil && len(rs) > 1 && slices.ContainsFunc(rs, func(r store.Rider) bool { return r.ID == in.ID }) {
+					if err := d.Strava.Disconnect(ctx, in.ID); err != nil {
+						loggerFrom(ctx).Warn("strava disconnect before rider delete failed", "rider", in.ID, "err", err)
+					}
+				}
 			}
 			err := d.Store.DeleteRider(ctx, id.User.ID, in.ID)
 			switch {

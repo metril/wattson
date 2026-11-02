@@ -75,7 +75,7 @@ type MapillaryOut struct {
 }
 
 type StravaOut struct {
-	ClientID        string `json:"client_id" doc:"Strava API client ID; empty when unset."`
+	ClientID        string `json:"client_id" doc:"Strava API client ID (digits only); empty when unset."`
 	ClientSecretSet bool   `json:"client_secret_set" doc:"Whether a Strava client secret is stored. The secret itself is never returned."`
 }
 
@@ -163,7 +163,7 @@ type MapillaryPatch struct {
 }
 
 type StravaPatch struct {
-	ClientID     *string `json:"client_id,omitempty" doc:"Strava API client ID."`
+	ClientID     *string `json:"client_id,omitempty" doc:"Strava API client ID: digits only, at most 12; empty clears it."`
 	ClientSecret *string `json:"client_secret,omitempty" doc:"Strava client secret. Omit to keep the stored secret; an empty string clears it."`
 }
 

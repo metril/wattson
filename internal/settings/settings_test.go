@@ -364,3 +364,22 @@ func TestElevationSectionRoundTrip(t *testing.T) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
+
+func TestSettingsStravaClientID(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ id, field string }{
+		{"", ""}, {"12345", ""}, {"123456789012", ""},
+		{"abc", "strava.client_id"}, {"12a", "strava.client_id"}, {"1234567890123", "strava.client_id"}, {" 12", "strava.client_id"},
+	} {
+		s := settings.Defaults()
+		s.Strava.ClientID = tc.id
+		err := s.Validate()
+		var ve *settings.ValidationError
+		switch {
+		case tc.field == "" && err != nil:
+			t.Errorf("%q: unexpected %v", tc.id, err)
+		case tc.field != "" && (!errors.As(err, &ve) || ve.Field != tc.field):
+			t.Errorf("%q: err = %v, want field %s", tc.id, err, tc.field)
+		}
+	}
+}

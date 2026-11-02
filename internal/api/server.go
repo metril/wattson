@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/integrations/strava"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
@@ -53,6 +54,8 @@ type Deps struct {
 	// Bike is the single bike manager the bike, ride and WebSocket endpoints
 	// drive. When RiderInUse or RouteInUse is nil, the Bike's is used.
 	Bike *ridectl.Manager
+	// Strava manages riders' Strava links. Nil disables the Strava endpoints (503).
+	Strava *strava.Service
 	// WSRecheck is how often an open WebSocket re-validates its credential;
 	// zero means 60 s.
 	WSRecheck time.Duration
@@ -105,6 +108,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	r.Get("/healthz", d.healthz)
 	r.Get("/ws", d.serveWS)
 	d.registerOIDCFlow(r)
+	d.registerStravaFlow(r)
 
 	spa := web.Handler()
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {

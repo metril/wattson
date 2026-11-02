@@ -452,6 +452,70 @@ export interface paths {
         patch: operations["updateRider"];
         trace?: never;
     };
+    "/api/riders/{id}/strava": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a rider's Strava link
+         * @description Returns whether the rider can and does use Strava, the rider's own app settings and the redirect URI to register at Strava. No secret or token is returned. A rider owned by someone else returns 404. Requires the `read` scope.
+         */
+        get: operations["getRiderStrava"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a rider's Strava link
+         * @description Sets the rider's own Strava API application (`client_id`, `client_secret`) and the `auto_upload` flag; omitted fields are unchanged. Changing the client ID or secret disconnects the rider, because tokens belong to the old application. A rider owned by someone else returns 404. Requires the `control` scope.
+         */
+        patch: operations["updateRiderStrava"];
+        trace?: never;
+    };
+    "/api/riders/{id}/strava/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start connecting a rider to Strava
+         * @description Redirects (302) the browser to Strava's authorization page for one of the caller's riders, using the rider's own Strava application or the shared one, and the scopes `read` and `activity:write`. The signed state is bound to the caller and the rider and valid for 10 minutes. `return_to` must be a same-origin path (default `/riders`). Without configured credentials the redirect goes to `<return_to>?strava=error&reason=not_configured` instead. A rider owned by someone else returns 404. Requires the `control` scope.
+         */
+        get: operations["connectRiderStrava"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/riders/{id}/strava/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disconnect a rider from Strava
+         * @description Revokes Wattson's access at Strava (best effort: a Strava failure does not stop it) and forgets the athlete and tokens. The rider's own app credentials and `auto_upload` stay. A rider owned by someone else returns 404. Requires the `control` scope.
+         */
+        post: operations["disconnectRiderStrava"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rides": {
         parameters: {
             query?: never;
@@ -780,6 +844,26 @@ export interface paths {
          * @description Reports whether first-run setup is still needed. No authentication required.
          */
         get: operations["getSetupStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strava/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finish connecting a rider to Strava
+         * @description The redirect URI registered at Strava. Needs the session cookie of the user who started the flow; the signed state must belong to that user. Always answers 302 to the `return_to` path of the state: `?strava=connected` on success, otherwise `?strava=error&reason=<reason>` where reason is one of `denied` (the user refused), `state` (missing, tampered, expired or another user's state, or the rider is gone), `scope` (Strava did not grant `read` and `activity:write`) or `exchange_failed`. Without a session it redirects to `/login`.
+         */
+        get: operations["stravaCallback"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2051,16 +2135,56 @@ export interface components {
             /** @description idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished. */
             state: string;
         };
+        StravaLinkOut: {
+            /**
+             * Format: int64
+             * @description Strava athlete ID while connected; 0 otherwise.
+             */
+            athlete_id: number;
+            /** @description Strava athlete name while connected; empty otherwise. */
+            athlete_name: string;
+            /** @description Whether finished rides are uploaded to Strava automatically. */
+            auto_upload: boolean;
+            /** @description Whether Strava app credentials (the rider's own or the shared ones from the settings) are configured, so the rider can connect. */
+            available: boolean;
+            /** @description Host (no port) to enter as the Authorization Callback Domain in the Strava API application. */
+            callback_domain: string;
+            /** @description The rider's own Strava API client ID; empty when the shared application is used. */
+            client_id: string;
+            /** @description Whether the rider's own client secret is stored. The secret itself is never returned. */
+            client_secret_set: boolean;
+            /** @description Whether the rider has authorised Wattson at Strava. */
+            connected: boolean;
+            /**
+             * Format: date-time
+             * @description When the rider connected, UTC; null while not connected.
+             */
+            connected_at: string | null;
+            /** @description OAuth redirect URI this server sends to Strava: the public URL setting, else the address of this request, plus /api/strava/callback. */
+            redirect_uri: string;
+            /** @description Comma-separated scopes Strava granted while connected, such as read,activity:write; empty otherwise. */
+            scope: string;
+            /** @description Whether this rider uses their own Strava API application instead of the shared one. */
+            uses_own_app: boolean;
+        };
         StravaOut: {
-            /** @description Strava API client ID; empty when unset. */
+            /** @description Strava API client ID (digits only); empty when unset. */
             client_id: string;
             /** @description Whether a Strava client secret is stored. The secret itself is never returned. */
             client_secret_set: boolean;
         };
         StravaPatch: {
-            /** @description Strava API client ID. */
+            /** @description Strava API client ID: digits only, at most 12; empty clears it. */
             client_id?: string;
             /** @description Strava client secret. Omit to keep the stored secret; an empty string clears it. */
+            client_secret?: string;
+        };
+        StravaPatchInBody: {
+            /** @description Upload finished rides to Strava automatically. */
+            auto_upload?: boolean;
+            /** @description The rider's own Strava API client ID: digits only, at most 12. An empty string returns the rider to the shared application and removes the own secret. A changed value disconnects the rider. */
+            client_id?: string;
+            /** @description The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Never returned. */
             client_secret?: string;
         };
         StravaStatusOut: {
@@ -4119,6 +4243,308 @@ export interface operations {
             };
         };
     };
+    getRiderStrava: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rider ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StravaLinkOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateRiderStrava: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rider ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StravaPatchInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StravaLinkOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    connectRiderStrava: {
+        parameters: {
+            query?: {
+                /** @description Same-origin path to open when the flow ends, for example `/riders`. Default `/riders`. */
+                return_to?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Rider ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Found */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disconnectRiderStrava: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rider ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listRides: {
         parameters: {
             query?: {
@@ -5503,6 +5929,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+        };
+    };
+    stravaCallback: {
+        parameters: {
+            query?: {
+                /** @description Authorization code from Strava. */
+                code?: string;
+                /** @description State issued by the connect redirect. */
+                state?: string;
+                /** @description Comma-separated scopes the user granted. */
+                scope?: string;
+                /** @description Error code from Strava, such as access_denied. */
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Found */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

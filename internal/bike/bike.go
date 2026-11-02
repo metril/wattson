@@ -41,6 +41,10 @@ type Options struct {
 	Now            func() time.Time // Telemetry.At clock; default time.Now
 	ControlTimeout time.Duration    // FTMS: wait for a control response to SetLevel; default 1s
 	WriteTimeout   time.Duration    // bound on every post-Open write; default 2s
+	// SilenceTimeout, when > 0, is a transport-agnostic liveness watchdog:
+	// armed by the first telemetry frame, it treats the link as down when no
+	// telemetry arrives for this long (see Bike.Done). 0 disables it.
+	SilenceTimeout time.Duration
 }
 
 // Bike is a live session with one bike. It is safe for concurrent use. It has
@@ -72,6 +76,14 @@ type Bike struct {
 	tmu     sync.Mutex
 	tel     chan Telemetry
 	telDone bool
+
+	silence time.Duration
+	telSig  chan struct{} // a frame arrived (re-arms the watchdog)
+	done    chan struct{} // closed when the session ends: link drop, silence or Close
+	endOnce sync.Once
+	emu     sync.Mutex
+	endErr  error // why the session ended; nil for a normal Close
+	watchWG sync.WaitGroup
 }
 
 // Open detects the protocol, subscribes, performs the init handshake and
@@ -105,6 +117,10 @@ func Open(ctx context.Context, c blue.Conn, o Options) (*Bike, error) {
 		min: max(1, o.MinLevel),
 		tel: make(chan Telemetry, telemetryBuf),
 		ctl: make(chan ControlResponse, 8),
+
+		silence: o.SilenceTimeout,
+		telSig:  make(chan struct{}, 1),
+		done:    make(chan struct{}),
 	}
 	if b.now == nil {
 		b.now = time.Now
@@ -135,6 +151,8 @@ func Open(ctx context.Context, c blue.Conn, o Options) (*Bike, error) {
 	b.min = min(b.min, b.max)
 	b.exited = make(chan struct{})
 	go b.run()
+	b.watchWG.Add(1)
+	go b.watch()
 	return b, nil
 }
 
@@ -220,6 +238,10 @@ func (b *Bike) charHas(ch blue.UUID, p blue.Props) bool {
 // publish stamps and enqueues a sample, dropping the oldest when full.
 func (b *Bike) publish(t Telemetry) {
 	t.At = b.now()
+	select { // re-arm the silence watchdog
+	case b.telSig <- struct{}{}:
+	default:
+	}
 	b.tmu.Lock()
 	defer b.tmu.Unlock()
 	if b.telDone {
@@ -270,10 +292,81 @@ func (b *Bike) run() {
 	}
 }
 
+// watch ends the session when the link drops or, if enabled, telemetry stops.
+// It runs apart from run so a keepalive write stuck on a dead link cannot
+// delay detection.
+func (b *Bike) watch() {
+	defer b.watchWG.Done()
+	var timer *time.Timer
+	var fire <-chan time.Time
+	if b.silence > 0 {
+		defer func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}()
+	}
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case <-b.conn.Done():
+			b.end(b.downErr())
+			return
+		case <-b.telSig:
+			if b.silence <= 0 {
+				continue
+			}
+			if timer == nil {
+				timer = time.NewTimer(b.silence)
+				fire = timer.C
+			} else {
+				timer.Reset(b.silence)
+			}
+		case <-fire:
+			b.end(fmt.Errorf("no telemetry for %s: %w", b.silence, blue.ErrDisconnected))
+			b.closeTelemetry()
+			return
+		}
+	}
+}
+
+// end marks the session over (first call wins) and wakes Done.
+func (b *Bike) end(err error) {
+	b.endOnce.Do(func() {
+		b.emu.Lock()
+		b.endErr = err
+		b.emu.Unlock()
+		close(b.done)
+	})
+}
+
+// Done is closed when the session ends: the connection dropped, the silence
+// watchdog fired, or Close was called.
+func (b *Bike) Done() <-chan struct{} { return b.done }
+
+// Err is why the session ended: nil while it runs or after a normal Close,
+// otherwise an error wrapping blue.ErrDisconnected (link drop or silence).
+func (b *Bike) Err() error {
+	b.emu.Lock()
+	defer b.emu.Unlock()
+	return b.endErr
+}
+
+// downed reports a link failure (drop or silence) recorded by the session.
+func (b *Bike) downed() error {
+	select {
+	case <-b.done:
+		return b.Err()
+	default:
+		return nil
+	}
+}
+
 func (b *Bike) keepalive(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closed || b.linkDown() {
+	if b.closed || b.linkDown() || b.downed() != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(b.ctx, b.wt)
@@ -320,6 +413,9 @@ func (b *Bike) SetLevel(ctx context.Context, level int) (sent int, err error) {
 	}
 	if b.linkDown() {
 		return 0, b.downErr()
+	}
+	if err := b.downed(); err != nil {
+		return 0, err
 	}
 	level = ClampLevel(level, b.min, b.max)
 	if level == b.last {
@@ -407,11 +503,13 @@ func (b *Bike) Close(ctx context.Context) error {
 		return nil
 	}
 	b.closed = true
+	b.end(nil) // no-op if a drop or silence already ended the session
 	var werr error
 	if !b.linkDown() {
 		werr = b.sendLevel(ctx, ClampLevel(b.min, b.min, b.max))
 	}
 	b.mu.Unlock()
 	<-b.exited
+	b.watchWG.Wait()
 	return errors.Join(werr, b.conn.Close())
 }

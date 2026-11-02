@@ -1,8 +1,12 @@
 package settings_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -220,6 +224,60 @@ func TestDecryptFailureSurfaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := settings.NewService(st, boxB).Get(ctx); !errors.Is(err, secretbox.ErrDecrypt) {
+		t.Fatalf("err = %v, want ErrDecrypt", err)
+	}
+}
+
+func TestSecretsRedacted(t *testing.T) {
+	t.Parallel()
+	s := settings.Defaults()
+	s.Bike.ESPHomeKey = "SECRET-esphome"
+	s.HA.Token = "SECRET-ha"
+	s.MQTT.Password = "SECRET-mqtt"
+	s.Mapillary.Token = "SECRET-mly"
+	s.Strava.ClientSecret = "SECRET-strava"
+	var buf bytes.Buffer
+	for _, h := range []slog.Handler{slog.NewJSONHandler(&buf, nil), slog.NewTextHandler(&buf, nil)} {
+		slog.New(h).Info("x", "settings", s, "ha", s.HA, "bike", &s.Bike)
+	}
+	outs := []string{
+		buf.String(),
+		fmt.Sprintf("%v %+v %#v %s", s, s, s, s.HA),
+		fmt.Sprintf("%v %+v %#v", &s, s.Strava, s.Bike),
+	}
+	for _, out := range outs {
+		if strings.Contains(out, "SECRET") {
+			t.Fatalf("secret leaked: %s", out)
+		}
+	}
+	if !strings.Contains(outs[1], "[redacted]") || !strings.Contains(outs[1], "ClientID") {
+		t.Fatalf("unexpected format: %s", outs[1])
+	}
+}
+
+func TestSealedValueBoundToField(t *testing.T) {
+	t.Parallel()
+	svc, st := newSvc(t)
+	ctx := context.Background()
+	if _, err := svc.Update(ctx, func(s *settings.Settings) error {
+		s.HA.Token = "tok"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Move the sealed ha.token ciphertext into mapillary.token.
+	rows, _ := st.GetSettings(ctx)
+	var ha struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(rows["ha"]), &ha); err != nil {
+		t.Fatal(err)
+	}
+	moved, _ := json.Marshal(map[string]string{"token": ha.Token})
+	if err := st.PutSettings(ctx, map[string]string{"mapillary": string(moved)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Get(ctx); !errors.Is(err, secretbox.ErrDecrypt) {
 		t.Fatalf("err = %v, want ErrDecrypt", err)
 	}
 }

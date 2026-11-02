@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,9 @@ const (
 	keyFile = "secret.key"
 	keyLen  = 32
 	prefix  = "v1."
+	// aeadLabel is the HKDF info for the sealing key, so the master key is
+	// never used directly and other Derive labels stay independent of it.
+	aeadLabel = "wattson secretbox v1"
 )
 
 var (
@@ -42,7 +46,11 @@ func NewBox(key []byte) (*Box, error) {
 	if len(key) != keyLen {
 		return nil, ErrBadKey
 	}
-	blk, err := aes.NewCipher(key)
+	aeadKey, err := hkdf.Key(sha256.New, key, nil, aeadLabel, keyLen)
+	if err != nil {
+		return nil, err
+	}
+	blk, err := aes.NewCipher(aeadKey)
 	if err != nil {
 		return nil, err
 	}
@@ -54,42 +62,81 @@ func NewBox(key []byte) (*Box, error) {
 }
 
 // LoadOrCreateKey opens dir/secret.key, creating it (mode 0600, 32 random
-// bytes) when absent. O_EXCL keeps concurrent starters from overwriting
-// each other's key.
+// bytes) when absent. Creation is atomic and durable: the key is written
+// and fsynced to a temp file, then hard-linked into place (which fails if
+// the file exists), so concurrent starters agree on one key and a crash
+// never leaves a short key file. A pre-existing key with group/other
+// permissions is chmodded to 0600 with a logged warning.
 func LoadOrCreateKey(dir string) (*Box, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("secretbox: create dir: %w", err)
 	}
 	path := filepath.Join(dir, keyFile)
+	if b, err := loadKey(path); !errors.Is(err, os.ErrNotExist) {
+		return b, err
+	}
+
 	key := make([]byte, keyLen)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, fmt.Errorf("secretbox: generate key: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	switch {
-	case err == nil:
-		_, werr := f.Write(key)
-		if cerr := f.Close(); werr == nil {
-			werr = cerr
-		}
-		if werr != nil {
-			os.Remove(path)
-			return nil, fmt.Errorf("secretbox: write key: %w", werr)
-		}
-		return NewBox(key)
-	case errors.Is(err, os.ErrExist):
-		existing, rerr := os.ReadFile(path)
-		if rerr != nil {
-			return nil, fmt.Errorf("secretbox: read key: %w", rerr)
-		}
-		return NewBox(existing)
-	default:
-		return nil, fmt.Errorf("secretbox: create key: %w", err)
+	tmp, err := os.CreateTemp(dir, keyFile+".tmp-*") // mode 0600
+	if err != nil {
+		return nil, fmt.Errorf("secretbox: create temp key: %w", err)
 	}
+	defer os.Remove(tmp.Name())
+	_, werr := tmp.Write(key)
+	if werr == nil {
+		werr = tmp.Sync()
+	}
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return nil, fmt.Errorf("secretbox: write key: %w", werr)
+	}
+	if err := os.Link(tmp.Name(), path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return loadKey(path) // lost the race: use the winner's key
+		}
+		return nil, fmt.Errorf("secretbox: install key: %w", err)
+	}
+	if d, err := os.Open(dir); err == nil {
+		d.Sync() // best effort: make the new directory entry durable
+		d.Close()
+	}
+	return NewBox(key)
 }
 
-// Seal returns "v1." + base64url(nonce || ciphertext); "" seals to "".
-func (b *Box) Seal(plain string) string {
+func loadKey(path string) (*Box, error) {
+	key, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("secretbox: read key: %w", err)
+	}
+	if fi, err := os.Stat(path); err == nil && fi.Mode().Perm()&0o077 != 0 {
+		if err := os.Chmod(path, 0o600); err != nil {
+			return nil, fmt.Errorf("secretbox: tighten key permissions: %w", err)
+		}
+		slog.Warn("secret key file was readable by others; permissions reset to 0600",
+			"path", path, "was", fi.Mode().Perm().String())
+	}
+	return NewBox(key)
+}
+
+// Seal is SealFor with no context binding. Prefer SealFor.
+func (b *Box) Seal(plain string) string { return b.SealFor(plain, "") }
+
+// Open is OpenFor with no context binding. Prefer OpenFor.
+func (b *Box) Open(sealed string) (string, error) { return b.OpenFor(sealed, "") }
+
+// SealFor returns "v1." + base64url(nonce || ciphertext); "" seals to "".
+// aad (for example "ha.token") is authenticated but not stored: the value
+// only opens with the same aad, so a sealed value cannot be moved to
+// another field.
+func (b *Box) SealFor(plain, aad string) string {
 	if plain == "" {
 		return ""
 	}
@@ -97,13 +144,13 @@ func (b *Box) Seal(plain string) string {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		panic("secretbox: entropy source failed: " + err.Error())
 	}
-	out := b.aead.Seal(nonce, nonce, []byte(plain), nil)
+	out := b.aead.Seal(nonce, nonce, []byte(plain), []byte(aad))
 	return prefix + base64.RawURLEncoding.EncodeToString(out)
 }
 
-// Open reverses Seal; "" opens to "". Anything else that is not a valid
-// sealed value under this key yields ErrDecrypt.
-func (b *Box) Open(sealed string) (string, error) {
+// OpenFor reverses SealFor; "" opens to "". Anything that is not a valid
+// sealed value under this key and aad yields ErrDecrypt.
+func (b *Box) OpenFor(sealed, aad string) (string, error) {
 	if sealed == "" {
 		return "", nil
 	}
@@ -116,7 +163,7 @@ func (b *Box) Open(sealed string) (string, error) {
 	if err != nil || len(raw) < ns+b.aead.Overhead() {
 		return "", ErrDecrypt
 	}
-	plain, err := b.aead.Open(nil, raw[:ns], raw[ns:], nil)
+	plain, err := b.aead.Open(nil, raw[:ns], raw[ns:], []byte(aad))
 	if err != nil {
 		return "", ErrDecrypt
 	}

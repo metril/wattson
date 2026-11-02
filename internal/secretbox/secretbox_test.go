@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/metril/wattson/internal/secretbox"
@@ -126,5 +127,82 @@ func TestDeriveStable(t *testing.T) {
 	a1, a2, c := b.Derive("a"), b.Derive("a"), b.Derive("b")
 	if !bytes.Equal(a1, a2) || bytes.Equal(a1, c) || len(a1) != 32 {
 		t.Fatalf("derive: equal=%v differ=%v len=%d", bytes.Equal(a1, a2), !bytes.Equal(a1, c), len(a1))
+	}
+}
+
+func TestAADBinding(t *testing.T) {
+	t.Parallel()
+	b := newBox(t)
+	sealed := b.SealFor("tok", "ha.token")
+	if got, err := b.OpenFor(sealed, "ha.token"); err != nil || got != "tok" {
+		t.Fatalf("OpenFor = %q, %v", got, err)
+	}
+	if _, err := b.OpenFor(sealed, "mapillary.token"); !errors.Is(err, secretbox.ErrDecrypt) {
+		t.Fatalf("other aad: err = %v, want ErrDecrypt", err)
+	}
+	if _, err := b.Open(sealed); !errors.Is(err, secretbox.ErrDecrypt) {
+		t.Fatalf("no aad: err = %v, want ErrDecrypt", err)
+	}
+}
+
+func TestConcurrentCreate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const n = 16
+	boxes := make([]*secretbox.Box, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			boxes[i], errs[i] = secretbox.LoadOrCreateKey(dir)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("goroutine %d: %v", i, errs[i])
+		}
+		if !bytes.Equal(boxes[i].Derive("x"), boxes[0].Derive("x")) {
+			t.Fatalf("goroutine %d got a different key", i)
+		}
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 1 || ents[0].Name() != "secret.key" {
+		t.Fatalf("dir contents = %v, want only secret.key", ents)
+	}
+}
+
+func TestKeyPermsTightened(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret.key")
+	if err := os.WriteFile(path, bytes.Repeat([]byte{7}, 32), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secretbox.LoadOrCreateKey(dir); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(path)
+	if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+func TestDeriveIndependentOfSealingKey(t *testing.T) {
+	t.Parallel()
+	b := newBox(t)
+	if bytes.Equal(b.Derive("wattson secretbox v1"), b.Derive("other")) {
+		t.Fatal("labels collide")
 	}
 }

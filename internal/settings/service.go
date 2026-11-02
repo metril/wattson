@@ -11,6 +11,8 @@ import (
 )
 
 // Service reads and writes Settings in the store, sealing secret fields.
+// Run exactly one Service per process: Update's read-modify-write is only
+// serialised by this Service's own mutex.
 type Service struct {
 	st  *store.Store
 	box *secretbox.Box
@@ -25,19 +27,25 @@ func NewService(st *store.Store, box *secretbox.Box) *Service {
 type section struct {
 	name    string
 	ptr     any
-	secrets []*string
+	secrets []secret
+}
+
+// secret is a sealed field; aad binds the ciphertext to "section.field".
+type secret struct {
+	aad string
+	p   *string
 }
 
 func sections(s *Settings) []section {
 	return []section{
 		{"general", &s.General, nil},
 		{"auth", &s.Auth, nil},
-		{"bike", &s.Bike, []*string{&s.Bike.ESPHomeKey}},
-		{"ha", &s.HA, []*string{&s.HA.Token}},
-		{"mqtt", &s.MQTT, []*string{&s.MQTT.Password}},
+		{"bike", &s.Bike, []secret{{"bike.esphome_key", &s.Bike.ESPHomeKey}}},
+		{"ha", &s.HA, []secret{{"ha.token", &s.HA.Token}}},
+		{"mqtt", &s.MQTT, []secret{{"mqtt.password", &s.MQTT.Password}}},
 		{"brouter", &s.BRouter, nil},
-		{"mapillary", &s.Mapillary, []*string{&s.Mapillary.Token}},
-		{"strava", &s.Strava, []*string{&s.Strava.ClientSecret}},
+		{"mapillary", &s.Mapillary, []secret{{"mapillary.token", &s.Mapillary.Token}}},
+		{"strava", &s.Strava, []secret{{"strava.client_secret", &s.Strava.ClientSecret}}},
 	}
 }
 
@@ -58,11 +66,11 @@ func (s *Service) Get(ctx context.Context) (Settings, error) {
 			return Settings{}, fmt.Errorf("settings: decode %s: %w", sec.name, err)
 		}
 		for _, f := range sec.secrets {
-			plain, err := s.box.Open(*f)
+			plain, err := s.box.OpenFor(*f.p, f.aad)
 			if err != nil {
-				return Settings{}, fmt.Errorf("settings: open %s secret: %w", sec.name, err)
+				return Settings{}, fmt.Errorf("settings: open %s: %w", f.aad, err)
 			}
-			*f = plain
+			*f.p = plain
 		}
 	}
 	return out, nil
@@ -103,7 +111,7 @@ func (s *Service) Update(ctx context.Context, fn func(*Settings) error) (Setting
 			continue
 		}
 		for _, f := range sealSecs[i].secrets {
-			*f = s.box.Seal(*f)
+			*f.p = s.box.SealFor(*f.p, f.aad)
 		}
 		sb, err := json.Marshal(sealSecs[i].ptr)
 		if err != nil {

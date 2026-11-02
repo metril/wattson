@@ -24,6 +24,10 @@ type fakeSession struct {
 	err    error
 	werr   error // returned by every write (the level is still recorded)
 	kill   bool  // a failing write also ends the session (dead link)
+	failN  int   // the next failN writes fail with ErrControlRejected (level still recorded)
+	echo   bool  // every write reports a sample with the written level
+	fixed  int   // every write reports a sample with this level (>0)
+	over   bool
 }
 
 func newFakeSession(proto Protocol, max int) *fakeSession {
@@ -38,6 +42,25 @@ func (f *fakeSession) write(level int) (int, error) {
 	f.mu.Lock()
 	f.writes = append(f.writes, level)
 	werr, kill := f.werr, f.kill
+	if f.failN > 0 {
+		f.failN--
+		werr = ErrControlRejected
+	}
+	if werr == nil && !f.over {
+		lvl := 0
+		if f.echo {
+			lvl = level
+		}
+		if f.fixed > 0 {
+			lvl = f.fixed
+		}
+		if lvl > 0 {
+			select {
+			case f.tel <- Telemetry{Level: lvl}:
+			default:
+			}
+		}
+	}
 	f.mu.Unlock()
 	if werr != nil {
 		if kill {
@@ -63,9 +86,10 @@ func (f *fakeSession) end(err error) {
 	f.once.Do(func() {
 		f.mu.Lock()
 		f.err = err
-		f.mu.Unlock()
+		f.over = true
 		close(f.done)
 		close(f.tel)
+		f.mu.Unlock()
 	})
 }
 
@@ -256,6 +280,7 @@ func TestReconnectResendsTarget(t *testing.T) {
 		sup.Connect(context.Background())
 		synctest.Wait()
 		sup.SetLevel(context.Background(), 7)
+		time.Sleep(time.Second) // MinWriteInterval
 		synctest.Wait()
 		if w := s1.Writes(); !slices.Equal(w, []int{1, 7}) {
 			t.Fatalf("s1 writes %v", w)
@@ -290,7 +315,7 @@ func TestBackoffDoublesAndCaps(t *testing.T) {
 		}
 		s := newFakeSession(ProtoFitPlus, 16)
 		d.push(dialResult{s: s}, dialResult{s: newFakeSession(ProtoFitPlus, 16)})
-		sup := NewSupervisor(d.dial, SupervisorOptions{})
+		sup := NewSupervisor(d.dial, SupervisorOptions{WatchdogTimeout: 24 * time.Hour})
 		sup.Connect(context.Background())
 		time.Sleep(3 * time.Minute)
 		synctest.Wait()
@@ -364,6 +389,7 @@ func TestCloseSendsFloorAndClosesChannels(t *testing.T) {
 		sup.Connect(context.Background())
 		synctest.Wait()
 		sup.SetLevel(context.Background(), 9)
+		time.Sleep(time.Second) // MinWriteInterval
 		synctest.Wait()
 		if err := sup.Close(context.Background()); err != nil {
 			t.Fatal(err)
@@ -434,17 +460,21 @@ func TestRejectedWritesDoNotCauseReconnectStorm(t *testing.T) {
 		s.werr = ErrControlRejected
 		d := &fakeDial{}
 		d.push(dialResult{s: s})
-		sup := NewSupervisor(d.dial, SupervisorOptions{})
+		sup := NewSupervisor(d.dial, SupervisorOptions{WatchdogTimeout: 24 * time.Hour})
 		sup.Connect(context.Background())
 		time.Sleep(time.Minute)
 		synctest.Wait()
 		if d.count() != 1 || s.Closed() || !sup.Caps().Connected {
 			t.Fatalf("dials %d closed %v connected %v", d.count(), s.Closed(), sup.Caps().Connected)
 		}
-		// Resend failed, so the retry is on the next target change.
+		// The rejected connect write was retried once after ConfirmWindow.
+		if w := s.Writes(); !slices.Equal(w, []int{1, 1}) {
+			t.Fatalf("writes %v", w)
+		}
 		sup.SetLevel(context.Background(), 5)
+		time.Sleep(3 * time.Second)
 		synctest.Wait()
-		if w := s.Writes(); !slices.Equal(w, []int{1, 5}) {
+		if w := s.Writes(); !slices.Equal(w, []int{1, 1, 5, 5}) {
 			t.Fatalf("writes %v", w)
 		}
 		var kinds []EventKind
@@ -454,7 +484,7 @@ func TestRejectedWritesDoNotCauseReconnectStorm(t *testing.T) {
 				t.Fatalf("event %+v", e)
 			}
 		}
-		want := []EventKind{EventLevelUnconfirmed, EventConnected, EventLevelUnconfirmed}
+		want := []EventKind{EventConnected, EventLevelUnconfirmed, EventLevelUnconfirmed}
 		if !slices.Equal(kinds, want) {
 			t.Fatalf("events %v want %v", kinds, want)
 		}
@@ -530,4 +560,302 @@ func drainEventsFull(ch <-chan Event) []Event {
 			return out
 		}
 	}
+}
+
+func countKind(evs []Event, k EventKind) int {
+	n := 0
+	for _, e := range evs {
+		if e.Kind == k {
+			n++
+		}
+	}
+	return n
+}
+
+func ctxb() context.Context { return context.Background() }
+
+func start(t *testing.T, s *fakeSession, o SupervisorOptions) *Supervisor {
+	t.Helper()
+	d := &fakeDial{}
+	d.push(dialResult{s: s})
+	sup := NewSupervisor(d.dial, o)
+	if err := sup.Connect(ctxb()); err != nil {
+		t.Fatal(err)
+	}
+	synctest.Wait()
+	return sup
+}
+
+func wantWrites(t *testing.T, s *fakeSession, want ...int) {
+	t.Helper()
+	if w := s.Writes(); !slices.Equal(w, want) {
+		t.Fatalf("at %v writes %v want %v", time.Now().Format("05.000"), w, want)
+	}
+}
+
+func TestRateLimitCoalesces(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{})
+		for _, l := range []int{5, 6, 7} {
+			sup.SetLevel(ctxb(), l)
+		}
+		synctest.Wait()
+		wantWrites(t, s, 1)
+		time.Sleep(time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 1, 7)
+		time.Sleep(500 * time.Millisecond)
+		sup.SetLevel(ctxb(), 8)
+		synctest.Wait()
+		time.Sleep(490 * time.Millisecond)
+		synctest.Wait()
+		wantWrites(t, s, 1, 7)
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
+		wantWrites(t, s, 1, 7, 8)
+		sup.Close(ctxb())
+	})
+}
+
+func TestConfirmSatisfied(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		s.echo = true
+		sup := start(t, s, SupervisorOptions{})
+		sup.SetLevel(ctxb(), 5)
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5)
+		if n := countKind(drainEventsFull(sup.Events()), EventLevelUnconfirmed); n != 0 {
+			t.Fatalf("%d unconfirmed events", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestConfirmRetryOnceThenAlert(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		s.fixed = 1
+		sup := start(t, s, SupervisorOptions{})
+		sup.SetLevel(ctxb(), 5)
+		time.Sleep(2900 * time.Millisecond) // t=2.9s
+		synctest.Wait()
+		wantWrites(t, s, 1, 5)
+		time.Sleep(100 * time.Millisecond) // t=3s
+		synctest.Wait()
+		wantWrites(t, s, 1, 5, 5)
+		time.Sleep(1900 * time.Millisecond) // t=4.9s
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventLevelUnconfirmed); n != 0 {
+			t.Fatalf("early alert (%d)", n)
+		}
+		time.Sleep(100 * time.Millisecond) // t=5s
+		synctest.Wait()
+		var alerts []Event
+		for _, e := range drainEventsFull(sup.Events()) {
+			if e.Kind == EventLevelUnconfirmed {
+				alerts = append(alerts, e)
+			}
+		}
+		if len(alerts) != 1 || alerts[0].Want != 5 || alerts[0].Got != 1 {
+			t.Fatalf("alerts %+v", alerts)
+		}
+		time.Sleep(15 * time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5, 5)
+		if n := countKind(drainEventsFull(sup.Events()), EventLevelUnconfirmed); n != 0 {
+			t.Fatalf("repeat alert (%d)", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestConfirmSkippedWithoutReportedLevel(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{})
+		s.tel <- Telemetry{Level: 0, PowerW: 50}
+		sup.SetLevel(ctxb(), 5)
+		time.Sleep(20 * time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5)
+		if n := countKind(drainEventsFull(sup.Events()), EventLevelUnconfirmed); n != 0 {
+			t.Fatalf("%d alerts", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestWatchdogTripsOncePerEpisode(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{})
+		sup.SetLevel(ctxb(), 9)
+		for i := 0; i <= 10; i++ {
+			s.tel <- Telemetry{Cadence: 80}
+			if i < 10 {
+				time.Sleep(time.Second)
+			}
+		}
+		s.tel <- Telemetry{Cadence: 0}
+		synctest.Wait()
+		wantWrites(t, s, 1, 9)
+		time.Sleep(29900 * time.Millisecond) // t=39.9s
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 0 {
+			t.Fatalf("early watchdog (%d)", n)
+		}
+		time.Sleep(100 * time.Millisecond) // t=40s
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 1 {
+			t.Fatalf("watchdog events %d", n)
+		}
+		wantWrites(t, s, 1, 9, 1)
+		time.Sleep(60 * time.Second) // t=100s
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 0 {
+			t.Fatalf("watchdog repeated (%d)", n)
+		}
+		wantWrites(t, s, 1, 9, 1)
+		s.tel <- Telemetry{Cadence: 80}
+		time.Sleep(time.Second)
+		s.tel <- Telemetry{Cadence: 80}
+		sup.SetLevel(ctxb(), 9)
+		s.tel <- Telemetry{Cadence: 0}
+		synctest.Wait()
+		time.Sleep(29900 * time.Millisecond) // t=130.9s
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 0 {
+			t.Fatalf("early second watchdog (%d)", n)
+		}
+		time.Sleep(100 * time.Millisecond) // t=131s
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 1 {
+			t.Fatalf("second watchdog events %d", n)
+		}
+		wantWrites(t, s, 1, 9, 1, 9, 1)
+		sup.Close(ctxb())
+	})
+}
+
+func TestWatchdogNoTelemetry(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{})
+		time.Sleep(29900 * time.Millisecond)
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 0 {
+			t.Fatalf("early watchdog (%d)", n)
+		}
+		time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 1 {
+			t.Fatalf("watchdog events %d", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestWatchdogWhileDisconnectedFloorsOnReconnect(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := &fakeDial{}
+		sup := NewSupervisor(d.dial, SupervisorOptions{MinLevel: 2})
+		sup.Connect(ctxb())
+		sup.SetLevel(ctxb(), 9)
+		time.Sleep(30500 * time.Millisecond)
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 1 {
+			t.Fatalf("watchdog events %d", n)
+		}
+		s := newFakeSession(ProtoFitPlus, 16)
+		d.push(dialResult{s: s}) // next redial lands at t=31s
+		time.Sleep(time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 2)
+		sup.Close(ctxb())
+	})
+}
+
+func TestRejectedTargetIsRetriedWithoutTargetChange(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFTMS, 16)
+		sup := start(t, s, SupervisorOptions{WatchdogTimeout: 24 * time.Hour})
+		s.mu.Lock()
+		s.failN = 1
+		s.mu.Unlock()
+		sup.SetLevel(ctxb(), 5)
+		time.Sleep(time.Second)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5)
+		time.Sleep(2 * time.Second) // ConfirmWindow after the failed write
+		synctest.Wait()
+		wantWrites(t, s, 1, 5, 5)
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		wantWrites(t, s, 1, 5, 5)
+		if n := countKind(drainEventsFull(sup.Events()), EventLevelUnconfirmed); n != 0 {
+			t.Fatalf("%d alerts after a successful retry", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestBackoffResetsAfterAnySuccessfulWrite(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := &fakeDial{}
+		for range 3 {
+			d.push(dialResult{err: errors.New("down")})
+		}
+		s := newFakeSession(ProtoFitPlus, 16)
+		s.failN = 1 // first write fails but the link stays up
+		d.push(dialResult{s: s}, dialResult{s: newFakeSession(ProtoFitPlus, 16)})
+		sup := NewSupervisor(d.dial, SupervisorOptions{WatchdogTimeout: 24 * time.Hour})
+		sup.Connect(ctxb())
+		time.Sleep(20 * time.Second) // dials at 0,1,3,7; retry write succeeds at 9s
+		synctest.Wait()
+		dropAt := time.Now()
+		s.drop()
+		synctest.Wait()
+		time.Sleep(time.Second)
+		synctest.Wait()
+		d.mu.Lock()
+		times := slices.Clone(d.times)
+		d.mu.Unlock()
+		if len(times) != 5 || times[4].Sub(dropAt) != time.Second {
+			t.Fatalf("dial times %v, want redial 1s after the drop", times)
+		}
+		sup.Close(ctxb())
+	})
+}
+
+func TestCloseFloorClampedToSessionMax(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 10)
+		ctx, cancel := context.WithCancel(ctxb())
+		dial := func(ctx context.Context) (Session, error) {
+			<-ctx.Done() // the session arrives after supervision was cancelled
+			return s, nil
+		}
+		sup := NewSupervisor(dial, SupervisorOptions{MinLevel: 12})
+		sup.Connect(ctx)
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		if w := s.Writes(); len(w) != 1 || w[0] != 10 {
+			t.Fatalf("writes %v, want floor clamped to session max [10]", w)
+		}
+		sup.Close(ctxb())
+	})
 }

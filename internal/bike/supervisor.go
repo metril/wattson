@@ -12,6 +12,7 @@ import (
 const (
 	supTelemetryBuf = 16
 	supEventBuf     = 32
+	supObsBuf       = 64 // per-session samples queued for the serve loop
 	supCloseTimeout = 5 * time.Second
 	supDefaultMax   = 16 // MaxLevel before the first connect when none is configured
 )
@@ -37,15 +38,21 @@ type Supervisor struct {
 	ev  chan Event
 	// kick wakes run after a target change.
 	kick chan struct{}
+	// wdArm tells the watchdog a sample with Cadence > 0 arrived.
+	wdArm chan struct{}
+	bg    sync.WaitGroup // watchdog goroutine
 
-	mu      sync.Mutex
-	target  int
-	caps    Caps
-	sess    Session // current session; closed by whoever clears it
-	started bool
-	closed  bool
-	cancel  context.CancelFunc
-	exited  chan struct{} // closed when run (and the channels) are finished
+	mu     sync.Mutex
+	target int
+	// forceFloor asks the serve loop to write target now, bypassing the
+	// write rate limit (set by the watchdog).
+	forceFloor bool
+	caps       Caps
+	sess       Session // current session; closed by whoever clears it
+	started    bool
+	closed     bool
+	cancel     context.CancelFunc
+	exited     chan struct{} // closed when run (and the channels) are finished
 
 	closeOnce sync.Once
 }
@@ -87,6 +94,7 @@ func NewSupervisor(dial Dial, o SupervisorOptions) *Supervisor {
 		tel:    make(chan Telemetry, supTelemetryBuf),
 		ev:     make(chan Event, supEventBuf),
 		kick:   make(chan struct{}, 1),
+		wdArm:  make(chan struct{}, 1),
 		target: ClampLevel(floor, floor, max),
 		caps:   Caps{MinLevel: ClampLevel(floor, floor, max), MaxLevel: max},
 		exited: make(chan struct{}),
@@ -107,6 +115,8 @@ func (s *Supervisor) Connect(ctx context.Context) error {
 	s.started = true
 	rctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
+	s.bg.Add(1)
+	go s.watchdog(rctx)
 	go s.run(rctx)
 	return nil
 }
@@ -169,7 +179,7 @@ func (s *Supervisor) Close(ctx context.Context) error {
 	if sess != nil {
 		// Write the floor explicitly rather than relying on the session's own
 		// minimum. A dead link fails here; Close still releases the session.
-		_, werr := sess.Resend(ctx, floor)
+		_, werr := sess.Resend(ctx, floorFor(sess, floor))
 		err = errors.Join(ignoreDown(werr), sess.Close(ctx))
 	}
 	<-s.exited
@@ -212,6 +222,7 @@ func (s *Supervisor) run(ctx context.Context) {
 			closeWithFloor(sess, floor)
 		}
 		fwd.Wait()
+		s.bg.Wait() // the watchdog may still emit
 		close(s.tel)
 		close(s.ev)
 		close(s.exited)
@@ -223,8 +234,8 @@ func (s *Supervisor) run(ctx context.Context) {
 		backoff = min(backoff*2, s.o.BackoffMax)
 		return w
 	}
-	// Backoff resets only once a session accepted its first write, so a
-	// link that dies on the first write keeps backing off.
+	// Backoff resets whenever a session accepts a write, so a link that
+	// dies on its first write keeps backing off.
 	resetBackoff := func() { backoff = s.o.BackoffMin }
 	var wait time.Duration
 	for {
@@ -263,20 +274,25 @@ func closeBounded(sess Session) {
 	_ = sess.Close(ctx)
 }
 
+// floorFor clamps the rider's floor to the session's range.
+func floorFor(sess Session, floor int) int {
+	return ClampLevel(floor, floor, sess.MaxLevel())
+}
+
 // closeWithFloor writes the floor level explicitly (not relying on the
 // session's own minimum), then closes the session.
 func closeWithFloor(sess Session, floor int) {
 	ctx, cancel := context.WithTimeout(context.Background(), supCloseTimeout)
 	defer cancel()
-	_, _ = sess.Resend(ctx, floor)
+	_, _ = sess.Resend(ctx, floorFor(sess, floor))
 	_ = sess.Close(ctx)
 }
 
 // serve owns one connected session until it ends. It returns false when ctx
 // was cancelled (supervision is over). A write error on a session that is
-// still alive (e.g. the bike rejecting a level) keeps the session and is
-// reported as EventLevelUnconfirmed; only the session ending triggers a
-// reconnect.
+// still alive (e.g. the bike rejecting a level) keeps the session; the write
+// is retried once and reported as EventLevelUnconfirmed if it still fails.
+// Only the session ending triggers a reconnect.
 func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGroup, resetBackoff func()) bool {
 	s.mu.Lock()
 	if s.closed {
@@ -293,13 +309,15 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 	s.caps = Caps{Protocol: sess.Protocol(), MinLevel: ClampLevel(s.floor, s.floor, max), MaxLevel: max}
 	s.target = ClampLevel(s.target, s.floor, max)
 	target := s.target
+	s.forceFloor = false // the reconnect write below already asserts target
 	s.mu.Unlock()
 
+	obs := make(chan Telemetry, supObsBuf)
 	fctx, stopFwd := context.WithCancel(ctx)
 	fwd.Add(1)
 	go func() {
 		defer fwd.Done()
-		s.forward(fctx, sess)
+		s.forward(fctx, sess, obs)
 	}()
 	// end waits for the forwarder so telemetry stays ordered across
 	// sessions. It is cancelled only on shutdown; otherwise it flushes what
@@ -311,23 +329,30 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 		fwd.Wait()
 		stopFwd()
 	}
+	// fail handles a non-ok write result; it reports whether serve is over
+	// and what to return.
+	fail := func(r writeRes, err error) bool {
+		switch r {
+		case wCancelled:
+			end(true)
+		case wEnded:
+			s.drop(sess, err, end)
+		}
+		return r != wOK
+	}
+
+	l := &link{s: s, ctx: ctx, sess: sess, obs: obs, reset: resetBackoff, reported: 0}
+	gate, confirm := time.NewTimer(time.Hour), time.NewTimer(time.Hour)
+	gate.Stop()
+	confirm.Stop()
+	defer gate.Stop()
+	defer confirm.Stop()
 
 	// The first write on every (re)connect re-asserts the target, bypassing
-	// the session's dedup.
-	last, err := sess.Resend(ctx, target)
-	if err != nil {
-		if ctx.Err() != nil {
-			end(true)
-			return false
-		}
-		if ended(sess) {
-			return s.drop(sess, err, end)
-		}
-		// Link still up but the write failed: stay, retry on the next kick.
-		last = -1
-		s.emit(Event{Kind: EventLevelUnconfirmed, Want: target, Err: err})
-	} else {
-		resetBackoff()
+	// the session's dedup and the rate limit.
+	l.handled = target
+	if r, err := l.write(target, true, 1); fail(r, err) {
+		return r == wEnded
 	}
 	s.mu.Lock()
 	if s.sess == sess { // not closed concurrently
@@ -336,6 +361,10 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 	s.mu.Unlock()
 	s.emit(Event{Kind: EventConnected})
 	for {
+		if r, err := l.act(); fail(r, err) {
+			return r == wEnded
+		}
+		l.arm(gate, confirm)
 		select {
 		case <-ctx.Done():
 			end(true)
@@ -346,26 +375,179 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 				return false
 			}
 			return s.drop(sess, sess.Err(), end)
+		case t := <-obs:
+			l.sample(t)
 		case <-s.kick:
+		case <-gate.C:
+		case <-confirm.C:
+		}
+	}
+}
+
+type writeRes int
+
+const (
+	wOK        writeRes = iota // written, or failed on a live link (retry scheduled)
+	wCancelled                 // ctx cancelled
+	wEnded                     // the session ended
+)
+
+// confirm tracks one written level awaiting a matching sample.
+type confirm struct {
+	active   bool
+	want     int
+	attempt  int // 1 = first write, 2 = the Resend retry
+	deadline time.Time
+	err      error // write error that started it, if any
+}
+
+// link is the per-session write state owned by the serve loop.
+type link struct {
+	s     *Supervisor
+	ctx   context.Context
+	sess  Session
+	obs   <-chan Telemetry
+	reset func() // backoff reset
+
+	handled   int       // last target we wrote or gave up on
+	lastWrite time.Time // any write, retries included
+	seen      bool      // this session reported Level > 0
+	reported  int       // last reported Level > 0
+	conf      confirm
+	gateWait  time.Duration // >0: a target waits this long for the rate limit
+}
+
+// sample folds one telemetry sample into the confirmation state.
+func (l *link) sample(t Telemetry) {
+	if t.Level <= 0 {
+		return
+	}
+	l.seen = true
+	l.reported = t.Level
+	if l.conf.active && t.Level == l.conf.want {
+		l.conf = confirm{}
+	}
+}
+
+// drain applies queued samples so a stale one cannot confirm a new write.
+func (l *link) drain() {
+	for {
+		select {
+		case t := <-l.obs:
+			l.sample(t)
+		default:
+			return
+		}
+	}
+}
+
+// write sends level (Resend always writes, SetLevel dedups) and starts
+// confirmation. attempt 2 is the single retry: its failure is final.
+func (l *link) write(level int, resend bool, attempt int) (writeRes, error) {
+	l.drain()
+	var got int
+	var err error
+	if resend {
+		got, err = l.sess.Resend(l.ctx, level)
+	} else {
+		got, err = l.sess.SetLevel(l.ctx, level)
+	}
+	now := time.Now()
+	l.lastWrite = now
+	l.conf = confirm{}
+	deadline := now.Add(l.s.o.ConfirmWindow)
+	switch {
+	case err == nil:
+		l.reset()
+		if l.seen {
+			l.conf = confirm{active: true, want: got, attempt: attempt, deadline: deadline}
+		}
+	case l.ctx.Err() != nil:
+		return wCancelled, err
+	case ended(l.sess):
+		return wEnded, err
+	case attempt >= 2:
+		l.s.emit(Event{Kind: EventLevelUnconfirmed, Want: level, Got: l.reported, Err: err})
+	default:
+		l.conf = confirm{active: true, want: level, attempt: attempt, deadline: deadline, err: err}
+	}
+	return wOK, nil
+}
+
+// act performs whatever is due: the confirmation retry or alert, a forced
+// watchdog write, or the pending target once the rate limit allows it.
+func (l *link) act() (writeRes, error) {
+	l.gateWait = 0
+	if c := l.conf; c.active && !time.Now().Before(c.deadline) {
+		if c.attempt == 1 {
+			if r, err := l.write(c.want, true, 2); r != wOK {
+				return r, err
+			}
+		} else {
+			l.conf = confirm{}
+			l.s.emit(Event{Kind: EventLevelUnconfirmed, Want: c.want, Got: l.reported, Err: c.err})
+		}
+	}
+	l.s.mu.Lock()
+	target, force := l.s.target, l.s.forceFloor
+	l.s.forceFloor = false
+	l.s.mu.Unlock()
+	switch {
+	case force:
+		l.handled = target
+		return l.write(target, true, 1)
+	case target != l.handled:
+		if wait := l.lastWrite.Add(l.s.o.MinWriteInterval).Sub(time.Now()); wait > 0 {
+			l.gateWait = wait
+			return wOK, nil
+		}
+		l.handled = target
+		return l.write(target, false, 1)
+	}
+	return wOK, nil
+}
+
+// arm schedules the next wake-up for the rate-limit gate and confirmation.
+func (l *link) arm(gate, confirm *time.Timer) {
+	if l.gateWait > 0 {
+		gate.Reset(l.gateWait)
+	} else {
+		gate.Stop()
+	}
+	if l.conf.active {
+		confirm.Reset(max(0, time.Until(l.conf.deadline)))
+	} else {
+		confirm.Stop()
+	}
+}
+
+// watchdog trips when no sample with Cadence > 0 arrived for WatchdogTimeout
+// (also while disconnected): it retargets the floor, forces the write and
+// emits EventWatchdog once, then stays disarmed until the next such sample.
+func (s *Supervisor) watchdog(ctx context.Context) {
+	defer s.bg.Done()
+	t := time.NewTimer(s.o.WatchdogTimeout)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.wdArm:
+			t.Reset(s.o.WatchdogTimeout)
+		case <-t.C:
 			s.mu.Lock()
-			target = s.target
+			if s.closed {
+				s.mu.Unlock()
+				return
+			}
+			s.target = s.caps.MinLevel
+			s.forceFloor = true
 			s.mu.Unlock()
-			if target == last {
-				continue
-			}
-			got, err := sess.SetLevel(ctx, target)
-			switch {
-			case err == nil:
-				last = got
-			case ctx.Err() != nil:
-				end(true)
-				return false
-			case ended(sess):
-				return s.drop(sess, err, end)
+			select {
+			case s.kick <- struct{}{}:
 			default:
-				last = -1
-				s.emit(Event{Kind: EventLevelUnconfirmed, Want: target, Err: err})
 			}
+			s.emit(Event{Kind: EventWatchdog})
 		}
 	}
 }
@@ -397,17 +579,28 @@ func (s *Supervisor) drop(sess Session, err error, end func(bool)) bool {
 	return true
 }
 
-// forward copies the session's telemetry to the persistent channel until the
-// session ends or ctx is cancelled.
-func (s *Supervisor) forward(ctx context.Context, sess Session) {
+// forward copies the session's telemetry to the persistent channel and to
+// the serve loop (obs) until the session ends or ctx is cancelled. Samples
+// with Cadence > 0 re-arm the watchdog.
+func (s *Supervisor) forward(ctx context.Context, sess Session, obs chan Telemetry) {
 	tel := sess.Telemetry()
+	deliver := func(t Telemetry) {
+		if t.Cadence > 0 {
+			select {
+			case s.wdArm <- struct{}{}:
+			default:
+			}
+		}
+		push(s.tel, t)
+		push(obs, t)
+	}
 	for {
 		select {
 		case t, ok := <-tel:
 			if !ok {
 				return
 			}
-			push(s.tel, t)
+			deliver(t)
 		case <-sess.Done():
 			for { // flush what the session buffered before ending
 				select {
@@ -415,7 +608,7 @@ func (s *Supervisor) forward(ctx context.Context, sess Session) {
 					if !ok {
 						return
 					}
-					push(s.tel, t)
+					deliver(t)
 				default:
 					return
 				}

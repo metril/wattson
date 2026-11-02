@@ -168,7 +168,7 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 		rd.SimDial, rd.TickEvery, rd.SimPeriod = h.simDial, h.tickEvery, h.tickEvery
 	}
 	// Settle rides a crash left open before a new one can start.
-	if fin, del, err := history.Recover(ctx, st, minRideSamples); err != nil {
+	if fin, del, err := history.Recover(ctx, st, minRideSamples, nil); err != nil {
 		logger.Warn("ride recovery incomplete", "finished", fin, "deleted", del, "err", err)
 	} else if fin+del > 0 {
 		logger.Info("recovered unfinished rides", "finished", fin, "deleted", del)
@@ -190,12 +190,19 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	var closeBike sync.Once
 	releaseBike := func() {
 		closeBike.Do(func() {
-			// Closing the manager ends the final ride; the recorder then
-			// finalizes it before the store closes.
+			// Closing the manager ends the final ride and its event stream;
+			// the recorder finalizes the ride and returns by itself. Cancel
+			// only if it does not, so the store is never closed under it.
 			releaseAtShutdown(mgr, logger)
 			unsub()
+			select {
+			case <-recDone:
+			case <-time.After(recorderDrainTimeout):
+				logger.Warn("ride recorder did not stop in time; cancelling")
+				stopRec()
+				<-recDone
+			}
 			stopRec()
-			<-recDone
 		})
 	}
 	// Tile downloads run for minutes: no overall client timeout (the manager
@@ -251,6 +258,10 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 
 // minRideSamples is the shortest ride (seconds at 1 Hz) worth keeping.
 const minRideSamples = 10
+
+// recorderDrainTimeout bounds how long shutdown waits for the recorder to
+// finalize the last ride.
+const recorderDrainTimeout = 10 * time.Second
 
 // storeRouteInfo names and decodes a stored route for the ride recorder.
 func storeRouteInfo(st *store.Store) func(context.Context, int64) (string, *route.Profile, error) {

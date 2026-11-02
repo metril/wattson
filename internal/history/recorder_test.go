@@ -39,7 +39,10 @@ func newMem() *memStore {
 	return &memStore{rides: map[int64]store.Ride{}, samples: map[int64][]store.Sample{}}
 }
 
-func (m *memStore) CreateRide(_ context.Context, r store.Ride) (store.Ride, error) {
+func (m *memStore) CreateRide(ctx context.Context, r store.Ride) (store.Ride, error) {
+	if err := ctx.Err(); err != nil {
+		return store.Ride{}, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nextID++
@@ -49,7 +52,10 @@ func (m *memStore) CreateRide(_ context.Context, r store.Ride) (store.Ride, erro
 	return r, nil
 }
 
-func (m *memStore) AppendSamples(_ context.Context, id int64, ss []store.Sample) error {
+func (m *memStore) AppendSamples(ctx context.Context, id int64, ss []store.Sample) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.appendFails > 0 {
@@ -68,13 +74,19 @@ func (m *memStore) AppendSamples(_ context.Context, id int64, ss []store.Sample)
 	return nil
 }
 
-func (m *memStore) Samples(_ context.Context, id int64) ([]store.Sample, error) {
+func (m *memStore) Samples(ctx context.Context, id int64) ([]store.Sample, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]store.Sample(nil), m.samples[id]...), nil
 }
 
-func (m *memStore) FinishRide(_ context.Context, id int64, end time.Time, sum store.Summary, n int) (store.Ride, error) {
+func (m *memStore) FinishRide(ctx context.Context, id int64, end time.Time, sum store.Summary, n int) (store.Ride, error) {
+	if err := ctx.Err(); err != nil {
+		return store.Ride{}, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.finishes = append(m.finishes, finishCall{id, end, sum, n})
@@ -84,7 +96,10 @@ func (m *memStore) FinishRide(_ context.Context, id int64, end time.Time, sum st
 	return r, nil
 }
 
-func (m *memStore) DeleteRide(_ context.Context, id int64) error {
+func (m *memStore) DeleteRide(ctx context.Context, id int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.deletes++
@@ -455,6 +470,57 @@ func TestRecorderBufferCap(t *testing.T) {
 		ss, _ := h.mem.Samples(t.Context(), 1)
 		if len(ss) != 600 || ss[0].Seq != 100 || ss[599].Seq != 699 {
 			t.Errorf("stored %d samples, want the newest 600 (seq 100..699)", len(ss))
+		}
+	})
+}
+
+func TestRecorderCancelDrainsBufferedFinish(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		// Select picks randomly between a cancelled context and queued
+		// events, so repeat to hit both orders.
+		for range 20 {
+			h := start(history.RecorderDeps{})
+			h.status(1, "ready")
+			for i := range 15 {
+				h.tick(riding(i))
+			}
+			fin := riding(15)
+			fin.State = engine.StateFinished
+			h.tick(fin)
+			if err := h.stop(); !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run = %v", err)
+			}
+			if len(h.mem.finishes) != 1 || h.mem.finishes[0].n != 16 || len(h.finishedRides()) != 1 {
+				t.Fatalf("finishes = %+v, onFinished = %d", h.mem.finishes, len(h.finishedRides()))
+			}
+		}
+	})
+}
+
+func TestRecorderSecondRideAfterFinish(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		h := start(history.RecorderDeps{})
+		defer h.stop()
+		h.ride(12)
+		// The replacement engine reports ready: that ends the ride without a finished tick.
+		ready := engine.Tick{At: t0.Add(13 * time.Second), State: engine.StateReady, Mode: "free"}
+		h.tick(ready)
+		synctest.Wait()
+		if len(h.mem.finishes) != 1 || h.mem.finishes[0].n != 12 {
+			t.Fatalf("first finish = %+v", h.mem.finishes)
+		}
+		h.ride(12)
+		h.tick(ready)
+		synctest.Wait()
+		if len(h.mem.created) != 2 || len(h.mem.finishes) != 2 {
+			t.Fatalf("created=%d finishes=%d", len(h.mem.created), len(h.mem.finishes))
+		}
+		f := h.mem.finishes[1]
+		ss, _ := h.mem.Samples(t.Context(), f.id)
+		if f.id != 2 || f.n != 12 || len(ss) != 12 || ss[0].Seq != 0 || ss[11].Seq != 11 {
+			t.Errorf("second ride = %+v, %d samples", f, len(ss))
 		}
 	})
 }

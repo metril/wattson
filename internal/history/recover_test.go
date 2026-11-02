@@ -50,7 +50,8 @@ func TestRecover(t *testing.T) {
 	rider := seedRider(t, s)
 	long := openRide(t, s, rider.ID, 12)
 	short := openRide(t, s, rider.ID, 3)
-	fin, del, err := history.Recover(ctx, s, 10)
+	var got []store.Ride
+	fin, del, err := history.Recover(ctx, s, 10, func(_ context.Context, r store.Ride) { got = append(got, r) })
 	if err != nil || fin != 1 || del != 1 {
 		t.Fatalf("Recover = %d, %d, %v", fin, del, err)
 	}
@@ -58,6 +59,9 @@ func TestRecover(t *testing.T) {
 	if err != nil || len(rides) != 1 || rides[0].ID != long.ID || rides[0].SampleCount != 12 ||
 		rides[0].Summary.DurationS != 12 || rides[0].EndedAt == nil || !rides[0].EndedAt.Equal(t0.Add(11*time.Second)) {
 		t.Fatalf("rides = %+v, %v", rides, err)
+	}
+	if len(got) != 1 || got[0].ID != long.ID || got[0].EndedAt == nil {
+		t.Errorf("onFinished = %+v", got)
 	}
 	if _, err := s.Ride(ctx, short.ID); err == nil {
 		t.Error("short ride should be deleted")

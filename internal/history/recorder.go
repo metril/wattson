@@ -53,6 +53,7 @@ type Recorder struct {
 	nextSeq int
 	lastSec int
 	last    store.Sample // newest recorded sample
+	warned  bool         // begin already warned for this attempt
 }
 
 // NewRecorder returns a recorder with defaults applied.
@@ -69,35 +70,50 @@ func NewRecorder(d RecorderDeps) *Recorder {
 	return &Recorder{d: d}
 }
 
-// Run consumes events until ctx ends (the open ride is finalized with a fresh
-// 5 s context and ctx.Err() returned) or events is closed (finalize, nil).
+// Run consumes events until ctx ends or events is closed. Store calls use a
+// context detached from ctx: cancelling it only stops the loop, after which
+// the events still buffered are handled and the open ride is finalized (a
+// cancelled context would fail every store call and strand the ride). It
+// returns ctx.Err() then, or nil when events is closed.
 func (r *Recorder) Run(ctx context.Context, events <-chan ridectl.Event) error {
+	sctx := context.WithoutCancel(ctx)
 	t := time.NewTicker(r.d.FlushEvery)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			r.finalizeFresh(ctx)
+			r.drain(sctx, events)
+			if r.cur != nil {
+				r.finalize(sctx)
+			}
 			return ctx.Err()
 		case ev, ok := <-events:
 			if !ok {
-				r.finalizeFresh(ctx)
+				if r.cur != nil {
+					r.finalize(sctx)
+				}
 				return nil
 			}
-			r.handle(ctx, ev)
+			r.handle(sctx, ev)
 		case <-t.C:
-			r.flush(ctx)
+			r.flush(sctx)
 		}
 	}
 }
 
-func (r *Recorder) finalizeFresh(ctx context.Context) {
-	if r.cur == nil {
-		return
+// drain handles the events already queued, without waiting for more.
+func (r *Recorder) drain(ctx context.Context, events <-chan ridectl.Event) {
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			r.handle(ctx, ev)
+		default:
+			return
+		}
 	}
-	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
-	defer cancel()
-	r.finalize(fctx)
 }
 
 func (r *Recorder) handle(ctx context.Context, ev ridectl.Event) {
@@ -122,6 +138,7 @@ func (r *Recorder) tick(ctx context.Context, tk engine.Tick) {
 		}
 		r.record(tk)
 	default:
+		r.warned = false
 		if r.cur != nil {
 			r.record(tk)
 			r.finalize(ctx)
@@ -132,7 +149,7 @@ func (r *Recorder) tick(ctx context.Context, tk engine.Tick) {
 // begin opens a ride for the first riding tick; false when it could not.
 func (r *Recorder) begin(ctx context.Context, tk engine.Tick) bool {
 	if r.rider == 0 {
-		r.d.Logger.Warn("riding without a rider; ride not recorded")
+		r.warn("riding without a rider; ride not recorded")
 		return false
 	}
 	nr := store.Ride{RiderID: r.rider, RouteID: tk.RouteID, Mode: tk.Mode, StartedAt: tk.At}
@@ -148,12 +165,21 @@ func (r *Recorder) begin(ctx context.Context, tk engine.Tick) bool {
 	}
 	created, err := r.d.Store.CreateRide(ctx, nr)
 	if err != nil {
-		r.d.Logger.Warn("create ride", "err", err)
+		r.warn("create ride", "err", err)
 		return false
 	}
+	r.warned = false
 	r.cur, r.prof = &created, prof
 	r.buf, r.nextSeq, r.lastSec = nil, 0, -1
 	return true
+}
+
+// warn logs a failed ride start once per attempt, not once per tick.
+func (r *Recorder) warn(msg string, args ...any) {
+	if !r.warned {
+		r.warned = true
+		r.d.Logger.Warn(msg, args...)
+	}
 }
 
 // record appends a sample when tk starts a new second of riding time.
@@ -196,6 +222,8 @@ func (r *Recorder) flush(ctx context.Context) bool {
 // finalize closes the open ride: too short is deleted, otherwise it is
 // finished with its summary and handed to OnFinished.
 func (r *Recorder) finalize(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
+	defer cancel()
 	ride := *r.cur
 	if !r.flush(ctx) {
 		r.d.Logger.Warn("final flush failed; ride left open for crash recovery", "ride", ride.ID)

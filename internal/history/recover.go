@@ -10,8 +10,10 @@ import (
 
 // Recover closes rides left open by a crash: those with fewer than
 // minSamples samples are deleted, the rest finished at their last sample.
-// A ride that cannot be settled is skipped and reported in the error.
-func Recover(ctx context.Context, st *store.Store, minSamples int) (finished, deleted int, err error) {
+// onFinished (may be nil) is called for each ride finished this way, like the
+// recorder's OnFinished. A ride that cannot be settled is skipped and
+// reported in the error.
+func Recover(ctx context.Context, st *store.Store, minSamples int, onFinished func(context.Context, store.Ride)) (finished, deleted int, err error) {
 	open, err := st.OpenRides(ctx)
 	if err != nil {
 		return 0, 0, err
@@ -31,11 +33,15 @@ func Recover(ctx context.Context, st *store.Store, minSamples int) (finished, de
 			deleted++
 			continue
 		}
-		if _, err := st.FinishRide(ctx, r.ID, ss[len(ss)-1].At, Summarize(ss), len(ss)); err != nil {
+		fin, err := st.FinishRide(ctx, r.ID, ss[len(ss)-1].At, Summarize(ss), len(ss))
+		if err != nil {
 			errs = append(errs, fmt.Errorf("ride %d: %w", r.ID, err))
 			continue
 		}
 		finished++
+		if onFinished != nil {
+			onFinished(ctx, fin)
+		}
 	}
 	return finished, deleted, errors.Join(errs...)
 }

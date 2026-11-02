@@ -32,6 +32,12 @@ export function RidePage() {
     return () => socket.close();
   }, [socket]);
 
+  // The ride screen is always dark (dim rooms, TV glare); other pages follow the system theme.
+  useEffect(() => {
+    document.documentElement.classList.add('ride-dark');
+    return () => document.documentElement.classList.remove('ride-dark');
+  }, []);
+
   const subscribe = useCallback((cb: () => void) => socket.onStatus(cb), [socket]);
   const status = useSyncExternalStore(subscribe, () => socket.getStatus());
 
@@ -108,37 +114,47 @@ export function RidePage() {
   const active = state === 'ready' || state === 'riding' || state === 'paused';
 
   return (
-    <div className="mx-auto flex w-full max-w-[120rem] flex-col gap-3 pb-28 md:gap-4 md:pb-0">
+    <div className={`ride-screen ${routeMode || workoutId !== 0 ? '' : 'ride-flat'}`}>
       <h1 className="sr-only">Ride</h1>
-      <BikeBar bike={bike} connected={connected} state={state} ticks={socket.ticks} />
-      {alert && (
-        <Banner tone="warn">
-          <p className="text-lg font-medium">{alert}</p>
-        </Banner>
-      )}
-      {cmdError && <Banner tone="error">{cmdError}</Banner>}
-      {state === 'ready' && <StartPicker value={choice} onChange={setChoice} />}
-      {pillRoute !== 0 && <PrefetchPill routeId={pillRoute} />}
-      {complete && (
-        <Banner tone="ok">
-          <p className="text-lg font-medium">{complete === 'workout' ? 'Workout complete' : 'Route complete'}</p>
-        </Banner>
-      )}
-      {routeMode && <RouteView routeId={routeId} ticks={socket.ticks} />}
-      {workoutId !== 0 && <WorkoutView workoutId={workoutId} ticks={socket.ticks} riderId={bike?.rider_id} />}
-      <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} erg={ergMode} hr={bike?.hr}>
-        {ergMode ? (
-          <ErgControls send={send} ticks={socket.ticks} free={workoutId === 0} disabled={!connected || !active} onError={onError} />
-        ) : (
-          <LevelControls
-            socket={levelSocket}
-            route={routeMode || mode === 'interval'}
-            disabled={!connected || !active}
-            onError={onError}
-          />
+      <div className="ride-top">
+        <BikeBar bike={bike} connected={connected} state={state} ticks={socket.ticks} />
+        {alert && (
+          <Banner tone="warn">
+            <p className="text-lg font-medium">{alert}</p>
+          </Banner>
         )}
-      </MetricGrid>
-      <RideControls state={state} send={control} disabled={!connected} onError={onError} />
+        {cmdError && <Banner tone="error">{cmdError}</Banner>}
+        {state === 'ready' && <StartPicker value={choice} onChange={setChoice} />}
+        {pillRoute !== 0 && <PrefetchPill routeId={pillRoute} />}
+        {complete && (
+          <Banner tone="ok">
+            <p className="text-lg font-medium">{complete === 'workout' ? 'Workout complete' : 'Route complete'}</p>
+          </Banner>
+        )}
+      </div>
+      {(routeMode || workoutId !== 0) && (
+        <div className="ride-view">
+          {routeMode && <RouteView routeId={routeId} ticks={socket.ticks} />}
+          {workoutId !== 0 && <WorkoutView workoutId={workoutId} ticks={socket.ticks} riderId={bike?.rider_id} />}
+        </div>
+      )}
+      <div className="ride-metrics">
+        <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} erg={ergMode} hr={bike?.hr}>
+          {ergMode ? (
+            <ErgControls send={send} ticks={socket.ticks} free={workoutId === 0} disabled={!connected || !active} onError={onError} />
+          ) : (
+            <LevelControls
+              socket={levelSocket}
+              route={routeMode || mode === 'interval'}
+              disabled={!connected || !active}
+              onError={onError}
+            />
+          )}
+        </MetricGrid>
+      </div>
+      <div className="ride-controls">
+        <RideControls state={state} send={control} disabled={!connected} onError={onError} />
+      </div>
     </div>
   );
 }

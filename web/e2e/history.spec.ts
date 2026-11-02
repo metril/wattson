@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { expect, setupAdmin, test } from './fixtures';
-import { metric } from './helpers';
+import { metric, showAllMetrics } from './helpers';
 
 // Ride the simulator for ~30 s, then find the ride in History, look at its
 // charts and download the FIT file, first with a browser session and then from
@@ -32,6 +32,7 @@ test('a simulated ride appears in history and downloads as a FIT file', async ({
     await expect(state).toHaveText('ready', { timeout: 5_000 });
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(state).toHaveText('riding');
+    await showAllMetrics(page);
     // The Time tile reads 00:00:SS; wait for 30 s of riding.
     await expect(metric(page, 'Time')).toHaveText(/^00:00:(3\d|[4-5]\d)$/, { timeout: 45_000 });
     await page.getByRole('button', { name: 'Stop', exact: true }).click();

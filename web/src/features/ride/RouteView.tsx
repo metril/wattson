@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
 import { api, unwrap } from '@/lib/api';
 import { positionAt } from '@/lib/route-math';
+import { useMedia } from '@/lib/use-media';
 import type { TickStore } from '@/lib/tick-store';
 import {
   detectTier,
@@ -57,19 +58,6 @@ function probeWebgl(): boolean {
   } catch {
     return false;
   }
-}
-
-/** Live match of a media query. */
-function useMedia(query: string): boolean {
-  const [on, setOn] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const fn = () => setOn(mq.matches);
-    fn();
-    mq.addEventListener('change', fn);
-    return () => mq.removeEventListener('change', fn);
-  }, [query]);
-  return on;
 }
 
 /** The route id of the latest tick, as React state that changes only when the route does. */
@@ -130,6 +118,8 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const [note, setNote] = useState<string | null>(null);
   const [webgl] = useState(probeWebgl);
   const reducedMotion = useMedia('(prefers-reduced-motion: reduce)');
+  const tv = useMedia('(min-width: 1600px)');
+  const rail = useMedia('(min-width: 900px) and (orientation: landscape)');
   const wide = useMedia('(min-width: 768px)'); // Tailwind md: the map panel is always shown
   const photoData = photoQuery.data;
   const photoList = photoData?.status === 'ready' ? photoData.photos : [];
@@ -222,7 +212,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
           <ViewMenu value={view} caps={caps} exaggeration={exaggeration} onChange={choose} onExaggeration={setExag} />
         </div>
       )}
-      <div className={hasMap ? 'grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] md:gap-4' : 'grid gap-3'}>
+      <div className="grid gap-3">
         {hasMap && (
           <div ref={wrap} data-testid="route-map" className={showMap ? 'block' : 'hidden md:block'}>
             <Suspense fallback={<div className="h-64 rounded-panel border border-line bg-panel" />}>
@@ -243,12 +233,12 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
                   />
                 ) : null
               ) : (
-                <MapView className="h-64 md:h-72 min-[1600px]:h-96" onReady={setMap} />
+                <MapView className="ride-viewbox" onReady={setMap} />
               )}
             </Suspense>
           </div>
         )}
-        {prof && <ProfileCanvas profile={prof} cursor={ticks} height={hasMap ? 220 : 160} />}
+        {prof && <ProfileCanvas profile={prof} cursor={ticks} height={tv ? 140 : rail ? 180 : hasMap ? 220 : 160} />}
       </div>
     </section>
   );

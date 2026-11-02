@@ -3,8 +3,7 @@ import { useTickText, type TickStore } from '@/lib/tick-store';
 import type { RideSocket } from '@/lib/ride-socket';
 import { useRideKey } from './keys';
 
-const step =
-  'inline-flex size-[4.5rem] shrink-0 items-center justify-center rounded-control border border-line bg-raised text-chalk hover:border-accent active:bg-line disabled:cursor-not-allowed disabled:opacity-50 min-[1600px]:size-24';
+const step = 'metric-step'; // 72 px, see index.css
 
 const pickLevel = (t: { level: number }) => `L${t.level}`;
 const pickBias = (t: { bias: number }) => `Bias ${t.bias > 0 ? '+' : ''}${Math.round(t.bias)}`;
@@ -45,19 +44,20 @@ export function LevelControls({
     return true;
   });
 
+  // `contents`: the three parts are cells of the metric grid, ordered by the layout (Level, then - and +).
   return (
-    <div className="col-span-2 flex items-center justify-between gap-3 rounded-panel border border-line bg-panel p-3">
-      <button type="button" className={step} aria-label={route ? 'Easier' : 'Decrease level'} disabled={disabled} onClick={() => bump(-1)}>
-        <Minus aria-hidden className="size-9" />
-      </button>
-      <div className="flex min-w-0 flex-col items-center">
-        <span className="text-sm font-medium text-dim">Resistance</span>
-        <span ref={level} className="numeral text-numeral-md min-[1600px]:text-[clamp(3rem,6vw,7rem)]" />
+    <div className="contents">
+      <div className="metric-tile m-level">
+        <span className="metric-label">Resistance</span>
+        <span ref={level} className="numeral metric-value ride-level-up" />
         {/* Always mounted: useTickText binds its ref once, so a span added later would stay empty. */}
         <span ref={bias} hidden={!route} className="numeral text-lg" />
         <span ref={reported} className="text-sm text-dim" />
       </div>
-      <button type="button" className={step} aria-label={route ? 'Harder' : 'Increase level'} disabled={disabled} onClick={() => bump(1)}>
+      <button type="button" className={`${step} m-minus`} aria-label={route ? 'Easier' : 'Decrease level'} disabled={disabled} onClick={() => bump(-1)}>
+        <Minus aria-hidden className="size-9" />
+      </button>
+      <button type="button" className={`${step} m-plus`} aria-label={route ? 'Harder' : 'Increase level'} disabled={disabled} onClick={() => bump(1)}>
         <Plus aria-hidden className="size-9" />
       </button>
     </div>

@@ -66,7 +66,7 @@ test('free ERG: set a target and nudge it', async ({ page }) => {
   await page.getByLabel('Target power (W)').fill('200');
   await page.getByRole('button', { name: 'Start' }).click();
   await expect(state).toHaveText('riding');
-  const target = page.getByRole('group', { name: 'Ride metrics' }).locator('p', { hasText: /^Target/ }).locator('xpath=following-sibling::span[1]');
+  const target = page.getByRole('group', { name: 'Ride metrics' }).locator('p', { hasText: /^Target/ }).locator('xpath=following-sibling::div[1]/span[1]');
   await expect(target).toHaveText('200', { timeout: 4_000 });
   await page.getByRole('button', { name: '+10 W' }).click();
   await expect(target).toHaveText('210', { timeout: 4_000 });

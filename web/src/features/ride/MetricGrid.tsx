@@ -1,17 +1,47 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { fixed0, hms, km } from '@/lib/format';
 import { useTickText, type TickStore } from '@/lib/tick-store';
+import { COMPACT_QUERY, useMedia } from '@/lib/use-media';
 import type { BikeStatus, Tick } from '@/lib/ws-types';
 
-function Value({ ticks, pick, className }: { ticks: TickStore; pick: (t: Tick) => string; className: string }) {
+/** Value with its unit beside it at 0.45x (see .metric-unit). Written straight to the DOM by useTickText. */
+function Value({ ticks, pick, unit, className = '' }: { ticks: TickStore; pick: (t: Tick) => string; unit?: string; className?: string }) {
   const ref = useTickText(ticks, pick);
-  return <span ref={ref} className={`numeral block ${className}`} />;
+  return (
+    <div className={`metric-value ${className}`}>
+      <span ref={ref} className="numeral" />
+      {unit && <span className="metric-unit">{unit}</span>}
+    </div>
+  );
 }
 
-const tile = 'flex min-w-0 flex-col justify-between gap-1 rounded-panel border border-line bg-panel px-4 py-3';
-const label = 'flex items-baseline gap-1.5 text-sm font-medium text-dim';
-// On a 1080p TV every secondary readout uses the same large size.
-const tv = 'min-[1600px]:text-[clamp(3rem,6vw,7rem)]';
+function Tile({
+  name,
+  unit,
+  ticks,
+  pick,
+  cls = '',
+  valueCls = '',
+  children,
+}: {
+  name: string;
+  unit?: string;
+  ticks: TickStore;
+  pick: (t: Tick) => string;
+  cls?: string;
+  valueCls?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`metric-tile ${cls}`}>
+      <p className="metric-label">
+        <span>{name}</span>
+      </p>
+      <Value ticks={ticks} pick={pick} unit={unit} className={valueCls} />
+      {children}
+    </div>
+  );
+}
 
 const pickPower = (t: Tick) => fixed0(t.power_w);
 const pickCadence = (t: Tick) => fixed0(t.cadence_rpm);
@@ -35,8 +65,11 @@ function hrStatus(hr: NonNullable<BikeStatus['hr']>): string {
 
 /**
  * The live readouts. Values are written straight to the DOM by useTickText,
- * so this component renders once and never again as ticks arrive.
- * `children` fill the last cells (the level controls).
+ * so this component renders once and never again as ticks arrive (toggling
+ * "More metrics" on a phone is the only re-render).
+ * `children` fill the level cells (the level controls).
+ * On a phone only Power, Speed, Grade (Cadence off-route) and Level (Target in
+ * ERG) are shown until "More metrics" is pressed.
  */
 export function MetricGrid({
   ticks,
@@ -56,93 +89,51 @@ export function MetricGrid({
   hr?: BikeStatus['hr'];
   children?: ReactNode;
 }) {
+  const compact = useMedia(COMPACT_QUERY);
+  const [more, setMore] = useState(false);
+  const rest = !compact || more;
+
   return (
-    <div role="group" aria-label="Ride metrics" className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
-      <div className={`${tile} col-span-2 md:col-span-3`}>
-        <p className={label}>
-          <span>Power</span>
-          <span>W</span>
-        </p>
-        <Value ticks={ticks} pick={pickPower} className="text-numeral-xl" />
-      </div>
-      <div className={tile}>
-        <p className={label}>
-          <span>Cadence</span>
-          <span>rpm</span>
-        </p>
-        <Value ticks={ticks} pick={pickCadence} className={`text-numeral-lg ${tv}`} />
-      </div>
-      <div className={tile}>
-        <p className={label}>
-          <span>Speed</span>
-          <span>km/h</span>
-        </p>
-        <Value ticks={ticks} pick={pickSpeed} className={`text-numeral-lg ${tv}`} />
-      </div>
-      <div className={tile}>
-        <p className={label}>
-          <span>Distance</span>
-          <span>km</span>
-        </p>
-        <Value ticks={ticks} pick={pickDistance} className={`text-numeral-md ${tv}`} />
-      </div>
-      <div className={tile}>
-        <p className={label}>
-          <span>Time</span>
-        </p>
-        <Value ticks={ticks} pick={pickTime} className={`text-numeral-md ${tv}`} />
-      </div>
-      <div className={tile}>
-        <p className={label}>
-          <span>HR</span>
-          <span>bpm</span>
-        </p>
-        <Value ticks={ticks} pick={pickHR} className={`text-numeral-md ${tv}`} />
-        {hr && <p className="truncate text-xs text-dim">{hrStatus(hr)}</p>}
-      </div>
-      {erg && (
-        <div className={tile}>
-          <p className={label}>
-            <span>Target</span>
-            <span>W</span>
-          </p>
-          <Value ticks={ticks} pick={pickTarget} className={`text-numeral-md ${tv}`} />
-        </div>
+    <div role="group" aria-label="Ride metrics" className="metric-grid">
+      <Tile name="Power" unit="W" ticks={ticks} pick={pickPower} cls="m-power" valueCls="metric-hero" />
+      <Tile name="Speed" unit="km/h" ticks={ticks} pick={pickSpeed} cls="m-speed" />
+      {route ? (
+        <Tile name="Grade" unit="%" ticks={ticks} pick={pickGrade} cls="m-grade" />
+      ) : (
+        <Tile name="Cadence" unit="rpm" ticks={ticks} pick={pickCadence} cls="m-grade" />
       )}
-      {route && (
-        <>
-          <div className={tile}>
-            <p className={label}>
-              <span>Grade</span>
-              <span>%</span>
-            </p>
-            <Value ticks={ticks} pick={pickGrade} className={`text-numeral-md ${tv}`} />
-          </div>
-          <div className={tile}>
-            <p className={label}>
-              <span>Ahead</span>
-              <span>%</span>
-            </p>
-            <Value ticks={ticks} pick={pickAhead} className={`text-numeral-md ${tv}`} />
-          </div>
-          <div className={tile}>
-            <p className={label}>
-              <span>Remaining</span>
-              <span>km</span>
-            </p>
-            <Value ticks={ticks} pick={pickRemaining} className={`text-numeral-md ${tv}`} />
-          </div>
-        </>
-      )}
-      {showLevel && (
-        <div className={tile}>
-          <p className={label}>
-            <span>Level</span>
-          </p>
-          <Value ticks={ticks} pick={pickLevel} className={`text-numeral-md ${tv}`} />
-        </div>
+      {erg && <Tile name="Target" unit="W" ticks={ticks} pick={pickTarget} cls="m-level" />}
+      {showLevel && !erg && (
+        <Tile name="Level" ticks={ticks} pick={pickLevel} cls="m-level" valueCls="ride-level-up" />
       )}
       {children}
+      {compact && (
+        <button
+          type="button"
+          aria-expanded={more}
+          onClick={() => setMore((v) => !v)}
+          className="m-more inline-flex min-h-touch items-center justify-center rounded-control bg-raised px-4 font-medium text-chalk"
+        >
+          More metrics
+        </button>
+      )}
+      {rest && (
+        <>
+          {route && <Tile name="Cadence" unit="rpm" ticks={ticks} pick={pickCadence} cls="m-rest" />}
+          <Tile name="Distance" unit="km" ticks={ticks} pick={pickDistance} cls="m-rest" />
+          <Tile name="Time" ticks={ticks} pick={pickTime} cls="m-time" />
+          <Tile name="HR" unit="bpm" ticks={ticks} pick={pickHR} cls="m-hr">
+            {hr && <p className="truncate text-xs text-dim">{hrStatus(hr)}</p>}
+          </Tile>
+          {erg && showLevel && <Tile name="Level" ticks={ticks} pick={pickLevel} cls="m-rest" />}
+          {route && (
+            <>
+              <Tile name="Ahead" unit="%" ticks={ticks} pick={pickAhead} cls="m-rest" />
+              <Tile name="Remaining" unit="km" ticks={ticks} pick={pickRemaining} cls="m-rest" />
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Profiler } from 'react';
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MetricGrid } from './MetricGrid';
 import { TickStore } from '@/lib/tick-store';
 import { tickFixture } from '@/test-ws';
@@ -124,5 +125,44 @@ describe('MetricGrid', () => {
     });
     expect(screen.getByText('250')).toBeInTheDocument();
     expect(renders).toBe(1);
+  });
+
+  describe('phone width', () => {
+    beforeEach(() => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('max-width: 599px'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('shows four metrics until More metrics is pressed, without extra renders per tick', async () => {
+      vi.useRealTimers();
+      const ticks = new TickStore();
+      let renders = 0;
+      render(
+        <Profiler id="g" onRender={() => renders++}>
+          <MetricGrid ticks={ticks} />
+        </Profiler>,
+      );
+      const labels = () => Array.from(document.querySelectorAll('.metric-label')).map((e) => e.textContent);
+      expect(labels()).toEqual(['Power', 'Speed', 'Cadence', 'Level']);
+      expect(renders).toBe(1);
+      const more = screen.getByRole('button', { name: 'More metrics' });
+      expect(more).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(more);
+      expect(more).toHaveAttribute('aria-expanded', 'true');
+      expect(labels()).toEqual(expect.arrayContaining(['Distance', 'Time', 'HR']));
+      await userEvent.click(more);
+      expect(labels()).toHaveLength(4);
+    });
+
+    it('route mode swaps Cadence for Grade in the four', () => {
+      render(<MetricGrid ticks={new TickStore()} route />);
+      const labels = Array.from(document.querySelectorAll('.metric-label')).map((e) => e.textContent);
+      expect(labels).toEqual(['Power', 'Speed', 'Grade', 'Level']);
+    });
   });
 });

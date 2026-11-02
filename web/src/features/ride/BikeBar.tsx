@@ -80,7 +80,7 @@ export function BikeBar({
 
   return (
     <section aria-label="Bike" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-panel border border-line bg-panel p-3 md:p-4">
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-panel bg-panel p-3 md:p-4">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm md:text-base">
             <span

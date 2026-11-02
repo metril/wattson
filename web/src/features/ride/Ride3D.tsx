@@ -203,7 +203,7 @@ export default function Ride3D(p: {
       role="region"
       aria-label="3D route view"
       data-testid="route-3d"
-      className="h-64 overflow-hidden rounded-panel border border-line bg-panel md:h-72 min-[1600px]:h-96"
+      className="ride-viewbox overflow-hidden rounded-panel border border-line bg-panel"
     />
   );
 }

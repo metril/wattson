@@ -2,6 +2,15 @@
 @import '@fontsource-variable/saira/standard.css';
 @import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
 
+/* Ride numerals: Barlow Condensed SemiBold (OFL), digits, units and Latin letters only. */
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/barlow-condensed-600-sub.woff2') format('woff2');
+}
+
 /*
  * Wattson theme: "velodrome at night".
  *
@@ -13,9 +22,15 @@
  * reads these tokens; do not hard-code colours or sizes in components.
  */
 
-/* Raw tokens. Dark is the default; light follows the OS preference. */
-:root {
+/*
+ * Raw tokens. Dark is the default; light follows the OS preference. The ride
+ * screen is always dark (dim rooms, TV glare): it adds html.ride-dark, which
+ * keeps the dark palette whatever the OS says and swaps in the cockpit tokens.
+ */
+:root,
+html.ride-dark {
   color-scheme: dark;
+  --focus: #e8f53b; /* hivis */
 
   /* surfaces */
   --ground: #0a1215; /* tarmac */
@@ -47,8 +62,9 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not(.ride-dark) {
     color-scheme: light;
+    --focus: #0a62c7;
     --ground: #eef2ee;
     --panel: #ffffff;
     --raised: #e3eae6;
@@ -70,6 +86,16 @@
     --zone-6: #d1342a;
     --zone-7: #a22cc4;
   }
+}
+
+/* Cockpit palette of the ride screen (hex values mirrored in the @theme tokens below). */
+html.ride-dark {
+  --ground: #1c2127; /* tarmac */
+  --panel: #2a3139; /* kerb */
+  --raised: #323b44;
+  --line: #7b8794;
+  --chalk: #eef1ec;
+  --dim: #9aa5ae; /* dust */
 }
 
 /* Expose tokens as Tailwind utilities (bg-ground, text-chalk, ...). */
@@ -97,7 +123,22 @@
 }
 
 @theme {
+  /* cockpit tokens (ride screen); chalk is --chalk under html.ride-dark */
+  --color-tarmac: #1c2127;
+  --color-kerb: #2a3139;
+  --color-dust: #9aa5ae;
+  --color-hivis: #e8f53b; /* focus ring and the current level only */
+  --grade-flat: #3fb27f;
+  --grade-mid: #f2a33a;
+  --grade-steep: #f0544f;
+  --grade-down: #4ea3f2;
+  --color-grade-flat: var(--grade-flat);
+  --color-grade-mid: var(--grade-mid);
+  --color-grade-steep: var(--grade-steep);
+  --color-grade-down: var(--grade-down);
+
   /* type families */
+  --font-numeral: 'Barlow Condensed', 'Saira Variable', 'Arial Narrow', system-ui, sans-serif;
   --font-display: 'Saira Variable', 'Arial Narrow', system-ui, sans-serif;
   --font-sans: 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
 
@@ -145,19 +186,37 @@ body {
     env(safe-area-inset-left);
 }
 
-/* Readouts: Saira, tabular so digits never jitter as values change. */
+/* Readouts: Barlow Condensed 600, tabular so digits never jitter as values change. */
 .numeral {
-  font-family: var(--font-display);
+  font-family: var(--font-numeral);
   font-variant-numeric: tabular-nums lining-nums;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  font-stretch: 85%;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
-/* Keyboard and TV-remote focus must be unmistakable. */
+/* Keyboard and TV-remote focus must be unmistakable, and is never removed. */
 :focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
+  outline: 4px solid var(--focus);
+  outline-offset: 3px;
+}
+@media (min-width: 1600px) {
+  :focus-visible {
+    outline-offset: 6px;
+  }
+}
+
+/* Every interactive control is at least 48 x 48 px. */
+button,
+select,
+input:not([type='hidden']):not([type='checkbox']):not([type='radio']):not([type='range']),
+textarea,
+a[href] {
+  min-height: 48px;
+}
+button,
+a[href],
+select {
+  min-width: 48px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -165,7 +224,10 @@ body {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -183,4 +245,250 @@ body {
   border-radius: 24px;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+/* MapLibre draws its own small controls; leave their size alone. */
+.maplibregl-map button {
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+ * Ride screen layouts. Plain CSS so the same markup serves three displays:
+ *   phone portrait (< 600 w)      one column, 2 x 2 primary metrics
+ *   tablet landscape (>= 900 w)   view and profile left, metric + control rail right
+ *   TV (>= 1600 w)                view, profile strip, then a six-value HUD
+ * Phone landscape (height < 500) uses the tablet layout with a 40 % rail.
+ */
+.ride-screen {
+  display: grid;
+  width: 100%;
+  max-width: 120rem;
+  margin-inline: auto;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'top' 'view' 'metrics' 'controls';
+  touch-action: manipulation;
+  padding-bottom: 7rem; /* clears the fixed control bar on phones */
+  --view-h: 40dvh;
+  --val: clamp(2.75rem, 13vw, 4.5rem);
+}
+@media (min-width: 600px) {
+  .ride-screen {
+    --val: clamp(3.5rem, 9vw, 6rem);
+  }
+}
+.ride-top {
+  grid-area: top;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.ride-view {
+  grid-area: view;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.ride-metrics {
+  grid-area: metrics;
+  min-width: 0;
+}
+.ride-controls {
+  grid-area: controls;
+  min-width: 0;
+}
+.ride-viewbox {
+  height: var(--view-h);
+  min-height: 14rem;
+}
+
+/* The view panel and profile are quiet: no card borders on the ride screen. */
+html.ride-dark .ride-view .ride-viewbox {
+  border-color: transparent;
+}
+
+/* Metric tiles: grouped by spacing, not borders; units sit beside the value at 0.45x. */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.metric-tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.25rem;
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+  padding: 0.75rem 1rem;
+}
+.metric-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.metric-value {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.2em;
+  font-size: var(--val);
+  line-height: 1;
+}
+.metric-hero {
+  font-size: calc(var(--val) * 1.25);
+}
+.m-time .metric-value,
+.m-rest .metric-value {
+  font-size: calc(var(--val) * 0.7);
+}
+.metric-unit {
+  color: var(--color-dust);
+  font-size: 0.45em;
+  font-weight: 500;
+}
+.metric-wide {
+  grid-column: 1 / -1;
+}
+.metric-step {
+  display: inline-flex;
+  min-height: 4.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--chalk);
+}
+.metric-step:active:not(:disabled) {
+  background: var(--panel);
+}
+.metric-step:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Display order inside the grid: Power, Speed, Grade (or Cadence), Level, then the rest. */
+.m-power { order: 1; }
+.m-speed { order: 2; }
+.m-grade { order: 3; }
+.m-level { order: 4; }
+.m-minus { order: 5; }
+.m-plus { order: 6; }
+.m-more { order: 7; grid-column: 1 / -1; }
+.m-rest { order: 8; }
+.m-time { order: 9; }
+.m-hr { order: 10; }
+.m-wide { order: 5; }
+
+.ride-level-up {
+  color: var(--color-hivis);
+}
+
+/* Phone landscape and tablet landscape: a right-hand rail within thumb reach. */
+@media (min-width: 900px) and (orientation: landscape), (orientation: landscape) and (max-height: 499px) {
+  .ride-screen {
+    --rail: 24rem;
+    --view-h: max(12rem, calc(100dvh - 31rem));
+    grid-template-columns: minmax(0, 1fr) var(--rail);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas: 'top top' 'view metrics' 'view controls';
+    padding-bottom: 0;
+  }
+  .ride-metrics,
+  .ride-controls {
+    align-self: start;
+  }
+  .ride-screen {
+    --val: 3.75rem;
+  }
+}
+/* Free ride (no map, no workout): the metrics take the whole width. */
+@media (min-width: 900px) and (orientation: landscape) {
+  .ride-flat {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'top' 'metrics' 'controls';
+    grid-template-rows: none;
+    --val: clamp(3.5rem, 7vw, 5.5rem);
+  }
+  .ride-flat .metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (orientation: landscape) and (max-height: 499px) {
+  .ride-screen {
+    --rail: 40%;
+    --view-h: max(10rem, calc(100dvh - 12rem));
+    --val: 2.75rem;
+  }
+}
+
+/* TV at 3 m: HUD under the view, values scale with the screen, 5 % overscan inset. */
+@media (min-width: 1600px) {
+  html.ride-dark .app-shell {
+    padding-inline: max(5vw, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: max(5vh, env(safe-area-inset-top), env(safe-area-inset-bottom));
+  }
+  .ride-screen {
+    --view-h: max(12rem, calc(90dvh - 46rem));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: 'top' 'view' 'metrics' 'controls';
+    gap: 1rem;
+  }
+  .metric-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .ride-screen,
+  .ride-flat {
+    --val: clamp(3rem, 5vw, 6rem);
+  }
+  .metric-hero {
+    font-size: var(--val);
+  }
+  .m-time .metric-value {
+    font-size: calc(var(--val) * 0.6);
+  }
+  .m-rest .metric-value {
+    font-size: calc(var(--val) * 0.6);
+  }
+  .metric-label {
+    font-size: max(28px, 1.75rem);
+  }
+  .m-power,
+  .m-speed,
+  .m-grade,
+  .m-level,
+  .m-time,
+  .m-hr,
+  .m-rest {
+    grid-column: span 1;
+  }
+  .m-power { order: 1; }
+  .m-speed { order: 2; }
+  .m-grade { order: 3; }
+  .m-level { order: 4; }
+  .m-time { order: 5; }
+  .m-hr { order: 6; }
+  .m-minus,
+  .m-plus,
+  .m-wide { order: 7; }
+  .m-rest {
+    display: none; /* the HUD is six values; the rest live on the profile strip and phone */
+  }
+  .m-minus,
+  .m-plus { grid-column: span 3; }
+  .m-wide { grid-column: 1 / -1; }
+  .ride-flat .metric-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }

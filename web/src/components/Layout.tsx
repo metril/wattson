@@ -80,7 +80,7 @@ export function Layout() {
   if (kiosk && !kioskOk) return <Navigate to="/" replace />;
 
   return (
-    <div className="flex min-h-dvh flex-col md:flex-row">
+    <div className="app-shell flex min-h-dvh flex-col md:flex-row">
       <nav
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-30 flex gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"

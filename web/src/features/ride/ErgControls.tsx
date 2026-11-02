@@ -9,7 +9,7 @@ import { ergError } from './StartPicker';
 import { useRideKey } from './keys';
 
 const step =
-  'inline-flex h-[4.5rem] min-w-[7rem] flex-1 shrink-0 items-center justify-center gap-2 rounded-control border border-line bg-raised px-3 text-xl font-medium text-chalk hover:border-accent active:bg-line disabled:cursor-not-allowed disabled:opacity-50 min-[1600px]:h-24 min-[1600px]:text-3xl';
+  'metric-step h-[4.5rem] min-w-[7rem] flex-1 shrink-0 gap-2 px-3 text-xl font-medium min-[1600px]:h-24 min-[1600px]:text-3xl';
 
 /**
  * ERG target controls. "−10 W" / "+10 W" send level_delta, which the engine
@@ -52,7 +52,7 @@ export function ErgControls({
   });
 
   return (
-    <div className="col-span-2 flex flex-col gap-3 rounded-panel border border-line bg-panel p-3 md:col-span-3">
+    <div className="metric-wide m-wide flex flex-col gap-3 rounded-panel bg-panel p-3">
       <div className="flex items-center gap-3">
         <button type="button" className={step} disabled={disabled} onClick={() => bump(-1)}>
           <Minus aria-hidden className="size-7" />

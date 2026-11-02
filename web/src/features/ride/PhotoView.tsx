@@ -190,7 +190,7 @@ export default function PhotoView({
       data-photo-id={shown?.id}
       role="group"
       aria-label="Street photo"
-      className="relative h-64 overflow-hidden rounded-panel border border-line bg-panel md:h-72 min-[1600px]:h-96"
+      className="ride-viewbox relative overflow-hidden rounded-panel border border-line bg-panel"
     >
       <img ref={layerA} alt="" className="absolute inset-0 size-full object-cover" />
       <img ref={layerB} alt="" className="absolute inset-0 size-full object-cover" />

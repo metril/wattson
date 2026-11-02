@@ -45,7 +45,13 @@ export function metric(page: Page, name: string): Locator {
   return page
     .getByRole('group', { name: 'Ride metrics' })
     .locator('p', { hasText: new RegExp(`^${name}`) })
-    .locator('xpath=following-sibling::span[1]');
+    .locator('xpath=following-sibling::div[1]/span[1]');
+}
+
+/** On a phone only four metrics show; opens the rest. A no-op on wider screens. */
+export async function showAllMetrics(page: Page) {
+  const more = page.getByRole('button', { name: 'More metrics' });
+  if ((await more.count()) > 0 && (await more.getAttribute('aria-expanded')) === 'false') await more.click();
 }
 
 /** The big resistance number between the − and + buttons. */

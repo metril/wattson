@@ -25,6 +25,10 @@ const (
 	// localScanRestarts bounds scan restarts after a recovered tinygo panic.
 	localScanRestarts = 5
 
+	// metaTimeout bounds the D-Bus metadata read; pollTimeout one liveness poll.
+	metaTimeout = 5 * time.Second
+	pollTimeout = 2 * time.Second
+
 	accessHint = "add the container user to the host bluetooth group (see docs/hardware-runbook.md)"
 )
 
@@ -100,7 +104,8 @@ func localErr(op string, err error) error {
 	case name == "org.freedesktop.DBus.Error.AccessDenied" || name == "org.bluez.Error.NotAuthorized" ||
 		strings.Contains(low, "access denied") || strings.Contains(low, "permission denied"):
 		return fmt.Errorf("%s: %w: %s", op, err, accessHint)
-	case name == "org.bluez.Error.NotConnected" || name == "org.freedesktop.DBus.Error.UnknownObject":
+	case name == "org.bluez.Error.NotConnected" || name == "org.freedesktop.DBus.Error.UnknownObject" ||
+		strings.Contains(low, "not connected"):
 		return fmt.Errorf("%s: %w (%v)", op, ErrDisconnected, err)
 	}
 	return fmt.Errorf("%s: %w", op, err)
@@ -156,6 +161,32 @@ func advFromBT(r bluetooth.ScanResult) Advertisement {
 	return adv
 }
 
+// stopScan ends the in-progress tinygo scan. tinygo's StopScan checks and
+// closes its cancel channel without locking, and the channel is also closed by
+// tinygo itself (power-off, discovery stopped) and by our other stop paths, so
+// a "close of closed channel" panic means the scan is already stopped.
+func (t *localTransport) stopScan() (stopped bool) {
+	defer func() {
+		if recover() != nil {
+			stopped = true
+		}
+	}()
+	return t.ad.StopScan() == nil
+}
+
+// stopDiscovery asks BlueZ to stop discovering, best effort and bounded. It
+// is needed after a recovered tinygo panic, which skips tinygo's own
+// StopDiscovery.
+func stopDiscovery() {
+	bus, err := dbus.SystemBus()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
+	defer cancel()
+	_ = bus.Object("org.bluez", "/org/bluez/hci0").CallWithContext(ctx, "org.bluez.Adapter1.StopDiscovery", 0).Err
+}
+
 // scan runs one BlueZ discovery at a time (waiting for the slot honours ctx),
 // delivering results to cb on the scanning goroutine. cb may call
 // t.ad.StopScan to end the scan. It returns once the scan has ended; ctx
@@ -181,7 +212,7 @@ func (t *localTransport) scan(ctx context.Context, cb func(bluetooth.ScanResult)
 		tk := time.NewTicker(10 * time.Millisecond)
 		defer tk.Stop()
 		for {
-			if t.ad.StopScan() == nil {
+			if t.stopScan() {
 				return
 			}
 			select {
@@ -200,7 +231,8 @@ func (t *localTransport) scan(ctx context.Context, cb func(bluetooth.ScanResult)
 			defer func() {
 				if r := recover(); r != nil {
 					panicked = true
-					_ = t.ad.StopScan() // clear tinygo's stuck "scanning" state
+					t.stopScan()    // clear tinygo's stuck "scanning" state
+					stopDiscovery() // tinygo's StopDiscovery was skipped by the panic
 					err = fmt.Errorf("bluetooth stack panic: %v", r)
 				}
 			}()
@@ -245,7 +277,7 @@ func (t *localTransport) discover(ctx context.Context, addr Address) error {
 	err := t.scan(sctx, func(r bluetooth.ScanResult) {
 		if !found && r.Address.MAC == want {
 			found = true
-			_ = t.ad.StopScan()
+			t.stopScan()
 		}
 	})
 	switch {
@@ -291,7 +323,15 @@ func (t *localTransport) Connect(ctx context.Context, addr Address) (Conn, error
 	go func() {
 		defer c.wg.Done()
 		watchLink(wctx, localPollInterval, func() (bool, error) {
-			return guard(dev.Connected)
+			// Bounded and cancelled by Close, so Close never waits on a
+			// hung D-Bus poll.
+			pctx, pcancel := context.WithTimeout(wctx, pollTimeout)
+			defer pcancel()
+			ok, err := runCtx(pctx, dev.Connected, nil)
+			if errors.Is(err, context.DeadlineExceeded) && wctx.Err() == nil {
+				return true, nil // slow poll is inconclusive, not a drop
+			}
+			return ok, err
 		}, func() {
 			c.finish(fmt.Errorf("link to %s lost: %w", addr, ErrDisconnected))
 		})
@@ -377,13 +417,15 @@ type charMeta struct {
 // tinygo does not expose them on Linux. It returns, per de-duplicated service
 // (in path order, the order tinygo discovers them), the service UUID and its
 // characteristics in path order. Failure just means Props stay unknown.
-func (c *localConn) gattMeta() (svcUUIDs []UUID, chars [][]charMeta) {
+func (c *localConn) gattMeta(ctx context.Context) (svcUUIDs []UUID, chars [][]charMeta) {
 	bus, err := dbus.SystemBus() // shared connection, same as tinygo's
 	if err != nil {
 		return nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, metaTimeout)
+	defer cancel()
 	var list map[dbus.ObjectPath]map[string]map[string]dbus.Variant
-	if err := bus.Object("org.bluez", "/").Call("org.freedesktop.DBus.ObjectManager.GetManagedObjects", 0).Store(&list); err != nil {
+	if err := bus.Object("org.bluez", "/").CallWithContext(ctx, "org.freedesktop.DBus.ObjectManager.GetManagedObjects", 0).Store(&list); err != nil {
 		return nil, nil
 	}
 	devPath := "/org/bluez/hci0/dev_" + strings.ReplaceAll(c.addr.String()[:17], ":", "_")
@@ -455,7 +497,7 @@ func (c *localConn) discover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	metaSvc, metaChars := c.gattMeta()
+	metaSvc, metaChars := c.gattMeta(ctx)
 	for i, f := range fs {
 		// Flags/Handle pair up by position; trust them only if UUIDs agree.
 		var metas []charMeta
@@ -547,8 +589,19 @@ func (c *localConn) Subscribe(ctx context.Context, ch UUID, fn func([]byte)) err
 	q := newDropQueue[[]byte](userQueueLen)
 	_, err = runCtx(ctx, func() (struct{}, error) {
 		return struct{}{}, x.ch.EnableNotifications(func(b []byte) { q.push(append([]byte(nil), b...)) })
-	}, nil)
+	}, func(struct{}) { // ctx ended first but the call later succeeded
+		_, _ = guard(func() (struct{}, error) { return struct{}{}, x.ch.EnableNotifications(nil) })
+		c.mu.Lock()
+		x.subd = false
+		c.mu.Unlock()
+	})
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { // abandoned: discard cleans up
+			c.mu.Lock()
+			x.subd = false
+			c.mu.Unlock()
+			return localErr("subscribe "+ch.String(), err)
+		}
 		// tinygo leaves its signal registration behind on StartNotify failure.
 		_, _ = guard(func() (struct{}, error) { return struct{}{}, x.ch.EnableNotifications(nil) })
 		c.mu.Lock()

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/godbus/dbus/v5"
+	"tinygo.org/x/bluetooth"
 )
 
 func TestAddrRoundTrip(t *testing.T) {
@@ -60,5 +61,41 @@ func TestGuardRecoversPanic(t *testing.T) {
 	t.Parallel()
 	if _, err := guard(func() (int, error) { panic("DiscoverServices exploded") }); err == nil || !strings.Contains(err.Error(), "exploded") {
 		t.Fatalf("panic not converted: %v", err)
+	}
+}
+
+func TestLocalErrNotConnectedMessage(t *testing.T) {
+	t.Parallel()
+	for _, msg := range []string{"Not connected", "GDBus.Error:org.bluez.Error.Failed: Not connected"} {
+		if e := localErr("read", errors.New(msg)); !errors.Is(e, ErrDisconnected) {
+			t.Errorf("%q should wrap ErrDisconnected: %v", msg, e)
+		}
+	}
+}
+
+// closeTwice mimics tinygo's StopScan: close without a lock, so a second call panics.
+func TestStopScanTreatsDoubleClosePanicAsStopped(t *testing.T) {
+	t.Parallel()
+	ch := make(chan struct{})
+	stop := func() (stopped bool) { // same shape as localTransport.stopScan
+		defer func() {
+			if recover() != nil {
+				stopped = true
+			}
+		}()
+		close(ch)
+		return false
+	}
+	stop()
+	if !stop() {
+		t.Fatal("double close panic not reported as stopped")
+	}
+}
+
+func TestStopScanIdleAdapter(t *testing.T) {
+	t.Parallel()
+	lt := &localTransport{ad: bluetooth.NewAdapter("hci-test")}
+	if lt.stopScan() {
+		t.Fatal("stopScan on an idle adapter must report not stopped")
 	}
 }

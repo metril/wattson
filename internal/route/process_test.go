@@ -305,3 +305,11 @@ func TestSmoothingHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessLengthSnapsToGrid(t *testing.T) {
+	t.Parallel()
+	p := mustProcess(t, Synthetic([]Segment{{LengthM: 1000}, {LengthM: 1000, GradePct: 6}}))
+	if p.LengthM != 2000 || p.Len() != 201 || p.DistAt(p.Len()-1) != 2000 {
+		t.Fatalf("length %v samples %d", p.LengthM, p.Len())
+	}
+}

@@ -183,7 +183,12 @@ func Process(pts []Point) (*Profile, error) {
 	case total > MaxLengthM:
 		return nil, ErrTooLong
 	}
+	// Snap to the grid when within 1 cm of a whole number of steps, so the
+	// length is exactly (n-1)*StepM (float haversine sums are not).
 	length := total
+	if r := math.Round(length/StepM) * StepM; math.Abs(length-r) <= 0.01 {
+		length = r
+	}
 
 	// 2. Elevation gaps.
 	if err := fillElevation(kept, dist); err != nil {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/engine"
 	"github.com/metril/wattson/internal/ridectl"
+	"github.com/metril/wattson/internal/store"
 )
 
 // riderOf returns the first rider ID of the client's user.
@@ -521,5 +523,46 @@ func TestStartUnknownRoute(t *testing.T) {
 	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "route_id": 999})
 	if resp.StatusCode != 404 || errCode(t, b) != "route_not_found" {
 		t.Fatalf("unknown route: %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestPowerModelEndpoints(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	read := ts.mintToken(t, "reader", false, "read")
+	// idle: the model of the configured bike
+	resp, b := ts.do(t, admin, "GET", "/api/bike/power-model", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get: %d %s", resp.StatusCode, b)
+	}
+	info := decode[ridectl.PowerModelInfo](t, b)
+	if !info.Seeded || info.Samples != 0 || info.BikeKey != "sim" || len(info.WattsAt80) != 16 || info.WattsAt80[0] != 50 {
+		t.Errorf("idle info = %+v", info)
+	}
+	// connected: sized to the bound rider's levels; a read token may read
+	ts.connectSim(t, admin)
+	if resp, b := ts.do(t, nil, "GET", "/api/bike/power-model", nil, "Authorization", "Bearer "+read); resp.StatusCode != 200 {
+		t.Errorf("read token get: %d %s", resp.StatusCode, b)
+	}
+	if resp, b := ts.do(t, nil, "DELETE", "/api/bike/power-model", nil, "Authorization", "Bearer "+read); resp.StatusCode != 403 {
+		t.Errorf("read token delete: %d %s", resp.StatusCode, b)
+	}
+	if resp, b := ts.do(t, admin, "DELETE", "/api/bike/power-model", nil); resp.StatusCode != 204 {
+		t.Errorf("admin delete: %d %s", resp.StatusCode, b)
+	}
+	if _, err := ts.Store.PowerModel(t.Context(), "sim"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("stored row after delete: %v", err)
+	}
+}
+
+func TestPowerModelNoBikeManager503(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withoutBike())
+	admin := ts.setupAdmin(t)
+	for _, m := range []string{"GET", "DELETE"} {
+		if resp, b := ts.do(t, admin, m, "/api/bike/power-model", nil); resp.StatusCode != 503 {
+			t.Errorf("%s: %d %s", m, resp.StatusCode, b)
+		}
 	}
 }

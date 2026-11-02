@@ -152,3 +152,10 @@ func (m *PowerModel) State() PowerModelState {
 	defer m.mu.Unlock()
 	return m.s
 }
+
+// Reset returns the model to its seed state in place.
+func (m *PowerModel) Reset() {
+	m.mu.Lock()
+	m.s = SeedState()
+	m.mu.Unlock()
+}

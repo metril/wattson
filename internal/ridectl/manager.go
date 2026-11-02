@@ -6,6 +6,7 @@ package ridectl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"github.com/metril/wattson/internal/sensors"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
+	"github.com/metril/wattson/internal/workout"
 )
 
 var (
@@ -41,6 +43,9 @@ var (
 
 	// ErrRouteNotFound is returned by StartRoute (and a Deps.LoadRoute) for a route that does not exist.
 	ErrRouteNotFound = errors.New("ridectl: route not found")
+
+	// ErrWorkoutNotFound is returned by StartWorkout (and a Deps.LoadWorkout) for a workout that does not exist or is no longer valid.
+	ErrWorkoutNotFound = errors.New("ridectl: workout not found")
 )
 
 // Deps are the manager's collaborators; every func has a production default.
@@ -51,6 +56,8 @@ type Deps struct {
 	ProbeESPHome func(ctx context.Context, hostport, key string, slotsWait time.Duration) (blue.ProxyStatus, error) // default blue.ProbeESPHome; diagnostics only, never subscribes
 	SimDial      func(sim.Config) bike.Dial                                                                         // default sim.Dial
 	LoadRoute    func(ctx context.Context, id int64) (*route.Profile, error)                                        // route for StartRoute; ErrRouteNotFound when missing; see StoreRoutes
+	LoadWorkout  func(ctx context.Context, id int64) (store.Workout, error)                                         // workout for StartWorkout; ErrWorkoutNotFound when missing; see StoreWorkouts
+	PowerModels  PowerModelStore                                                                                    // persists the learned power model per bike; nil keeps it in memory only
 	TickEvery    time.Duration                                                                                      // engine tick period; default 1s
 	SimPeriod    time.Duration                                                                                      // simulator telemetry period; default 1s
 	OpenHA       func(ctx context.Context, base, token string) (*hass.Client, error)                                // default hass.Dial(Options{})
@@ -101,6 +108,12 @@ type conn struct {
 	cancel context.CancelFunc
 	done   chan struct{}  // closed after the connection is fully torn down
 	tr     blue.Transport // shared Bluetooth transport; nil when nothing uses Bluetooth
+
+	// The learned power model of this bike: loaded at connect, shared by every
+	// engine of the connection and saved whenever an engine's Run returns.
+	key    string
+	model  *bike.PowerModel
+	savedN int // sample count already stored; guarded by Manager.mu
 
 	// Heart rate source, set by startHR before the first engine and stopped by finish.
 	hrMon    sensors.Monitor
@@ -217,6 +230,9 @@ func (m *Manager) Connect(ctx context.Context, r store.Rider) (Status, error) {
 	r.MinLevel = max(r.MinLevel, 1)
 	r.MaxLevel = max(r.MaxLevel, r.MinLevel)
 
+	key := BikeKey(s)
+	model, savedN := m.loadModel(ctx, key)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -227,7 +243,7 @@ func (m *Manager) Connect(ctx context.Context, r store.Rider) (Status, error) {
 	}
 	cctx, cancel := context.WithCancel(m.root)
 	c := &conn{rider: r, plan: p, ctx: cctx, cancel: cancel, done: make(chan struct{}), tr: m.sharedFor(p),
-		state: engine.StateConnecting, lastActive: time.Now()}
+		key: key, model: model, savedN: savedN, state: engine.StateConnecting, lastActive: time.Now()}
 	m.cur = c
 	m.pushLocked(c)
 	m.wg.Add(1)
@@ -329,22 +345,61 @@ func (m *Manager) RouteInUse(id int64) bool {
 	return id != 0 && tk.RouteID == id && (tk.State == engine.StateRiding || tk.State == engine.StatePaused)
 }
 
+// WorkoutInUse reports whether workout id is being ridden (riding or paused).
+// The workouts API uses it to refuse deleting that workout (409 workout_in_use).
+func (m *Manager) WorkoutInUse(id int64) bool {
+	tk := m.Snapshot()
+	return id != 0 && tk.WorkoutID == id && (tk.State == engine.StateRiding || tk.State == engine.StatePaused)
+}
+
+// target is the connection a start command was issued against.
+type target struct {
+	c     *conn
+	eng   *engine.Engine
+	rider store.Rider
+	model *bike.PowerModel
+}
+
+// startTarget returns the live connection for a start command: ErrNoBike without
+// one, engine.ErrBadState unless the bike is ready.
+func (m *Manager) startTarget() (target, error) {
+	m.mu.Lock()
+	c := m.cur
+	if c == nil || c.eng == nil || c.releasing {
+		m.mu.Unlock()
+		return target{}, ErrNoBike
+	}
+	t := target{c: c, eng: c.eng, rider: c.rider, model: c.model}
+	m.mu.Unlock()
+	if t.eng.Snapshot().State != engine.StateReady {
+		return target{}, engine.ErrBadState
+	}
+	return t, nil
+}
+
+// startMode starts mode on t. The bike may have been released (or swapped for
+// a new connection with a possibly different rider) while the start's inputs
+// loaded.
+func (m *Manager) startMode(ctx context.Context, t target, mode engine.Mode) error {
+	m.mu.Lock()
+	if m.cur != t.c || t.c.eng != t.eng || t.c.releasing {
+		m.mu.Unlock()
+		return ErrNoBike
+	}
+	t.c.lastActive = time.Now()
+	m.mu.Unlock()
+	return t.eng.Do(ctx, engine.Command{Kind: engine.CmdStart, Mode: mode})
+}
+
 // StartRoute starts a ride along the stored route with the rider bound at
 // connect (their gain, offset, downhill scale, range and lookahead). ErrNoBike
 // without a connection, engine.ErrBadState unless the bike is ready,
 // ErrRouteNotFound for an unknown route. The route is read once: deleting it
 // mid-ride does not affect the ride.
 func (m *Manager) StartRoute(ctx context.Context, routeID int64) error {
-	m.mu.Lock()
-	c := m.cur
-	if c == nil || c.eng == nil || c.releasing {
-		m.mu.Unlock()
-		return ErrNoBike
-	}
-	r, eng := c.rider, c.eng
-	m.mu.Unlock()
-	if eng.Snapshot().State != engine.StateReady {
-		return engine.ErrBadState
+	t, err := m.startTarget()
+	if err != nil {
+		return err
 	}
 	if m.d.LoadRoute == nil {
 		return ErrRouteNotFound
@@ -353,22 +408,76 @@ func (m *Manager) StartRoute(ctx context.Context, routeID int64) error {
 	if err != nil {
 		return err
 	}
-	// The bike may have been released (or swapped for a new connection with a
-	// possibly different rider) while the route loaded.
-	m.mu.Lock()
-	if m.cur != c || c.eng != eng || c.releasing {
-		m.mu.Unlock()
-		return ErrNoBike
-	}
-	c.lastActive = time.Now()
-	m.mu.Unlock()
-	return eng.Do(ctx, engine.Command{Kind: engine.CmdStart, Mode: engine.NewRouteMode(engine.RouteConfig{
+	r := t.rider
+	return m.startMode(ctx, t, engine.NewRouteMode(engine.RouteConfig{
 		ID:       routeID,
 		Course:   p,
 		Mapper:   engine.Mapper{Gain: r.Gain, Offset: r.OffsetLevel, DownhillScale: r.DownhillScale, Min: r.MinLevel, Max: r.MaxLevel},
 		Smoother: engine.DefaultSmoother(r.MinLevel, r.MaxLevel),
 		LeadS:    r.LeadS,
-	})})
+	}))
+}
+
+// StartWorkout starts the stored interval or ERG workout with the rider bound
+// at connect: blocks are resolved against the rider once, so editing or
+// deleting the workout mid-ride does not affect the ride. ErrNoBike without a
+// connection, engine.ErrBadState unless the bike is ready, ErrWorkoutNotFound
+// for an unknown workout or one whose stored blocks no longer validate.
+func (m *Manager) StartWorkout(ctx context.Context, id int64) error {
+	t, err := m.startTarget()
+	if err != nil {
+		return err
+	}
+	if m.d.LoadWorkout == nil {
+		return ErrWorkoutNotFound
+	}
+	w, err := m.d.LoadWorkout(ctx, id)
+	if err != nil {
+		return err
+	}
+	var bs []workout.Block
+	if err := json.Unmarshal(w.Blocks, &bs); err != nil {
+		return fmt.Errorf("%w: stored blocks of workout %d: %v", ErrWorkoutNotFound, id, err)
+	}
+	typ := workout.Type(w.Type)
+	if err := workout.Validate(typ, bs); err != nil {
+		return fmt.Errorf("%w: workout %d is invalid: %v", ErrWorkoutNotFound, id, err)
+	}
+	r := t.rider
+	blocks := workout.Resolve(typ, bs, r)
+	if typ == workout.Erg {
+		return m.startMode(ctx, t, engine.NewErgMode(engine.ErgConfig{WorkoutID: id, Blocks: blocks, Model: t.model,
+			Multiplier: r.PowerMultiplier, MinLevel: r.MinLevel, MaxLevel: r.MaxLevel}))
+	}
+	return m.startMode(ctx, t, engine.NewIntervalMode(id, blocks, r.MinLevel, r.MaxLevel))
+}
+
+// StartErg starts a free ERG ride holding watts (engine.MinTargetW to
+// engine.MaxTargetW; engine.ErrBadValue outside it); change the target with
+// the set_target_power command. ErrNoBike without a connection,
+// engine.ErrBadState unless the bike is ready.
+func (m *Manager) StartErg(ctx context.Context, watts int) error {
+	if watts < engine.MinTargetW || watts > engine.MaxTargetW {
+		return engine.ErrBadValue
+	}
+	t, err := m.startTarget()
+	if err != nil {
+		return err
+	}
+	r := t.rider
+	return m.startMode(ctx, t, engine.NewErgMode(engine.ErgConfig{TargetW: float64(watts), Model: t.model,
+		Multiplier: r.PowerMultiplier, MinLevel: r.MinLevel, MaxLevel: r.MaxLevel}))
+}
+
+// StoreWorkouts returns a Deps.LoadWorkout that reads workouts from the store.
+func StoreWorkouts(st *store.Store) func(context.Context, int64) (store.Workout, error) {
+	return func(ctx context.Context, id int64) (store.Workout, error) {
+		w, err := st.Workout(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return store.Workout{}, ErrWorkoutNotFound
+		}
+		return w, err
+	}
 }
 
 // StoreRoutes returns a Deps.LoadRoute that decodes routes from the store.
@@ -482,7 +591,9 @@ func (m *Manager) run(c *conn) {
 			StartLevel: clamp(int(math.Round(c.rider.OffsetLevel)), c.rider.MinLevel, c.rider.MaxLevel),
 			Physics: engine.Physics{MassKg: c.rider.WeightKg + c.rider.BikeKg, CdA: c.rider.CdA,
 				Crr: c.rider.Crr, Rho: 1.225},
-			TickEvery: m.d.TickEvery,
+			TickEvery:       m.d.TickEvery,
+			PowerModel:      c.model,
+			PowerMultiplier: c.rider.PowerMultiplier,
 		})
 		ticks, unsub := eng.Subscribe(256)
 		c.eng, c.tap = eng, tp
@@ -502,6 +613,7 @@ func (m *Manager) run(c *conn) {
 		<-fwdDone
 		<-tp.done
 		cerr := eng.CloseErr()
+		m.saveModel(c)
 
 		m.mu.Lock()
 		releasing := c.releasing

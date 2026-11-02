@@ -130,7 +130,9 @@ func Validate(t Type, bs []Block) error {
 
 // Resolve turns validated blocks into engine timeline blocks for rider r.
 // Interval levels are clamped to [max(1, r.MinLevel), r.MaxLevel] so a
-// resolved workout never asks for level 0.
+// resolved workout never asks for level 0. ERG targets are clamped to the
+// engine's accepted range (engine.MinTargetW..engine.MaxTargetW), so a rider
+// with no FTP or a very high one still gets a target the engine accepts.
 func Resolve(t Type, bs []Block, r store.Rider) []engine.WorkoutBlock {
 	lo := max(1, r.MinLevel)
 	hi := max(lo, r.MaxLevel)
@@ -153,6 +155,7 @@ func Resolve(t Type, bs []Block, r store.Rider) []engine.WorkoutBlock {
 			case b.FTPPct != nil:
 				wb.TargetW = math.Round(float64(*b.FTPPct) * float64(r.FTPW) / 100)
 			}
+			wb.TargetW = math.Max(engine.MinTargetW, math.Min(engine.MaxTargetW, wb.TargetW))
 		}
 		out[i] = wb
 	}

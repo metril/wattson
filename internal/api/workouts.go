@@ -21,7 +21,7 @@ type BlockIO struct {
 	Level       *int   `json:"level,omitempty" minimum:"1" maximum:"32" doc:"Interval only: absolute resistance level, 1 to 32 (clamped to the rider's min and max level when ridden)."`
 	LevelOffset *int   `json:"level_offset,omitempty" minimum:"-31" maximum:"31" doc:"Interval only: resistance level relative to the rider's flat-road offset level, -31 to 31 (clamped to the rider's min and max level when ridden)."`
 	PowerW      *int   `json:"power_w,omitempty" minimum:"50" maximum:"1000" doc:"ERG only: target power in watts, 50 to 1000."`
-	FTPPct      *int   `json:"ftp_pct,omitempty" minimum:"20" maximum:"200" doc:"ERG only: target power as a percent of the rider's FTP, 20 to 200."`
+	FTPPct      *int   `json:"ftp_pct,omitempty" minimum:"20" maximum:"200" doc:"ERG only: target power as a percent of the rider's FTP, 20 to 200; the resulting target is clamped to 50 to 1000 W when ridden."`
 	Cadence     string `json:"cadence,omitempty" maxLength:"32" doc:"Cadence hint shown to the rider, for example 90-100 (rpm); at most 32 characters. Not enforced."`
 	Label       string `json:"label,omitempty" maxLength:"40" doc:"Short block label, at most 40 characters."`
 }

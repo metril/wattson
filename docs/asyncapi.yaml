@@ -582,7 +582,7 @@
         "additionalProperties": false,
         "properties": {
           "command": {
-            "description": "What to do: start, pause, resume or stop the ride, set_level (to value), level_delta (by value) or set_target_power (not supported yet).",
+            "description": "What to do: start, pause, resume or stop the ride, set_level (to value), level_delta (by value; in ERG, steps of 10 W of target) or set_target_power (free ERG target, value in watts).",
             "enum": [
               "start",
               "pause",
@@ -603,6 +603,11 @@
             "format": "int64",
             "type": "integer"
           },
+          "target_power_w": {
+            "description": "Free ERG target, W (50-1000); only with start. Hold this power until stopped.",
+            "format": "int64",
+            "type": "integer"
+          },
           "type": {
             "description": "Message kind: always command.",
             "enum": [
@@ -611,7 +616,12 @@
             "type": "string"
           },
           "value": {
-            "description": "Resistance level for set_level, change in levels for level_delta; ignored by the other commands.",
+            "description": "Resistance level for set_level, change in levels for level_delta, or the target in watts (50 to 1000) for set_target_power; ignored by the other commands.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "workout_id": {
+            "description": "Workout to ride; only with start. Its blocks are resolved for the rider bound to the bike when the ride starts.",
             "format": "int64",
             "type": "integer"
           }
@@ -628,7 +638,7 @@
         "properties": {
           "error": {
             "$ref": "#/components/schemas/ErrorBody",
-            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, route_not_found, internal_error."
+            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, invalid_value, no_bike, bad_state, route_not_found, workout_not_found, internal_error."
           },
           "id": {
             "description": "The id of the failed command; absent when the message could not be parsed.",

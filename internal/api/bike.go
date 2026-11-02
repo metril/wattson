@@ -16,6 +16,10 @@ type bikeOut struct {
 	Body ridectl.Status
 }
 
+type powerModelOut struct {
+	Body ridectl.PowerModelInfo
+}
+
 type connectIn struct {
 	Body struct {
 		RiderID int64 `json:"rider_id" minimum:"1" doc:"ID of one of your riders; the bike is bound to this rider until released."`
@@ -186,5 +190,38 @@ func (d Deps) registerBike(api huma.API) {
 				devs = []ridectl.Device{}
 			}
 			return &scanOut{Body: ScanOut{Devices: devs}}, nil
+		})
+
+	register(api, route{Method: http.MethodGet, Path: "/api/bike/power-model", ID: "getPowerModel", Tag: "bike",
+		Summary: "Get the learned power model",
+		Description: "Returns the power model Wattson has learned for the connected bike (or, when idle, for the bike named in the settings): " +
+			"the fitted coefficients, how many ride samples it learned from, whether it is still the built-in starting model, and the modelled watts at 80 rpm for each level. " +
+			"ERG mode uses it to pick the resistance level for a target power.",
+		Scope: auth.ScopeRead, Errors: []int{http.StatusServiceUnavailable}},
+		func(ctx context.Context, _ *noIn) (*powerModelOut, error) {
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			info, err := m.PowerModelInfo(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return &powerModelOut{Body: info}, nil
+		})
+
+	register(api, route{Method: http.MethodDelete, Path: "/api/bike/power-model", ID: "resetPowerModel", Tag: "bike",
+		Summary:     "Reset the learned power model",
+		Description: "Deletes the stored power model of the connected (or, when idle, the configured) bike. A connected bike's model returns to the built-in starting model at once and learns again from the next ride.",
+		Scope:       auth.ScopeAdmin, Status: http.StatusNoContent, Errors: []int{http.StatusServiceUnavailable}},
+		func(ctx context.Context, _ *noIn) (*noContent, error) {
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			if err := m.ResetPowerModel(ctx); err != nil {
+				return nil, err
+			}
+			return &noContent{}, nil
 		})
 }

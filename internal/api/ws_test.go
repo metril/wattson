@@ -257,18 +257,73 @@ func TestWSErrorsNoBikeAndBadState(t *testing.T) {
 	}
 }
 
-func TestWSUnknownAndUnsupported(t *testing.T) {
+func TestWSUnknownCommand(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)
 	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
 	conn := ts.mustWS(t, admin, nil)
 	wsRead(t, conn)
-	for cmd, code := range map[string]string{"boost": "unknown_command", "set_target_power": "unsupported_command"} {
-		wsCmd(t, conn, cmd, cmd, 200)
-		m := wsReadUntil(t, conn, "error for "+cmd, func(m wsMsg) bool { return m.str("type") == "error" })
-		if m.str("id") != cmd || m.sub("error").str("code") != code {
-			t.Errorf("%s: %v, want code %s", cmd, m, code)
+	wsCmd(t, conn, "boost", "boost", 200)
+	m := wsReadUntil(t, conn, "error", func(m wsMsg) bool { return m.str("type") == "error" })
+	if m.str("id") != "boost" || m.sub("error").str("code") != "unknown_command" {
+		t.Errorf("boost: %v", m)
+	}
+	// set_target_power is a known command, but a free ride has no target
+	wsCmd(t, conn, "stp", "set_target_power", 200)
+	m = wsReadUntil(t, conn, "error", func(m wsMsg) bool { return m.str("type") == "error" })
+	if m.str("id") != "stp" || m.sub("error").str("code") != "bad_state" {
+		t.Errorf("set_target_power in free ride: %v", m)
+	}
+}
+
+func TestWSSetTargetPower(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	conn := ts.mustWS(t, admin, nil)
+	wsRead(t, conn)
+	wsSend(t, conn, `{"type":"command","id":"e0","command":"start","target_power_w":200}`)
+	if m := wsReadUntil(t, conn, "ack", func(m wsMsg) bool { return m.str("type") == "ack" || m.str("type") == "error" }); m.str("type") != "ack" || m.str("id") != "e0" {
+		t.Fatalf("start erg = %v", m)
+	}
+	wsCmd(t, conn, "e1", "set_target_power", 260)
+	if m := wsReadUntil(t, conn, "ack", func(m wsMsg) bool { return m.str("type") == "ack" || m.str("type") == "error" }); m.str("type") != "ack" || m.str("id") != "e1" {
+		t.Fatalf("set_target_power = %v", m)
+	}
+	wsReadUntil(t, conn, "tick with target 260", func(m wsMsg) bool {
+		w, _ := m.sub("tick")["target_power_w"].(float64)
+		return m.str("type") == "tick" && w == 260
+	})
+	wsCmd(t, conn, "e2", "set_target_power", 20)
+	if m := wsReadUntil(t, conn, "error", func(m wsMsg) bool { return m.str("type") == "error" }); m.str("id") != "e2" || m.sub("error").str("code") != "invalid_value" {
+		t.Errorf("set_target_power 20 = %v", m)
+	}
+}
+
+func TestWSStartTargetsValidation(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	conn := ts.mustWS(t, admin, nil)
+	wsRead(t, conn)
+	for id, raw := range map[string]string{
+		"two":   `{"type":"command","id":"two","command":"start","workout_id":1,"target_power_w":200}`,
+		"wk":    `{"type":"command","id":"wk","command":"pause","workout_id":1}`,
+		"tp":    `{"type":"command","id":"tp","command":"pause","target_power_w":200}`,
+		"three": `{"type":"command","id":"three","command":"start","route_id":1,"workout_id":1,"target_power_w":200}`,
+	} {
+		wsSend(t, conn, raw)
+		m := wsReadUntil(t, conn, "error for "+id, func(m wsMsg) bool { return m.str("type") == "error" })
+		if m.str("id") != id || m.sub("error").str("code") != "invalid_request" {
+			t.Errorf("%s: %v", id, m)
 		}
+	}
+	wsSend(t, conn, `{"type":"command","id":"nw","command":"start","workout_id":999}`)
+	if m := wsReadUntil(t, conn, "error", func(m wsMsg) bool { return m.str("type") == "error" }); m.sub("error").str("code") != "workout_not_found" {
+		t.Errorf("unknown workout = %v", m)
 	}
 }
 

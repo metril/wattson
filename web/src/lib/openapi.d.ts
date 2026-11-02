@@ -276,6 +276,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bike/power-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the learned power model
+         * @description Returns the power model Wattson has learned for the connected bike (or, when idle, for the bike named in the settings): the fitted coefficients, how many ride samples it learned from, whether it is still the built-in starting model, and the modelled watts at 80 rpm for each level. ERG mode uses it to pick the resistance level for a target power. Requires the `read` scope.
+         */
+        get: operations["getPowerModel"];
+        put?: never;
+        post?: never;
+        /**
+         * Reset the learned power model
+         * @description Deletes the stored power model of the connected (or, when idle, the configured) bike. A connected bike's model returns to the built-in starting model at once and learns again from the next ride. Requires the `admin` scope.
+         */
+        delete: operations["resetPowerModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bike/release": {
         parameters: {
             query?: never;
@@ -451,7 +475,7 @@ export interface paths {
         put?: never;
         /**
          * Send a ride command
-         * @description Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. `start` with `route_id` rides that route with the rider bound to the bike; the ride ends by itself at the route's end. `route_id` with any other command is a 400 `invalid_request`. Returns 404 `route_not_found` for an unknown route, 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.
+         * @description Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. `start` with `route_id` rides that route with the rider bound to the bike; the ride ends by itself at the route's end. `start` with `workout_id` rides that interval or ERG workout, resolved for the bound rider when the ride starts (editing it later does not change this ride); the ride ends by itself after the last block. `start` with `target_power_w` rides free ERG at that power until stopped; `set_target_power` (value in watts) changes it. `start` takes at most one of `route_id`, `workout_id` and `target_power_w`, and these fields with any other command are a 400 `invalid_request`. Returns 404 `route_not_found` or `workout_not_found` for an unknown route or workout, 400 `invalid_value` for a target power outside 50 to 1000 W, 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.
          */
         post: operations["rideCommand"];
         delete?: never;
@@ -1272,7 +1296,7 @@ export interface components {
             duration_s: number;
             /**
              * Format: int64
-             * @description ERG only: target power as a percent of the rider's FTP, 20 to 200.
+             * @description ERG only: target power as a percent of the rider's FTP, 20 to 200; the resulting target is clamped to 50 to 1000 W when ridden.
              */
             ftp_pct?: number;
             /** @description Short block label, at most 40 characters. */
@@ -1295,10 +1319,10 @@ export interface components {
         };
         CommandInBody: {
             /**
-             * @description Ride command: start, pause, resume, stop, set_level (to value) or level_delta (by value).
+             * @description Ride command: start, pause, resume, stop, set_level (to value), level_delta (by value) or set_target_power (free ERG target, value in watts).
              * @enum {string}
              */
-            command: "start" | "pause" | "resume" | "stop" | "set_level" | "level_delta";
+            command: "start" | "pause" | "resume" | "stop" | "set_level" | "level_delta" | "set_target_power";
             /**
              * Format: int64
              * @description Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike.
@@ -1306,9 +1330,19 @@ export interface components {
             route_id?: number;
             /**
              * Format: int64
-             * @description Resistance level for set_level, or the change in levels for level_delta; ignored by other commands.
+             * @description Free ERG target, W (50-1000); only with start. Hold this power until stopped.
+             */
+            target_power_w?: number;
+            /**
+             * Format: int64
+             * @description Resistance level for set_level, the change in levels for level_delta (in ERG, steps of 10 W of target), or the target in watts (50 to 1000) for set_target_power; ignored by other commands.
              */
             value?: number;
+            /**
+             * Format: int64
+             * @description Workout to ride; only with start. Its blocks are resolved for the rider bound to the bike when the ride starts.
+             */
+            workout_id?: number;
         };
         ConnectInBody: {
             /**
@@ -1810,6 +1844,29 @@ export interface components {
             disabled?: boolean;
             /** @description Grant or revoke the admin scope. */
             is_admin?: boolean;
+        };
+        PowerModelInfo: {
+            /**
+             * Format: double
+             * @description Fitted intercept: watts per rpm at level 0.
+             */
+            a: number;
+            /**
+             * Format: double
+             * @description Fitted slope: watts per rpm per resistance level.
+             */
+            b: number;
+            /** @description Bike the model belongs to: sim, ble:<ADDRESS> or ha:<resistance entity>. */
+            bike_key: string;
+            /**
+             * Format: int64
+             * @description Number of settled ride samples the fit has learned from.
+             */
+            samples: number;
+            /** @description True while the model has learned nothing yet and still equals the built-in starting model. */
+            seeded: boolean;
+            /** @description Modelled bike power in watts at 80 rpm for levels 1 up to the bound rider's maximum level (16 when no rider is bound). Index 0 is level 1. */
+            watts_at_80: number[];
         };
         ProfileOut: {
             /** @description Smoothed elevation of each sample in metres, 1 decimal. */
@@ -3773,6 +3830,116 @@ export interface operations {
             };
             /** @description Failed Dependency */
             424: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPowerModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PowerModelInfo"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resetPowerModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

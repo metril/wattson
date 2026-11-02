@@ -2,8 +2,10 @@ package api
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func ergBody() map[string]any {
@@ -100,6 +102,13 @@ func TestWorkoutValidation(t *testing.T) {
 	if resp.StatusCode != 400 {
 		t.Errorf("invalid put: %d", resp.StatusCode)
 	}
+	resp, b = ts.do(t, admin, "GET", fmt.Sprintf("/api/workouts/%d", w.ID), nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get after invalid put: %d %s", resp.StatusCode, b)
+	}
+	if got := decode[WorkoutOut](t, b); !reflect.DeepEqual(got, w) {
+		t.Errorf("stored workout changed by an invalid PUT:\n got %+v\nwant %+v", got, w)
+	}
 }
 
 func TestWorkoutsOwnership(t *testing.T) {
@@ -187,5 +196,124 @@ func TestDeleteWorkoutInUseHook(t *testing.T) {
 	resp, b := ts.do(t, admin, "DELETE", fmt.Sprintf("/api/workouts/%d", w.ID), nil)
 	if resp.StatusCode != 409 || errCode(t, b) != "workout_in_use" {
 		t.Errorf("delete in use: %d %s", resp.StatusCode, b)
+	}
+}
+
+func intervalBody() map[string]any {
+	return map[string]any{"name": "Two steps", "type": "interval", "blocks": []map[string]any{
+		{"duration_s": 60, "level": 4}, {"duration_s": 60, "level": 9}}}
+}
+
+func TestRideStartWorkout(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	_, b := ts.do(t, admin, "POST", "/api/workouts", intervalBody())
+	w := decode[WorkoutOut](t, b)
+	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "workout_id": w.ID})
+	if resp.StatusCode != 204 {
+		t.Fatalf("start workout: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "workout ride", func() bool {
+		tk := ts.ride(t, admin)
+		return tk.State == "riding" && tk.WorkoutID == w.ID && tk.Mode == "interval" && tk.BlockCount == 2
+	})
+}
+
+func TestRideStartErg(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "target_power_w": 20})
+	if resp.StatusCode != 400 || errCode(t, b) != "invalid_value" {
+		t.Fatalf("start erg 20 W: %d %s", resp.StatusCode, b)
+	}
+	resp, b = ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "target_power_w": 200})
+	if resp.StatusCode != 204 {
+		t.Fatalf("start erg: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "erg ride", func() bool {
+		tk := ts.ride(t, admin)
+		return tk.State == "riding" && tk.Mode == "erg" && tk.TargetPowerW == 200
+	})
+	if resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "set_target_power", "value": 240}); resp.StatusCode != 204 {
+		t.Fatalf("set_target_power: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "target 240", func() bool { return ts.ride(t, admin).TargetPowerW == 240 })
+}
+
+func TestStartTwoTargets(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	for name, body := range map[string]map[string]any{
+		"workout+power": {"command": "start", "workout_id": 1, "target_power_w": 200},
+		"route+workout": {"command": "start", "route_id": 1, "workout_id": 1},
+		"pause+workout": {"command": "pause", "workout_id": 1},
+		"pause+power":   {"command": "pause", "target_power_w": 200},
+	} {
+		resp, b := ts.do(t, admin, "POST", "/api/ride/command", body)
+		if resp.StatusCode != 400 || errCode(t, b) != "invalid_request" {
+			t.Errorf("%s: %d %s", name, resp.StatusCode, b)
+		}
+	}
+}
+
+func TestStartUnknownWorkout(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "workout_id": 999})
+	if resp.StatusCode != 404 || errCode(t, b) != "workout_not_found" {
+		t.Fatalf("unknown workout: %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestDeleteWorkoutInUse(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t) // no WorkoutInUse override: the Bike's is used
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	_, b := ts.do(t, admin, "POST", "/api/workouts", intervalBody())
+	w := decode[WorkoutOut](t, b)
+	if resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "workout_id": w.ID}); resp.StatusCode != 204 {
+		t.Fatalf("start: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "riding", func() bool { return ts.ride(t, admin).State == "riding" })
+	path := fmt.Sprintf("/api/workouts/%d", w.ID)
+	if resp, b := ts.do(t, admin, "DELETE", path, nil); resp.StatusCode != 409 || errCode(t, b) != "workout_in_use" {
+		t.Fatalf("delete while riding: %d %s", resp.StatusCode, b)
+	}
+	if resp, b := ts.command(t, admin, "stop", 0); resp.StatusCode != 204 {
+		t.Fatalf("stop: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "ready", func() bool { return ts.ride(t, admin).State != "riding" && ts.bikeStatus(t, admin).State == "ready" })
+	if resp, _ := ts.do(t, admin, "DELETE", path, nil); resp.StatusCode != 204 {
+		t.Errorf("delete after stop: %d", resp.StatusCode)
+	}
+}
+
+func TestEditWorkoutDuringRideNoEffect(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	_, b := ts.do(t, admin, "POST", "/api/workouts", intervalBody())
+	w := decode[WorkoutOut](t, b)
+	if resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "workout_id": w.ID}); resp.StatusCode != 204 {
+		t.Fatalf("start: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "riding", func() bool { return ts.ride(t, admin).State == "riding" })
+	one := map[string]any{"name": "One", "type": "interval", "blocks": []map[string]any{{"duration_s": 60, "level": 2}}}
+	if resp, b := ts.do(t, admin, "PUT", fmt.Sprintf("/api/workouts/%d", w.ID), one); resp.StatusCode != 200 {
+		t.Fatalf("put: %d %s", resp.StatusCode, b)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if tk := ts.ride(t, admin); tk.BlockCount != 2 {
+		t.Errorf("block_count = %d after an edit, want the 2 resolved at start", tk.BlockCount)
 	}
 }

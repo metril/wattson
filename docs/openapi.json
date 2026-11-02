@@ -242,7 +242,7 @@
             "type": "integer"
           },
           "ftp_pct": {
-            "description": "ERG only: target power as a percent of the rider's FTP, 20 to 200.",
+            "description": "ERG only: target power as a percent of the rider's FTP, 20 to 200; the resulting target is clamped to 50 to 1000 W when ridden.",
             "format": "int64",
             "maximum": 200,
             "minimum": 20,
@@ -284,14 +284,15 @@
         "additionalProperties": false,
         "properties": {
           "command": {
-            "description": "Ride command: start, pause, resume, stop, set_level (to value) or level_delta (by value).",
+            "description": "Ride command: start, pause, resume, stop, set_level (to value), level_delta (by value) or set_target_power (free ERG target, value in watts).",
             "enum": [
               "start",
               "pause",
               "resume",
               "stop",
               "set_level",
-              "level_delta"
+              "level_delta",
+              "set_target_power"
             ],
             "type": "string"
           },
@@ -300,8 +301,18 @@
             "format": "int64",
             "type": "integer"
           },
+          "target_power_w": {
+            "description": "Free ERG target, W (50-1000); only with start. Hold this power until stopped.",
+            "format": "int64",
+            "type": "integer"
+          },
           "value": {
-            "description": "Resistance level for set_level, or the change in levels for level_delta; ignored by other commands.",
+            "description": "Resistance level for set_level, the change in levels for level_delta (in ERG, steps of 10 W of target), or the target in watts (50 to 1000) for set_target_power; ignored by other commands.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "workout_id": {
+            "description": "Workout to ride; only with start. Its blocks are resolved for the rider bound to the bike when the ride starts.",
             "format": "int64",
             "type": "integer"
           }
@@ -1509,6 +1520,51 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "PowerModelInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "description": "Fitted intercept: watts per rpm at level 0.",
+            "format": "double",
+            "type": "number"
+          },
+          "b": {
+            "description": "Fitted slope: watts per rpm per resistance level.",
+            "format": "double",
+            "type": "number"
+          },
+          "bike_key": {
+            "description": "Bike the model belongs to: sim, ble:\u003cADDRESS\u003e or ha:\u003cresistance entity\u003e.",
+            "type": "string"
+          },
+          "samples": {
+            "description": "Number of settled ride samples the fit has learned from.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "seeded": {
+            "description": "True while the model has learned nothing yet and still equals the built-in starting model.",
+            "type": "boolean"
+          },
+          "watts_at_80": {
+            "description": "Modelled bike power in watts at 80 rpm for levels 1 up to the bound rider's maximum level (16 when no rider is bound). Index 0 is level 1.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "bike_key",
+          "a",
+          "b",
+          "samples",
+          "seeded",
+          "watts_at_80"
+        ],
         "type": "object"
       },
       "ProfileOut": {
@@ -4755,6 +4811,137 @@
         ]
       }
     },
+    "/api/bike/power-model": {
+      "delete": {
+        "description": "Deletes the stored power model of the connected (or, when idle, the configured) bike. A connected bike's model returns to the built-in starting model at once and learns again from the next ride. Requires the `admin` scope.",
+        "operationId": "resetPowerModel",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reset the learned power model",
+        "tags": [
+          "bike"
+        ]
+      },
+      "get": {
+        "description": "Returns the power model Wattson has learned for the connected bike (or, when idle, for the bike named in the settings): the fitted coefficients, how many ride samples it learned from, whether it is still the built-in starting model, and the modelled watts at 80 rpm for each level. ERG mode uses it to pick the resistance level for a target power. Requires the `read` scope.",
+        "operationId": "getPowerModel",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PowerModelInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get the learned power model",
+        "tags": [
+          "bike"
+        ]
+      }
+    },
     "/api/bike/release": {
       "post": {
         "description": "Ends any ride, returns the bike to the rider's minimum level and closes the link. Idempotent: releasing an idle bike succeeds. Returns 424 `floor_unconfirmed` when the bike was released but could not be confirmed back at its minimum level; the rider must then lower the resistance at the console. Requires the `control` scope.",
@@ -5568,7 +5755,7 @@
     },
     "/api/ride/command": {
       "post": {
-        "description": "Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. `start` with `route_id` rides that route with the rider bound to the bike; the ride ends by itself at the route's end. `route_id` with any other command is a 400 `invalid_request`. Returns 404 `route_not_found` for an unknown route, 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.",
+        "description": "Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. `start` with `route_id` rides that route with the rider bound to the bike; the ride ends by itself at the route's end. `start` with `workout_id` rides that interval or ERG workout, resolved for the bound rider when the ride starts (editing it later does not change this ride); the ride ends by itself after the last block. `start` with `target_power_w` rides free ERG at that power until stopped; `set_target_power` (value in watts) changes it. `start` takes at most one of `route_id`, `workout_id` and `target_power_w`, and these fields with any other command are a 400 `invalid_request`. Returns 404 `route_not_found` or `workout_not_found` for an unknown route or workout, 400 `invalid_value` for a target power outside 50 to 1000 W, 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.",
         "operationId": "rideCommand",
         "requestBody": {
           "content": {

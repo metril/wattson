@@ -128,3 +128,18 @@ func TestResolve(t *testing.T) {
 		t.Errorf("erg = %+v", eg)
 	}
 }
+
+func TestResolveErgClamp(t *testing.T) {
+	t.Parallel()
+	bs := []workout.Block{{DurationS: 60, FTPPct: ip(100)}, erg(30, 1000)}
+	// FTP 0 (unset) would resolve to 0 W; the engine accepts at least 50 W.
+	lo := workout.Resolve(workout.Erg, bs, store.Rider{FTPW: 0})
+	if lo[0].TargetW != engine.MinTargetW || lo[1].TargetW != 1000 {
+		t.Errorf("FTP 0: %+v", lo)
+	}
+	// 200 % of a 900 W FTP is 1800 W; the engine accepts at most 1000 W.
+	hi := workout.Resolve(workout.Erg, []workout.Block{{DurationS: 60, FTPPct: ip(200)}}, store.Rider{FTPW: 900})
+	if hi[0].TargetW != engine.MaxTargetW {
+		t.Errorf("high FTP: %+v", hi)
+	}
+}

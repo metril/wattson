@@ -38,17 +38,18 @@ export type ServerMsg =
   | { type: 'ack'; id: string }
   | { type: 'error'; id?: string; error: { code: string; message: string; details?: { missing_tiles?: string[] } } };
 
-/** set_target_power exists in the protocol but is not supported yet. */
-export const COMMAND_NAMES = ['start', 'pause', 'resume', 'stop', 'set_level', 'level_delta'] as const;
+export const COMMAND_NAMES = ['start', 'pause', 'resume', 'stop', 'set_level', 'level_delta', 'set_target_power'] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
-/** The one message a client sends; route_id only accompanies start. */
+/** The one message a client sends; route_id, workout_id and target_power_w only accompany start, and at most one of them. */
 export type CommandMsg = {
   type: 'command';
   id: string;
   command: CommandName;
   value: number;
   route_id?: number;
+  workout_id?: number;
+  target_power_w?: number;
 };
 
 export const SERVER_MSG_TYPES = ['state', 'tick', 'bike', 'ack', 'error'] as const satisfies readonly ServerMsg['type'][];

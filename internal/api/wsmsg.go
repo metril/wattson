@@ -37,14 +37,16 @@ type WSAck struct {
 type WSError struct {
 	Type  string    `json:"type" enum:"error" doc:"Message kind: always error."`
 	ID    string    `json:"id,omitempty" doc:"The id of the failed command; absent when the message could not be parsed."`
-	Error ErrorBody `json:"error" doc:"What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, route_not_found, internal_error."`
+	Error ErrorBody `json:"error" doc:"What went wrong. Codes: invalid_request, forbidden, unknown_command, invalid_value, no_bike, bad_state, route_not_found, workout_not_found, internal_error."`
 }
 
 // WSCommand is the one message a client sends.
 type WSCommand struct {
-	Type    string `json:"type" enum:"command" doc:"Message kind: always command."`
-	ID      string `json:"id" doc:"Client-chosen identifier, echoed in the ack or error that answers this command."`
-	Command string `json:"command" enum:"start,pause,resume,stop,set_level,level_delta,set_target_power" doc:"What to do: start, pause, resume or stop the ride, set_level (to value), level_delta (by value) or set_target_power (not supported yet)."`
-	Value   int    `json:"value,omitempty" doc:"Resistance level for set_level, change in levels for level_delta; ignored by the other commands."`
-	RouteID int64  `json:"route_id,omitempty" doc:"Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike."`
+	Type         string `json:"type" enum:"command" doc:"Message kind: always command."`
+	ID           string `json:"id" doc:"Client-chosen identifier, echoed in the ack or error that answers this command."`
+	Command      string `json:"command" enum:"start,pause,resume,stop,set_level,level_delta,set_target_power" doc:"What to do: start, pause, resume or stop the ride, set_level (to value), level_delta (by value; in ERG, steps of 10 W of target) or set_target_power (free ERG target, value in watts)."`
+	Value        int    `json:"value,omitempty" doc:"Resistance level for set_level, change in levels for level_delta, or the target in watts (50 to 1000) for set_target_power; ignored by the other commands."`
+	RouteID      int64  `json:"route_id,omitempty" doc:"Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike."`
+	WorkoutID    int64  `json:"workout_id,omitempty" doc:"Workout to ride; only with start. Its blocks are resolved for the rider bound to the bike when the ride starts."`
+	TargetPowerW int    `json:"target_power_w,omitempty" doc:"Free ERG target, W (50-1000); only with start. Hold this power until stopped."`
 }

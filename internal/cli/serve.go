@@ -165,7 +165,8 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 		return s.General.PublicURL
 	}, logger)
 	client := &http.Client{Timeout: 15 * time.Second}
-	rd := ridectl.Deps{Settings: svc.Get, LoadRoute: ridectl.StoreRoutes(st), Logger: logger}
+	rd := ridectl.Deps{Settings: svc.Get, LoadRoute: ridectl.StoreRoutes(st),
+		LoadWorkout: ridectl.StoreWorkouts(st), PowerModels: st, Logger: logger}
 	if v, ok := serveTestHooks.Load(cfg.DataDir); ok {
 		h := v.(serveHooks)
 		rd.SimDial, rd.TickEvery, rd.SimPeriod = h.simDial, h.tickEvery, h.tickEvery

@@ -13,7 +13,6 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/metril/wattson/internal/auth"
-	"github.com/metril/wattson/internal/engine"
 )
 
 const (
@@ -299,22 +298,19 @@ func (s *wsSession) handle(data []byte) {
 		s.send(wsErr(m.ID, "forbidden", "missing required scope: control"))
 		return
 	}
-	if m.Command == "set_target_power" {
-		s.send(wsErr(m.ID, "unsupported_command", "set_target_power is not supported yet"))
-		return
-	}
 	kind, known := rideKinds[m.Command]
 	if !known {
 		s.send(wsErr(m.ID, "unknown_command", "unknown command: "+m.Command))
 		return
 	}
-	if m.RouteID != 0 && kind != engine.CmdStart {
-		s.send(wsErr(m.ID, "invalid_request", errRouteIDOnlyStart))
+	args := startArgs{RouteID: m.RouteID, WorkoutID: m.WorkoutID, TargetPowerW: m.TargetPowerW}
+	if msg := args.check(kind); msg != "" {
+		s.send(wsErr(m.ID, "invalid_request", msg))
 		return
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, wsCommandTimeout)
 	defer cancel()
-	if err := runCommand(ctx, s.d.Bike, kind, m.Value, m.RouteID); err != nil {
+	if err := runCommand(ctx, s.d.Bike, kind, m.Value, args); err != nil {
 		if _, code, msg, ok := commandFailure(err); ok {
 			s.send(wsErr(m.ID, code, msg))
 		} else {

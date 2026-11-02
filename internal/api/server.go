@@ -50,14 +50,13 @@ type Deps struct {
 	RouteInUse func(routeID int64) bool
 	// WorkoutInUse reports whether a workout is in use by the active ride;
 	// deleting that workout is refused with 409 workout_in_use. Nil means no
-	// workout is ever in use (the ride manager supplies it once it can ride
-	// workouts).
+	// workout is ever in use.
 	WorkoutInUse func(workoutID int64) bool
 	// Tiles downloads and lists BRouter map regions (segments). Nil disables
 	// the /api/maps endpoints (503) and the local tile check when drawing.
 	Tiles *maptiles.Manager
 	// Bike is the single bike manager the bike, ride and WebSocket endpoints
-	// drive. When RiderInUse or RouteInUse is nil, the Bike's is used.
+	// drive. When RiderInUse, RouteInUse or WorkoutInUse is nil, the Bike's is used.
 	Bike *ridectl.Manager
 	// Strava manages riders' Strava links. Nil disables the Strava endpoints (503).
 	Strava *strava.Service
@@ -98,6 +97,9 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	}
 	if d.RouteInUse == nil && d.Bike != nil {
 		d.RouteInUse = d.Bike.RouteInUse
+	}
+	if d.WorkoutInUse == nil && d.Bike != nil {
+		d.WorkoutInUse = d.Bike.WorkoutInUse
 	}
 	d.ws = &wsGate{}
 	d.oidcState = newStateCodec(d)

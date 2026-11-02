@@ -114,11 +114,12 @@ func withRiderInUse(f func(int64) bool) tsOpt {
 	return func(c *tsConfig) { c.riderInUse = f }
 }
 
-// withRouteInUse sets Deps.RouteInUse.
+// withWorkoutInUse sets Deps.WorkoutInUse.
 func withWorkoutInUse(f func(int64) bool) tsOpt {
 	return func(c *tsConfig) { c.workoutInUse = f }
 }
 
+// withRouteInUse sets Deps.RouteInUse.
 func withRouteInUse(f func(int64) bool) tsOpt {
 	return func(c *tsConfig) { c.routeInUse = f }
 }
@@ -149,7 +150,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 		}
 		return s.General.PublicURL
 	}, logger)
-	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, LoadRoute: ridectl.StoreRoutes(st), OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
+	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, LoadRoute: ridectl.StoreRoutes(st), LoadWorkout: ridectl.StoreWorkouts(st), PowerModels: st, OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
 		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
 	tiles := maptiles.New(svc.Get, http.DefaultClient)
 	t.Cleanup(tiles.Close)

@@ -55,8 +55,8 @@ describe('ws-types vs docs/asyncapi.yaml', () => {
   it('Status fields match', () => {
     expect(keys(schemas.Status.properties)).toEqual(keys(sampleStatus));
   });
-  it('command names match, minus set_target_power', () => {
-    const names = (schemas.WSCommand.properties.command.enum as string[]).filter((c) => c !== 'set_target_power');
+  it('command names match', () => {
+    const names = schemas.WSCommand.properties.command.enum as string[];
     expect([...names].sort()).toEqual([...COMMAND_NAMES].sort());
   });
   it('Tick.state values match RideState', () => {
@@ -73,9 +73,9 @@ describe('ws-types vs docs/asyncapi.yaml', () => {
     expect(keys(sample.error)).toEqual(keys(schemas.ErrorBody.properties));
   });
   it('WSCommand fields match CommandMsg', () => {
-    const sample: CommandMsg = { type: 'command', id: '', command: 'start', value: 0, route_id: 0 };
+    const sample: CommandMsg = { type: 'command', id: '', command: 'start', value: 0, route_id: 0, workout_id: 0, target_power_w: 0 };
     expect(keys(sample)).toEqual(keys(schemas.WSCommand.properties));
-    expect(schemas.WSCommand.required).not.toContain('route_id');
+    for (const f of ['route_id', 'workout_id', 'target_power_w']) expect(schemas.WSCommand.required).not.toContain(f);
   });
   it('server message types match', () => {
     const types = ['WSState', 'WSTick', 'WSBike', 'WSAck', 'WSError'].map((n) => schemas[n].properties.type.enum[0]);

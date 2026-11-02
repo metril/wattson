@@ -100,11 +100,25 @@ describe('RidePage', () => {
     back.mockRestore();
   });
 
+  it('the link is down before the first connection: no Reconnecting banner while it opens', async () => {
+    stubApi({ 'GET /api/riders': [200, riders] });
+    renderWithClient(<RidePage />);
+    expect(screen.queryByText(/Reconnecting/)).not.toBeInTheDocument();
+    act(() => {
+      FakeWebSocket.last.open();
+      FakeWebSocket.last.receive({ type: 'state', bike: bikeFixture({}), tick: tickFixture({}) });
+    });
+    await screen.findByRole('option', { name: 'Ann' });
+    expect(screen.queryByText(/Reconnecting/)).not.toBeInTheDocument();
+  });
+
   it('disconnected: every ride button is disabled and Reconnecting is shown', async () => {
     const { ws } = await setup({ state: 'riding' }, { state: 'riding' });
     expect(screen.queryByText(/Reconnecting/)).not.toBeInTheDocument();
     act(() => ws.drop(1006));
-    expect(screen.getByText(/Reconnecting/)).toBeInTheDocument();
+    // Not at once: the banner would pop in and out (and shift the page) on every ordinary page load.
+    expect(screen.queryByText(/Reconnecting/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Reconnecting/)).toBeInTheDocument();
     for (const name of ['Pause', 'Stop', 'Increase level', 'Decrease level']) {
       expect(screen.getByRole('button', { name })).toBeDisabled();
     }

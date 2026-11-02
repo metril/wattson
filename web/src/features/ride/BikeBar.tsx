@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
@@ -18,6 +18,23 @@ const stateStyle: Record<RideState, string> = {
   paused: 'border-warn text-warn',
   finished: 'border-line text-chalk',
 };
+
+/** How long the link may be down before the page says so; a page load opens it within milliseconds. */
+const LINK_GRACE_MS = 600;
+
+/** True once `down` has held for LINK_GRACE_MS (so the banner does not flash in on every page load). */
+function useLinkLost(down: boolean): boolean {
+  const [lost, setLost] = useState(false);
+  useEffect(() => {
+    if (!down) {
+      setLost(false);
+      return;
+    }
+    const t = setTimeout(() => setLost(true), LINK_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [down]);
+  return lost;
+}
 
 /**
  * Top strip of the ride screen: who rides, connect and release, the link
@@ -70,6 +87,7 @@ export function BikeBar({
     },
   });
 
+  const linkLost = useLinkLost(!connected);
   const lastError = bike?.last_error;
   const floorBike = !!bike?.floor_unconfirmed;
   // One banner for the floor warning: the server's status wins, the client-side
@@ -129,7 +147,7 @@ export function BikeBar({
         </div>
       </div>
 
-      {!connected && (
+      {linkLost && (
         <Banner tone="warn">
           <p className="font-medium">Reconnecting…</p>
           <p className="text-sm text-dim">Ride controls are off until the link is back.</p>

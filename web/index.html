@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
     <title>Wattson</title>
+    <!-- The numeral font is on the ride screen from the first paint: fetching it early avoids a layout shift when it swaps in. -->
+    <link rel="preload" href="/src/assets/fonts/barlow-condensed-600-sub.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

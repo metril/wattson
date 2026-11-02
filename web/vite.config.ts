@@ -48,6 +48,8 @@ function serviceWorker(): Plugin {
 
 const backend = 'http://localhost:8080';
 
+const LAZY_NAMES: Record<string, string> = { Ride3D: 'ride3d', PhotoView: 'photo' };
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorker(), restoreGitkeep()],
   resolve: {
@@ -65,9 +67,11 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('/node_modules/maplibre-gl/')) return 'maplibre';
-          if (id.includes('/src/features/ride/Ride3D')) return 'ride3d';
-          if (id.includes('/src/features/ride/PhotoView')) return 'photo';
         },
+        // Ride3D and PhotoView are dynamic imports; naming them here (not in manualChunks, which
+        // would pull shared code such as React into them and make index.html preload them)
+        // keeps them lazy. scripts/check-size.mjs budgets these names.
+        chunkFileNames: (chunk) => `assets/${LAZY_NAMES[chunk.name] ?? chunk.name}-[hash].js`,
       },
     },
   },

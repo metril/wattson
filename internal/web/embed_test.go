@@ -1,9 +1,13 @@
 package web
 
 import (
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -75,5 +79,67 @@ func TestSWNoCache(t *testing.T) {
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
 		t.Errorf("Cache-Control = %q, want no-cache", got)
+	}
+}
+
+func TestGzipAssets(t *testing.T) {
+	t.Parallel()
+	js := strings.Repeat("console.log('wattson');\n", 400)
+	h := handlerFor(fstest.MapFS{
+		"index.html":        {Data: []byte("<html>app</html>")},
+		"assets/a.js":       {Data: []byte(js)},
+		"assets/font.woff2": {Data: []byte(js)}, // already compressed formats are left alone
+		"sw.js":             {Data: []byte(js)},
+	})
+	do := func(path, enc string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if enc != "" {
+			req.Header.Set("Accept-Encoding", enc)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := do("/assets/a.js", "br, gzip;q=0.8")
+	if rec.Header().Get("Content-Encoding") != "gzip" || rec.Header().Get("Vary") != "Accept-Encoding" {
+		t.Fatalf("headers = %v, want gzip and Vary", rec.Header())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") && !strings.HasPrefix(ct, "application/javascript") {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	if rec.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Errorf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
+	}
+	zr, err := gzip.NewReader(rec.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(zr)
+	if string(got) != js {
+		t.Errorf("decompressed body differs (%d bytes)", len(got))
+	}
+	if n, _ := strconv.Atoi(rec.Header().Get("Content-Length")); n == 0 || n >= len(js)/4 {
+		t.Errorf("Content-Length = %d, want a small compressed length", n)
+	}
+
+	if rec := do("/assets/a.js", ""); rec.Header().Get("Content-Encoding") != "" || rec.Body.String() != js || rec.Header().Get("Vary") != "Accept-Encoding" {
+		t.Errorf("no Accept-Encoding: %v, %d bytes", rec.Header(), rec.Body.Len())
+	}
+	if rec := do("/assets/a.js", "gzip;q=0"); rec.Header().Get("Content-Encoding") != "" {
+		t.Errorf("gzip;q=0 must not be gzipped")
+	}
+	if rec := do("/assets/font.woff2", "gzip"); rec.Header().Get("Content-Encoding") != "" {
+		t.Errorf("woff2 gzipped")
+	}
+	if rec := do("/sw.js", "gzip"); rec.Header().Get("Content-Encoding") != "gzip" || rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("sw.js: %v", rec.Header())
+	}
+	head := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodHead, "/assets/a.js", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	h.ServeHTTP(head, req)
+	if head.Body.Len() != 0 || head.Header().Get("Content-Encoding") != "gzip" {
+		t.Errorf("HEAD: %v, %d body bytes", head.Header(), head.Body.Len())
 	}
 }

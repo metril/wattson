@@ -250,7 +250,14 @@ func (m *MQTT) apply(ctx context.Context) {
 		}
 		// The same broker with new credentials keeps its retained discovery:
 		// only another URL, or switching the bridge off, clears it.
-		m.closeSession(s, want.URL == "" || want.URL != s.cfg.URL)
+		clear := want.URL == "" || want.URL != s.cfg.URL
+		if !clear && s.up && s.pubPrefix != "" && s.pubPrefix != want.DiscoveryPrefix {
+			// Credentials and prefix changed together: the new session starts
+			// with no record of the old prefix, so empty its configs now.
+			m.clearDiscovery(ctx, s, s.pubPrefix)
+			s.pubPrefix = ""
+		}
+		m.closeSession(s, clear)
 		m.sess = nil
 	}
 	m.havePub = false

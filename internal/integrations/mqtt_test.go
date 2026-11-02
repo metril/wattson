@@ -481,3 +481,14 @@ func TestCredentialChangeKeepsDiscovery(t *testing.T) {
 		t.Error("discovery missing after the reconnect")
 	}
 }
+
+func TestCredentialAndPrefixChangeClearsOldDiscovery(t *testing.T) {
+	t.Parallel()
+	b := mqtttest.Start(t, nil)
+	r := newRig(t, b.URL(), "", "")
+	const old = "homeassistant/sensor/wattson_power/config"
+	eventually(t, "discovery", func() bool { return b.Retained(old) != nil })
+	r.set(func(c *settings.MQTT) { c.Password = "new"; c.DiscoveryPrefix = "ha2" })
+	eventually(t, "new prefix", func() bool { return b.Retained("ha2/sensor/wattson_power/config") != nil })
+	eventually(t, "old prefix cleared", func() bool { return b.Retained(old) == nil })
+}

@@ -369,6 +369,9 @@ func TestProxyDropsBLERepliesWithoutSubscription(t *testing.T) {
 	if _, err := c.BLEConnect(ctx, devA, 1); err == nil {
 		t.Fatal("BLEConnect succeeded without an advertisement subscription")
 	}
+	if n := len(srv.BLEConnRequests()); n == 0 { // the client may re-send while waiting
+		t.Fatal("proxy saw no connect request")
+	}
 	if srv.BLEConnected(devA) {
 		t.Fatal("proxy connected a device for an unsubscribed client")
 	}
@@ -420,41 +423,33 @@ func TestConnectionsFree(t *testing.T) {
 	}
 }
 
-// Another client holding the subscription (newest subscriber wins on real
-// firmware) silences every reply: ConnectionsFree ends with the ctx error.
-func TestConnectionsFreeForeignSubscriber(t *testing.T) {
+// The proxy answers ConnectionsFree to any client. Another client subscribing
+// after us takes the subscription (newest wins): our connection replies stop,
+// and only a new subscribe from us takes it back.
+func TestForeignSubscriberNewestWins(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
 	c := bleClient(t, srv)
-	if _, err := c.ConnectionsFree(tctx(t)); err != nil {
-		t.Fatal(err)
-	}
+	connected(t, c, devA)
 	srv.SetForeignSubscriber()
+	if r, err := c.ConnectionsFree(tctx(t)); err != nil || r.Free != 2 {
+		t.Fatalf("ConnectionsFree under a foreign subscriber = %+v, %v", r, err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if _, err := c.ConnectionsFree(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("err = %v, want DeadlineExceeded", err)
+	if _, err := c.GATTServices(ctx, devA); err == nil {
+		t.Fatal("GATTServices answered while a foreign client holds the subscription")
 	}
-	// While the foreign client holds it, subscribing again is ignored.
+	if srv.BLEDroppedReplies() == 0 {
+		t.Fatal("no dropped replies recorded")
+	}
+	srv.ClearForeignSubscriber()
 	sctx, scancel := context.WithCancel(context.Background())
 	defer scancel()
 	if err := c.SubscribeAdvertisements(sctx, func(RawAdv) {}); err != nil {
 		t.Fatal(err)
 	}
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel2()
-	if _, err := c.ConnectionsFree(ctx2); err == nil {
-		t.Fatal("ConnectionsFree answered while a foreign client holds the subscription")
-	}
-	if srv.BLEDroppedReplies() == 0 {
-		t.Fatal("no dropped replies recorded")
-	}
-	// Once it is gone the test client may subscribe again.
-	srv.ClearForeignSubscriber()
-	if err := c.SubscribeAdvertisements(sctx, func(RawAdv) {}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.ConnectionsFree(tctx(t)); err != nil {
-		t.Fatalf("after ClearForeignSubscriber: %v", err)
+	if _, err := c.GATTServices(tctx(t), devA); err != nil {
+		t.Fatalf("after subscribing again: %v", err)
 	}
 }

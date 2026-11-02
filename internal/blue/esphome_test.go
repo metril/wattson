@@ -36,7 +36,7 @@ type espEnv struct {
 
 func newESPEnv(t *testing.T, dev blue.Address) espEnv {
 	t.Helper()
-	return newESPEnvOpts(t, dev, blue.WithProbeTimeout(100*time.Millisecond))
+	return newESPEnvOpts(t, dev)
 }
 
 func newESPEnvOpts(t *testing.T, dev blue.Address, opts ...blue.ESPHomeOption) espEnv {
@@ -61,6 +61,7 @@ func newESPEnvOpts(t *testing.T, dev blue.Address, opts ...blue.ESPHomeOption) e
 		t.Fatalf("NewESPHome: %v", err)
 	}
 	t.Cleanup(func() { tr.Close() })
+	syncProxy(t, tr)
 	return espEnv{srv, tr, dev}
 }
 
@@ -381,7 +382,17 @@ func espProxy(t *testing.T, srv *esphometest.Server, k []byte) blue.Transport {
 		t.Fatalf("NewESPHome: %v", err)
 	}
 	t.Cleanup(func() { tr.Close() })
+	syncProxy(t, tr)
 	return tr
+}
+
+// syncProxy round-trips to the proxy so its handling of our advertisement
+// subscription (sent first on the same link) is done before the test goes on.
+func syncProxy(t *testing.T, tr blue.Transport) {
+	t.Helper()
+	if _, err := tr.(blue.Proxy).ProxyStatus(ctx2s(t)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func proxyOf(t *testing.T, tr blue.Transport) blue.Proxy {
@@ -410,11 +421,17 @@ func TestConnectionsFreeViaProxyStatus(t *testing.T) {
 	}
 }
 
+// addAdvertiser gives the proxy a device whose adverts keep reaching the subscriber.
+func addAdvertiser(srv *esphometest.Server) {
+	srv.AddBLEDevice(esphometest.RawAdv{Address: espDev.Uint64(), RSSI: -60, Data: []byte{2, 1, 6}}, nil)
+}
+
 func TestProxyStatusSubscribed(t *testing.T) {
 	t.Parallel()
 	k := bytes.Repeat([]byte{7}, 32)
 	srv := esphometest.Start(t, k)
 	srv.HandleHello(0x3f)
+	addAdvertiser(srv)
 	st, err := proxyOf(t, espProxy(t, srv, k)).ProxyStatus(ctx2s(t))
 	if err != nil {
 		t.Fatal(err)
@@ -426,18 +443,46 @@ func TestProxyStatusSubscribed(t *testing.T) {
 	}
 }
 
+// heldEnv is an env whose proxy counts as held after 150 ms of advert silence.
+func heldEnv(t *testing.T) espEnv {
+	t.Helper()
+	return newESPEnvOpts(t, espDev, blue.WithHeldAfter(150*time.Millisecond))
+}
+
+// waitHeld blocks until the proxy reports it no longer holds our subscription.
+func waitHeld(t *testing.T, p blue.Proxy) blue.ProxyStatus {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		st, err := p.ProxyStatus(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("ProxyStatus: %v", err)
+		}
+		if !st.Subscribed {
+			return st
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("ProxyStatus.Subscribed stayed true under a foreign subscriber")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A foreign subscriber (newest wins) silences our advert stream: Subscribed
+// goes false, with slot counts still answered and no error.
 func TestProxyStatusForeign(t *testing.T) {
 	t.Parallel()
-	k := bytes.Repeat([]byte{7}, 32)
-	srv := esphometest.Start(t, k)
-	srv.HandleHello(0x3f)
-	srv.SetForeignSubscriber()
-	p := proxyOf(t, espProxy(t, srv, k))
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	st, err := p.ProxyStatus(ctx)
-	if err != nil || st.Subscribed || st.Name != esphometest.Name {
-		t.Fatalf("status = %+v, err %v; want Subscribed false and nil error", st, err)
+	e := heldEnv(t)
+	p := proxyOf(t, e.tr)
+	if st, err := p.ProxyStatus(ctx2s(t)); err != nil || !st.Subscribed {
+		t.Fatalf("before takeover: %+v, %v", st, err)
+	}
+	e.srv.SetForeignSubscriber()
+	st := waitHeld(t, p)
+	if st.Name != esphometest.Name || st.Limit != 3 {
+		t.Fatalf("status = %+v", st)
 	}
 }
 
@@ -458,25 +503,59 @@ func TestProxyStatusLinkDown(t *testing.T) {
 	}
 }
 
-// Another client taking the subscription silences the proxy: Connect says so
-// instead of waiting out its timeout, and does not try to take it back.
-func TestESPHomeConnectProxyHeld(t *testing.T) {
+// Adverts already silent at Connect time: ErrProxyHeld at once, no request
+// sent, and Wattson does not take the subscription back.
+func TestESPHomeConnectProxyHeldSilent(t *testing.T) {
 	t.Parallel()
-	e := newESPEnv(t, espDev)
-	c, err := e.tr.Connect(ctx2s(t), e.dev)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.Close()
-	e.srv.SetForeignSubscriber() // newest subscriber wins: we just lost it
-	_, err = e.tr.Connect(ctx2s(t), e.dev)
+	e := heldEnv(t)
+	e.srv.SetForeignSubscriber()
+	waitHeld(t, proxyOf(t, e.tr))
+	start := time.Now()
+	_, err := e.tr.Connect(ctx2s(t), e.dev)
 	if !errors.Is(err, blue.ErrProxyHeld) {
 		t.Fatalf("err = %v, want ErrProxyHeld", err)
 	}
 	if !strings.Contains(err.Error(), "another client") {
 		t.Fatalf("err %q carries no hint", err)
 	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("took %v, want immediate", d)
+	}
+	if n := len(e.srv.BLEConnRequests()); n != 0 {
+		t.Fatalf("%d connect requests sent to a held proxy", n)
+	}
 	if f := e.srv.BLEAdvFlags(); len(f) != 1 {
 		t.Fatalf("advert subscriptions = %v: Wattson must not re-subscribe", f)
+	}
+}
+
+// The takeover happens right before Connect: adverts have not been silent for
+// long yet, the connect reply never comes, and by the ctx deadline they have.
+func TestESPHomeConnectProxyHeldAtDeadline(t *testing.T) {
+	t.Parallel()
+	e := heldEnv(t)
+	e.srv.SetForeignSubscriber()
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	_, err := e.tr.Connect(ctx, e.dev)
+	if !errors.Is(err, blue.ErrProxyHeld) {
+		t.Fatalf("err = %v, want ErrProxyHeld", err)
+	}
+	if f := e.srv.BLEAdvFlags(); len(f) != 1 {
+		t.Fatalf("advert subscriptions = %v: Wattson must not re-subscribe", f)
+	}
+}
+
+// A device that never answers on a proxy that is still delivering adverts is
+// a slow or absent device, not a held proxy.
+func TestESPHomeSlowConnectIsNotHeld(t *testing.T) {
+	t.Parallel()
+	e := heldEnv(t)
+	absent := blue.Address{MAC: [6]byte{9, 9, 9, 9, 9, 9}}
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	_, err := e.tr.Connect(ctx, absent)
+	if err == nil || errors.Is(err, blue.ErrProxyHeld) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want a plain deadline error", err)
 	}
 }

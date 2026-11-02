@@ -32,7 +32,8 @@ func adv(name string, svc uint16) []byte {
 	return append(d, 3, 0x03, byte(svc), byte(svc>>8))
 }
 
-func newProxyEnv(t *testing.T, hrOnProxy bool) proxyEnv {
+// newProxyEnv starts the proxy; heldAfter is how long advert silence takes to count as held.
+func newProxyEnv(t *testing.T, heldAfter time.Duration) proxyEnv {
 	t.Helper()
 	k := bytes.Repeat([]byte{9}, 32)
 	srv := esphometest.Start(t, k)
@@ -42,19 +43,22 @@ func newProxyEnv(t *testing.T, hrOnProxy bool) proxyEnv {
 			{UUID: "fff1", Handle: 3, Props: uint32(blue.PropNotify)},
 			{UUID: "fff2", Handle: 6, Props: uint32(blue.PropWrite | blue.PropWriteNoResp)},
 		}}})
-	if hrOnProxy {
-		srv.AddBLEDevice(esphometest.RawAdv{Address: hrDev.Uint64(), RSSI: -55, Data: adv("HRM", 0x180d)},
-			[]esphometest.GATTService{{UUID: "180d", Handle: 1, Chars: []esphometest.GATTChar{
-				{UUID: "2a37", Handle: hrNotifyHandle, Props: uint32(blue.PropNotify)},
-			}}})
-	}
+	srv.AddBLEDevice(esphometest.RawAdv{Address: hrDev.Uint64(), RSSI: -55, Data: adv("HRM", 0x180d)},
+		[]esphometest.GATTService{{UUID: "180d", Handle: 1, Chars: []esphometest.GATTChar{
+			{UUID: "2a37", Handle: hrNotifyHandle, Props: uint32(blue.PropNotify)},
+		}}})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	tr, err := blue.NewESPHomeWith(ctx, srv.Addr(), base64.StdEncoding.EncodeToString(k), blue.WithProbeTimeout(100*time.Millisecond))
+	tr, err := blue.NewESPHomeWith(ctx, srv.Addr(), base64.StdEncoding.EncodeToString(k), blue.WithHeldAfter(heldAfter))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { tr.Close() })
+	// Round-trip so the proxy has processed our advertisement subscription
+	// before a test installs a foreign one.
+	if _, err := tr.(blue.Proxy).ProxyStatus(ctx); err != nil {
+		t.Fatal(err)
+	}
 	return proxyEnv{srv, tr}
 }
 
@@ -65,7 +69,7 @@ func poll(t *testing.T, what string, cond func() bool) {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -83,7 +87,7 @@ func startHR(t *testing.T, cfg sensors.BLEConfig) *sensors.BLEMonitor {
 // proxy and one transport; losing HR's slot never touches the bike.
 func TestHRAndBikeShareProxy(t *testing.T) {
 	t.Parallel()
-	e := newProxyEnv(t, true)
+	e := newProxyEnv(t, 5*time.Second)
 	sess, err := bike.BLEDial(e.tr, bikeAddr, bike.Options{Keepalive: time.Hour})(context.Background())
 	if err != nil {
 		t.Fatalf("bike dial: %v", err)
@@ -120,12 +124,20 @@ func TestHRAndBikeShareProxy(t *testing.T) {
 	}
 }
 
-// Another client holding the proxy's Bluetooth subscription: the HR monitor
-// says so (with a hint) instead of hanging, and never re-subscribes.
+// Another client taking the proxy's Bluetooth subscription (newest wins) stops
+// our adverts: the HR monitor says so, with a hint, instead of hanging, and
+// never re-subscribes.
 func TestHRProxyHeldAtStart(t *testing.T) {
 	t.Parallel()
-	e := newProxyEnv(t, true)
+	e := newProxyEnv(t, 150*time.Millisecond)
 	e.srv.SetForeignSubscriber()
+	p := e.tr.(blue.Proxy)
+	poll(t, "adverts silent", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		st, err := p.ProxyStatus(ctx)
+		return err == nil && !st.Subscribed
+	})
 	m := startHR(t, sensors.BLEConfig{Transport: e.tr, Addr: hrDev, BackoffMin: 20 * time.Millisecond, BackoffMax: 50 * time.Millisecond})
 	poll(t, "ErrProxyHeld in status", func() bool { return strings.Contains(m.Status().Error, "another client") })
 	if st := m.Status(); st.Connected || !strings.Contains(st.Error, blue.ErrProxyHeld.Error()) {
@@ -136,14 +148,17 @@ func TestHRProxyHeldAtStart(t *testing.T) {
 	}
 }
 
-// Losing the subscription to another client mid-connection is detected.
+// Losing the subscription to another client mid-connection is detected after
+// two consecutive silent checks, and the connection is dropped.
 func TestHRProxyTakenOverWhileConnected(t *testing.T) {
 	t.Parallel()
-	e := newProxyEnv(t, true)
+	e := newProxyEnv(t, 150*time.Millisecond)
 	m := startHR(t, sensors.BLEConfig{Transport: e.tr, Addr: hrDev, BackoffMin: 20 * time.Millisecond, BackoffMax: 50 * time.Millisecond, ProxyCheck: 50 * time.Millisecond})
 	poll(t, "HR connected", func() bool { return m.Status().Connected })
 	e.srv.SetForeignSubscriber()
-	t.Cleanup(func() { e.tr.Close() }) // a proxy that no longer answers would stall the monitor's disconnect
+	// Registered after startHR, so it runs first: the proxy no longer answers
+	// the monitor's disconnect, which would otherwise stall cleanup for 1 s.
+	t.Cleanup(func() { e.tr.Close() })
 	poll(t, "takeover reported", func() bool { return strings.Contains(m.Status().Error, "another client") })
 	if m.Status().Connected {
 		t.Fatal("still Connected after losing the subscription")

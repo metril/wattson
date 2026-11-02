@@ -3,6 +3,7 @@ package sensors
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -25,9 +26,10 @@ type BLEConfig struct {
 	BackoffMin     time.Duration // default 1s
 	BackoffMax     time.Duration // default 30s
 	// ProxyCheck is how often a live connection through a blue.Proxy checks
-	// the proxy still answers us; default 15s. A proxy that stops answering
-	// (another client took its Bluetooth subscription) ends the connection
-	// with blue.ErrProxyHeld. The monitor only reports this and retries with
+	// that the proxy still serves us (its advertisement stream has not gone
+	// silent); default 15s. Two consecutive failed checks mean another client
+	// took the proxy's Bluetooth subscription: the connection ends with
+	// blue.ErrProxyHeld. The monitor only reports this and retries with
 	// backoff; it never takes the subscription back.
 	ProxyCheck time.Duration
 }
@@ -38,6 +40,9 @@ type BLEMonitor struct {
 	c BLEConfig
 
 	last atomic.Pointer[hrSample]
+
+	sawContact  atomic.Bool // a reading with sensor contact detected arrived
+	contactWarn sync.Once
 
 	mu        sync.Mutex
 	target    string
@@ -155,7 +160,7 @@ func (m *BLEMonitor) resolve(ctx context.Context) (blue.Address, error) {
 }
 
 // proxyHeld returns blue.ErrProxyHeld when the transport is a proxy that does
-// not answer us; nil otherwise, including when the transport is no proxy.
+// serve us (advertisements went silent); nil otherwise, including when the transport is no proxy.
 func (m *BLEMonitor) proxyHeld(ctx context.Context) error {
 	p, ok := m.c.Transport.(blue.Proxy)
 	if !ok {
@@ -210,7 +215,18 @@ func (m *BLEMonitor) attempt(ctx context.Context) (got bool, err error) {
 	sctx, cancel := context.WithTimeout(ctx, m.c.ConnectTimeout)
 	err = conn.Subscribe(sctx, HRMeasurement, func(b []byte) {
 		h, err := ParseHRM(b)
-		if err != nil || h.BPM == 0 || (h.ContactSupported && !h.Contact) {
+		if err != nil || h.BPM == 0 {
+			return
+		}
+		if h.Contact {
+			m.sawContact.Store(true)
+		}
+		if h.ContactSupported && !h.Contact {
+			if !m.sawContact.Load() {
+				m.contactWarn.Do(func() {
+					slog.Warn("heart rate monitor reports sensor contact supported but never detected; ignoring its readings", "target", m.Status().Target)
+				})
+			}
 			return
 		}
 		m.last.Store(&hrSample{bpm: h.BPM, at: time.Now()})
@@ -227,6 +243,7 @@ func (m *BLEMonitor) attempt(ctx context.Context) (got bool, err error) {
 		defer tk.Stop()
 		check = tk.C
 	}
+	held := 0 // consecutive held proxy checks
 wait:
 	for {
 		select {
@@ -235,7 +252,12 @@ wait:
 		case <-conn.Done():
 			break wait
 		case <-check:
-			if herr := m.proxyHeld(ctx); herr != nil {
+			herr := m.proxyHeld(ctx)
+			if herr == nil {
+				held = 0
+				continue
+			}
+			if held++; held >= 2 {
 				// Report now: closing the conn waits on a proxy that no longer answers.
 				m.set(func() { m.connected, m.errText = false, herr.Error() })
 				return gotAny.Load(), herr

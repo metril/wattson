@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metril/wattson/internal/esphomeapi"
@@ -38,10 +39,11 @@ func NewESPHomeWith(ctx context.Context, hostport, key string, opts ...ESPHomeOp
 	if err != nil {
 		return nil, err
 	}
-	t := &espTransport{c: c, scans: map[*dropQueue[esphomeapi.RawAdv]]struct{}{}, probeTimeout: defaultProbeTimeout}
+	t := &espTransport{c: c, scans: map[*dropQueue[esphomeapi.RawAdv]]struct{}{}, heldAfter: defaultHeldAfter}
 	for _, o := range opts {
 		o(t)
 	}
+	t.lastAdv.Store(time.Now().UnixNano())
 	// Never cancelled: only Close ends the subscription (see Close).
 	if err := c.SubscribeAdvertisements(context.Background(), t.onAdv); err != nil {
 		_ = c.Close()
@@ -50,17 +52,18 @@ func NewESPHomeWith(ctx context.Context, hostport, key string, opts ...ESPHomeOp
 	return t, nil
 }
 
-// defaultProbeTimeout is how long Connect waits for the proxy's slot report
-// before concluding another client holds the subscription.
-const defaultProbeTimeout = 3 * time.Second
+// defaultHeldAfter is how long the proxy may go without sending any
+// advertisement before it counts as held by another client.
+const defaultHeldAfter = 10 * time.Second
 
-// ESPHomeOption tunes NewESPHome.
+// ESPHomeOption tunes NewESPHomeWith.
 type ESPHomeOption func(*espTransport)
 
-// WithProbeTimeout sets how long Connect waits for the proxy's slot report
-// before it fails with ErrProxyHeld (default 3 s).
-func WithProbeTimeout(d time.Duration) ESPHomeOption {
-	return func(t *espTransport) { t.probeTimeout = d }
+// WithHeldAfter sets how long without any advertisement from the proxy,
+// while the API link is alive, counts as "another client took the proxy's
+// Bluetooth subscription" (default 10 s).
+func WithHeldAfter(d time.Duration) ESPHomeOption {
+	return func(t *espTransport) { t.heldAfter = d }
 }
 
 type espTransport struct {
@@ -69,8 +72,12 @@ type espTransport struct {
 	mu    sync.RWMutex
 	scans map[*dropQueue[esphomeapi.RawAdv]]struct{} // active Scan queues
 
-	// probeTimeout bounds the slot report Connect asks for before connecting.
-	probeTimeout time.Duration
+	// lastAdv is the unix-nano time of the newest advertisement, or of the
+	// subscription before any arrived. Only the subscriber receives
+	// advertisements, so their absence is how a lost subscription shows:
+	// ConnectionsFree is answered to every client and cannot tell.
+	lastAdv   atomic.Int64
+	heldAfter time.Duration
 }
 
 var _ Proxy = (*espTransport)(nil)
@@ -78,10 +85,17 @@ var _ Proxy = (*espTransport)(nil)
 // Done is closed when the API link to the proxy is gone.
 func (t *espTransport) Done() <-chan struct{} { return t.c.Done() }
 
-// ProxyStatus reports the proxy's identity and connection slots. The proxy
-// answers only the client holding its advertisement subscription, so an
-// unanswered query while the link is up (ctx deadline) means another API
-// client took the subscription: Subscribed is false and the error nil.
+// silent reports that no advertisement arrived for heldAfter.
+func (t *espTransport) silent() bool {
+	return time.Since(time.Unix(0, t.lastAdv.Load())) >= t.heldAfter
+}
+
+// ProxyStatus reports the proxy's identity, connection slots and whether we
+// still hold its advertisement subscription. The proxy answers ConnectionsFree
+// to any client, so Subscribed comes from advertisement silence instead: false
+// once none arrived for the held-after period (see ErrProxyHeld) or when the
+// proxy does not answer within ctx's deadline. A dead link is an error
+// wrapping ErrDisconnected.
 func (t *espTransport) ProxyStatus(ctx context.Context) (ProxyStatus, error) {
 	info := t.c.Info()
 	st := ProxyStatus{Name: info.Name, MAC: info.MAC, Version: info.ESPHomeVersion, Flags: info.BTProxyFlags}
@@ -93,7 +107,7 @@ func (t *espTransport) ProxyStatus(ctx context.Context) (ProxyStatus, error) {
 	}
 	switch {
 	case err == nil:
-		st.Subscribed = true
+		st.Subscribed = !t.silent()
 		st.Free, st.Limit = int(r.Free), int(r.Limit)
 		for _, a := range r.Allocated {
 			st.Allocated = append(st.Allocated, addrFromUint64(a, 0))
@@ -106,21 +120,35 @@ func (t *espTransport) ProxyStatus(ctx context.Context) (ProxyStatus, error) {
 	}
 }
 
-// checkHeld returns ErrProxyHeld (with a hint) when the proxy does not answer
-// within probeTimeout although ctx is still live. It never re-subscribes:
-// taking the proxy back would only start a fight with the other client.
-func (t *espTransport) checkHeld(ctx context.Context, addr Address) error {
-	pctx, cancel := context.WithTimeout(ctx, t.probeTimeout)
-	defer cancel()
-	st, err := t.ProxyStatus(pctx)
-	if err != nil || st.Subscribed || ctx.Err() != nil {
-		return nil // dead link and cancellation are reported by the connect itself
+// heldErr returns ErrProxyHeld (with a hint) when the proxy has gone silent.
+// Wattson only reports it: taking the subscription back would start a fight
+// with the other client.
+func (t *espTransport) heldErr(op string) error {
+	select {
+	case <-t.c.Done():
+		return nil // a dead link is reported as such by the operation itself
+	default:
 	}
-	return ProxyHeldError("connect "+addr.String(), st.Name)
+	if !t.silent() {
+		return nil
+	}
+	return ProxyHeldError(op, t.c.Info().Name)
+}
+
+// timeoutHeld returns ErrProxyHeld when err is a ctx deadline that expired
+// while the proxy was silent. A deadline on a proxy that is still sending
+// advertisements (just slow) is not held: it returns nil and the caller reports
+// the normal timeout.
+func (t *espTransport) timeoutHeld(op string, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return t.heldErr(op)
+	}
+	return nil
 }
 
 // onAdv runs on the API read goroutine: fan out without blocking.
 func (t *espTransport) onAdv(r esphomeapi.RawAdv) {
+	t.lastAdv.Store(time.Now().UnixNano())
 	t.mu.RLock()
 	for q := range t.scans {
 		q.push(r)
@@ -235,7 +263,7 @@ func (t *espTransport) Scan(ctx context.Context, fn func(Advertisement)) error {
 
 func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) {
 	op := "connect " + addr.String()
-	if err := t.checkHeld(ctx, addr); err != nil {
+	if err := t.heldErr(op); err != nil {
 		return nil, err
 	}
 	a := addr.Uint64()
@@ -250,6 +278,9 @@ func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) 
 		if errors.Is(err, esphomeapi.ErrNoSlots) {
 			return nil, fmt.Errorf("%s: %w", op, ErrNoSlots)
 		}
+		if herr := t.timeoutHeld(op, err); herr != nil {
+			return nil, herr
+		}
 		return nil, espErr(op, err)
 	}
 	if c.isDone() { // dropped right after connecting; the link is already down
@@ -262,6 +293,9 @@ func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) 
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
 		defer cancel()
 		_ = t.c.BLEDisconnect(dctx, a)
+		if herr := t.timeoutHeld(op, err); herr != nil {
+			return nil, herr
+		}
 		return nil, espErr(op+": discover services", err)
 	}
 	if c.isDone() {

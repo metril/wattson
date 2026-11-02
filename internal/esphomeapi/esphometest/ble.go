@@ -98,12 +98,8 @@ type bleState struct {
 	// Advertisements (the real proxy's api_connection_); nil when none or
 	// after Unsubscribe. Subscribing replaces any previous subscriber.
 	subscriber *session
-	// foreign is set while another API client holds the subscription (see
-	// SetForeignSubscriber): subscribe requests are ignored and subscriber is
-	// the foreignSession sentinel.
-	foreign bool
-	dropped int // BLE replies dropped because nobody was subscribed
-	flush   sync.Once
+	dropped    int // BLE replies dropped because nobody was subscribed
+	flush      sync.Once
 }
 
 func (s *Server) ble() *bleState {
@@ -151,15 +147,15 @@ func (s *Server) BLEDroppedReplies() int {
 var foreignSession = &session{}
 
 // SetForeignSubscriber makes another API client the advertisement subscriber,
-// as when Home Assistant subscribes to the proxy. It models real firmware:
-// the newest subscriber wins (so a client already subscribed loses it at once:
-// its BLE replies are dropped) and, while the foreign client holds it, the test
-// client's subscribe requests are ignored (bluetooth_proxy's "Only one API
-// subscription is allowed at a time"). The BLE message handlers are installed.
+// as when Home Assistant subscribes to the proxy. It models real firmware
+// (bluetooth_proxy.cpp): the newest subscriber wins, in both directions. The
+// test client loses the subscription at once: advertisements stop reaching it
+// and its connection, GATT and notify replies are dropped, while
+// ConnectionsFree is still answered to any client. A later subscribe from the
+// test client would take the subscription back. The handlers are installed.
 func (s *Server) SetForeignSubscriber() {
 	st := s.ensureBLE()
 	st.mu.Lock()
-	st.foreign = true
 	st.subscriber = foreignSession
 	st.mu.Unlock()
 }
@@ -169,7 +165,6 @@ func (s *Server) SetForeignSubscriber() {
 func (s *Server) ClearForeignSubscriber() {
 	st := s.ensureBLE()
 	st.mu.Lock()
-	st.foreign = false
 	if st.subscriber == foreignSession {
 		st.subscriber = nil
 	}
@@ -364,9 +359,6 @@ func (s *Server) installBLE(st *bleState) {
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		st.advFlags = append(st.advFlags, flags)
-		if st.foreign {
-			return nil // another client holds the subscription: ignored
-		}
 		st.subs++
 		st.subscriber = cur // newest subscriber wins
 		return s.advBatch(st)
@@ -388,7 +380,8 @@ func (s *Server) installBLE(st *bleState) {
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		st.freeSubs++
-		return s.gate(st, []Reply{{Type: tFreeResp, Payload: encFree(st.free, st.limit, st.allocated()...)}})
+		// Answered to any client (api_connection.cpp), subscriber or not.
+		return []Reply{{Type: tFreeResp, Payload: encFree(st.free, st.limit, st.allocated()...)}}
 	})
 	s.Handle(tDeviceRequest, func(p []byte) []Reply {
 		var r ConnRequest

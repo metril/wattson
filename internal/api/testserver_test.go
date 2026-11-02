@@ -55,7 +55,13 @@ func (s *syncBuf) String() string {
 type tsOpt func(*tsConfig)
 
 type tsConfig struct {
-	extra []func(huma.API)
+	extra      []func(huma.API)
+	riderInUse func(int64) bool
+}
+
+// withRiderInUse sets Deps.RiderInUse.
+func withRiderInUse(f func(int64) bool) tsOpt {
+	return func(c *tsConfig) { c.riderInUse = f }
 }
 
 // withOps registers extra (test-only) operations on the server's huma API.
@@ -85,7 +91,7 @@ func newTS(t *testing.T, opts ...tsOpt) *testServer {
 		return s.General.PublicURL
 	}, logger)
 	d := Deps{Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
-		Logger: logger, Version: "test"}
+		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse}
 	h, err := newRouter(d, cfg.extra...)
 	if err != nil {
 		t.Fatal(err)

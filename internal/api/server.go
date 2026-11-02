@@ -36,6 +36,10 @@ type Deps struct {
 	Logger     *slog.Logger
 	Now        func() time.Time
 	Version    string
+	// RiderInUse reports whether a rider is bound to the active bike
+	// connection (ridectl.Manager.RiderInUse); deleting that rider is refused
+	// with 409 rider_in_use. Nil means no rider is ever in use.
+	RiderInUse func(riderID int64) bool
 
 	oidcState *oidcauth.StateCodec // signs the OIDC state cookie; derived from Box
 }

@@ -219,11 +219,21 @@ func (d Deps) registerRiders(api huma.API) {
 
 	register(api, route{Method: http.MethodDelete, Path: "/api/riders/{id}", ID: "deleteRider", Tag: "riders",
 		Summary: "Delete a rider",
-		Description: "Deletes one of the caller's riders. The last remaining rider cannot be deleted (409 `last_rider`). " +
+		Description: "Deletes one of the caller's riders. The last remaining rider cannot be deleted (409 `last_rider`), " +
+			"nor can the rider bound to the connected bike (409 `rider_in_use`; disconnect the bike first). " +
 			"A rider owned by someone else returns 404.",
 		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusConflict}},
 		func(ctx context.Context, in *riderIDIn) (*noContent, error) {
 			id, _ := auth.FromContext(ctx)
+			if d.RiderInUse != nil && d.RiderInUse(in.ID) {
+				// Only the owner learns the rider exists; anyone else gets 404.
+				if _, err := d.Store.Rider(ctx, id.User.ID, in.ID); errors.Is(err, store.ErrNotFound) {
+					return nil, errNoRider()
+				} else if err != nil {
+					return nil, err
+				}
+				return nil, apiErr(http.StatusConflict, "rider_in_use", "the rider is bound to the connected bike; disconnect it first")
+			}
 			err := d.Store.DeleteRider(ctx, id.User.ID, in.ID)
 			switch {
 			case errors.Is(err, store.ErrNotFound):

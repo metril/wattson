@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -183,5 +184,33 @@ func TestReadTokenCannotEditRider(t *testing.T) {
 		if resp.StatusCode != 403 {
 			t.Errorf("%s %s: %d %s, want 403", tc.method, tc.path, resp.StatusCode, b)
 		}
+	}
+}
+
+func TestRiderDeleteInUse(t *testing.T) {
+	t.Parallel()
+	var busy atomic.Int64
+	ts := newTS(t, withRiderInUse(func(id int64) bool { return id == busy.Load() }))
+	admin := ts.setupAdmin(t)
+	resp, b := ts.do(t, admin, "POST", "/api/riders", map[string]any{"name": "A"})
+	if resp.StatusCode != 201 {
+		t.Fatalf("create: %d %s", resp.StatusCode, b)
+	}
+	a := decode[RiderOut](t, b)
+	if resp, b = ts.do(t, admin, "POST", "/api/riders", map[string]any{"name": "B"}); resp.StatusCode != 201 {
+		t.Fatalf("create: %d %s", resp.StatusCode, b)
+	}
+	path := fmt.Sprintf("/api/riders/%d", a.ID)
+	busy.Store(a.ID)
+	resp, b = ts.do(t, admin, "DELETE", path, nil)
+	if resp.StatusCode != 409 || !strings.Contains(string(b), `"rider_in_use"`) {
+		t.Fatalf("delete in-use: %d %s", resp.StatusCode, b)
+	}
+	if resp, _ = ts.do(t, admin, "GET", path, nil); resp.StatusCode != 200 {
+		t.Errorf("rider gone after refused delete: %d", resp.StatusCode)
+	}
+	busy.Store(0)
+	if resp, b = ts.do(t, admin, "DELETE", path, nil); resp.StatusCode != 204 {
+		t.Errorf("delete after release: %d %s", resp.StatusCode, b)
 	}
 }

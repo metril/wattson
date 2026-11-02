@@ -2498,7 +2498,7 @@
     },
     "/api/riders/{id}": {
       "delete": {
-        "description": "Deletes one of the caller's riders. The last remaining rider cannot be deleted (409 `last_rider`). A rider owned by someone else returns 404. Requires the `control` scope.",
+        "description": "Deletes one of the caller's riders. The last remaining rider cannot be deleted (409 `last_rider`), nor can the rider bound to the connected bike (409 `rider_in_use`; disconnect the bike first). A rider owned by someone else returns 404. Requires the `control` scope.",
         "operationId": "deleteRider",
         "parameters": [
           {

@@ -182,7 +182,7 @@ function Body({ s, compact, onSaved }: { s: SettingsOut; compact?: boolean; onSa
                 (devices.length === 0 ? (
                   <p className="text-sm text-dim">No devices found. Wake the bike by pedalling, then scan again.</p>
                 ) : (
-                  <div className="overflow-x-auto rounded-control border border-line">
+                  <div className="relative overflow-x-auto rounded-control border border-line">
                     <table className="w-full text-left text-sm">
                       <thead className="bg-raised text-dim">
                         <tr>

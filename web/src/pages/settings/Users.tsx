@@ -59,7 +59,7 @@ export function UsersPage() {
       )}
       {q.isError && <Banner tone="error">Couldn't load users.</Banner>}
       {q.data && (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[40rem] text-left text-sm">
             <thead className="text-dim">
               <tr>

@@ -11,3 +11,5 @@
 /web/*.tsbuildinfo
 /internal/web/dist/*
 !/internal/web/dist/.gitkeep
+/web/test-results/
+/web/playwright-report/

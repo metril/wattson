@@ -2,7 +2,7 @@ BINARY  := wattson
 VERSION ?= dev
 LDFLAGS := -s -w -X github.com/metril/wattson/internal/cli.Version=$(VERSION)
 
-.PHONY: all build web-build web-deps go-build test go-test web-test lint clean openapi serve
+.PHONY: all build web-build web-deps go-build test go-test web-test lint clean openapi serve e2e
 
 all: build
 
@@ -39,6 +39,10 @@ openapi: web-deps
 	go run ./cmd/wattson openapi > docs/openapi.json
 	go run ./cmd/wattson asyncapi > docs/asyncapi.yaml
 	cd web && npm run openapi
+
+## e2e: Playwright smoke over the simulator (needs `npx playwright install chromium` once)
+e2e: build
+	cd web && npm run e2e
 
 ## lint: gofmt check plus go vet
 lint: web-deps

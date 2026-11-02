@@ -61,7 +61,14 @@ type Builder struct {
 	cur     *job
 	queue   []int64
 	pending map[int64]struct{} // queued or being built
-	closed  bool
+	// finished counts completed builds. Get compares it before and after
+	// reading a route's cache row, so a build that completes in between (its
+	// row already stored, its pending mark already cleared) is not queued again
+	// from the stale read.
+	finished uint64
+	closed   bool
+
+	afterRead func() // tests only: runs in Get between reading the cache row and queuing
 
 	wake   chan struct{}
 	ctx    context.Context
@@ -109,7 +116,7 @@ func NewFingerprint(key []byte) func(token string) string {
 // build and answer building. store.ErrNotFound for an unknown route.
 func (b *Builder) Get(ctx context.Context, routeID int64) (Status, error) {
 	b.mu.Lock()
-	closed := b.closed
+	closed, seen := b.closed, b.finished
 	b.mu.Unlock()
 	if closed {
 		return Status{}, ErrBuilderClosed
@@ -130,43 +137,49 @@ func (b *Builder) Get(ctx context.Context, routeID int64) (Status, error) {
 	}
 	building := Status{State: "building"}
 	row, err := b.st.GetRoutePhotos(ctx, routeID)
+	if b.afterRead != nil {
+		b.afterRead()
+	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return b.enqueue(routeID, building)
+		return b.enqueue(routeID, building, seen)
 	case err != nil:
 		return Status{}, err
 	case row.TokenFP != b.fp(tok):
-		return b.enqueue(routeID, building)
+		return b.enqueue(routeID, building, seen)
 	}
 	age := b.now().Sub(row.BuiltAt)
 	switch row.Status {
 	case "ready":
 		if age > photosMaxAge {
-			return b.enqueue(routeID, building)
+			return b.enqueue(routeID, building, seen)
 		}
 		ps, err := DecodePhotos(row.Photos)
 		if err != nil {
 			b.logger.Warn("discarding unreadable cached photos", "route", routeID, "err", err)
-			return b.enqueue(routeID, building)
+			return b.enqueue(routeID, building, seen)
 		}
 		return Status{State: "ready", BuiltAt: row.BuiltAt, Photos: ps}, nil
 	case "error":
 		if age >= errorRetry {
-			return b.enqueue(routeID, building)
+			return b.enqueue(routeID, building, seen)
 		}
 		return Status{State: "error", Message: row.Error, BuiltAt: row.BuiltAt}, nil
 	}
-	return b.enqueue(routeID, building)
+	return b.enqueue(routeID, building, seen)
 }
 
-// enqueue queues routeID once and returns st.
-func (b *Builder) enqueue(routeID int64, st Status) (Status, error) {
+// enqueue queues routeID once and returns st. seen is Builder.finished as
+// Get started: if a build has completed since, the row Get read may predate
+// it, so nothing is queued and the next Get (the page polls while "building")
+// reads the fresh row.
+func (b *Builder) enqueue(routeID int64, st Status, seen uint64) (Status, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
 		return Status{}, ErrBuilderClosed
 	}
-	if _, ok := b.pending[routeID]; !ok {
+	if _, ok := b.pending[routeID]; !ok && b.finished == seen {
 		b.pending[routeID] = struct{}{}
 		b.queue = append(b.queue, routeID)
 		select {
@@ -240,6 +253,7 @@ func (b *Builder) run() {
 		} else {
 			delete(b.pending, id)
 		}
+		b.finished++
 		b.mu.Unlock()
 		if redo {
 			select {

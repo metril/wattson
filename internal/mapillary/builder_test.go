@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -250,6 +251,59 @@ func TestBuildQueueDedupes(t *testing.T) {
 	tiles := len(Tiles(northRoute(), 14, 25))
 	if got := f.TileRequests(); got != tiles {
 		t.Errorf("tile requests = %d, want %d (one build)", got, tiles)
+	}
+}
+
+// A Get that read the cache row before a build stored it must not queue a second
+// build when it reaches the queue after the build finished (the flake behind
+// "tile requests = 2" in TestBuildQueueDedupes). The hook holds that Get between
+// its read and the queue until the build is complete, so the order is forced.
+func TestGetDoesNotRequeueAfterBuildFinishes(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, fakeImages()...)
+	release := f.GateTiles()
+	x := newBfix(t, storetest.New(t), f)
+	if s := x.get(t); s.State != "building" {
+		t.Fatalf("first get: %q", s.State)
+	}
+	reached, resume := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	x.b.afterRead = func() { // set before the goroutine starts; later Gets pass straight through
+		once.Do(func() { close(reached); <-resume })
+	}
+	stale := make(chan Status, 1)
+	go func() { stale <- x.get(t) }()
+	<-reached // read the (still empty) row; the build is blocked on its tile
+
+	release()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		x.b.mu.Lock()
+		idle := len(x.b.pending) == 0
+		x.b.mu.Unlock()
+		if idle {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("build did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(resume)
+	if s := <-stale; s.State != "building" {
+		t.Errorf("stale get = %q, want building", s.State)
+	}
+	x.b.mu.Lock()
+	queued, pending := len(x.b.queue), len(x.b.pending)
+	x.b.mu.Unlock()
+	if queued != 0 || pending != 0 {
+		t.Fatalf("stale Get queued another build: queue %d pending %d", queued, pending)
+	}
+	if s := x.settle(t); s.State != "ready" {
+		t.Fatalf("settled = %q", s.State)
+	}
+	if got, want := f.TileRequests(), len(Tiles(northRoute(), 14, 25)); got != want {
+		t.Errorf("tile requests = %d, want %d (one build)", got, want)
 	}
 }
 

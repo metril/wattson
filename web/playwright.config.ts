@@ -10,7 +10,12 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   timeout: 60_000,
   expect: { timeout: 5_000 },
-  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: {
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    // MapLibre needs WebGL; headless CI has no GPU, so use the software rasteriser.
+    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
+  },
   projects: [
     { name: 'phone', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, hasTouch: true } },
     // layout.spec.ts sets its own viewports, so only the phone project runs it.

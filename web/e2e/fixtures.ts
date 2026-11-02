@@ -1,10 +1,13 @@
 import { test as base, expect } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
+import { startFakeBRouter, type FakeBRouter } from './fake-brouter';
+import { ADMIN } from './helpers';
 
 const BINARY = resolve(import.meta.dirname, '../../wattson');
 
@@ -41,7 +44,58 @@ async function waitHealthy(url: string, proc: ChildProcess, getLog: () => string
   throw new Error(`wattson did not become healthy\n${getLog()}`);
 }
 
-export const test = base.extend<{ baseURL: string }, { server: Server }>({
+export type Cookie = { name: string; value: string; url: string };
+
+/** Creates the first admin through the API; returns the session cookies for `context.addCookies`. */
+export async function setupAdmin(baseURL: string): Promise<Cookie[]> {
+  const res = await fetch(`${baseURL}/api/setup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(ADMIN),
+  });
+  if (res.status !== 201) throw new Error(`setup failed: ${res.status} ${await res.text()}`);
+  return res.headers.getSetCookie().map((c) => {
+    const [pair] = c.split(';');
+    const i = pair.indexOf('=');
+    return { name: pair.slice(0, i), value: pair.slice(i + 1), url: baseURL };
+  });
+}
+
+/** Sends a signed-in API request from Node (no Origin header, so no CSRF check). */
+export async function apiAs(baseURL: string, cookies: Cookie[], method: string, path: string, body?: unknown) {
+  const res = await fetch(`${baseURL}${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
+  return res;
+}
+
+export const test = base.extend<{ baseURL: string }, { server: Server; fakeBRouter: FakeBRouter; segmentsDir: string }>({
+  // One fake BRouter per worker, in this process.
+  fakeBRouter: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const b = await startFakeBRouter();
+      await use(b);
+      await b.close();
+    },
+    { scope: 'worker' },
+  ],
+
+  // A map-regions directory holding one empty tile, E5_N45 (7.5E 45.5N), so the missing-tile check passes.
+  segmentsDir: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const dir = mkdtempSync(join(tmpdir(), 'wattson-e2e-seg-'));
+      writeFileSync(join(dir, 'E5_N45.rd5'), '');
+      await use(dir);
+      rmSync(dir, { recursive: true, force: true });
+    },
+    { scope: 'worker' },
+  ],
+
   server: [
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {

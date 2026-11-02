@@ -44,6 +44,22 @@ Open the web app, pick a rider and tap Connect, then Start. Use the on-screen âˆ
 
 TV remote: the up and down arrows change the level and Enter starts, pauses or resumes. Stop and Release need touch or mouse, or the idle auto-release. Remote focus navigation for those arrives in M7.
 
+## Routes
+
+Routes turn the bike into a gradient trainer: Wattson raises the resistance a few seconds before a climb and eases it on descents. Open **Routes** in the web app.
+
+- **Import**: upload a GPX, TCX or FIT file (up to 20 MiB, 50 m to 500 km). The route needs elevation data; a file with more than 10 % of its points missing it is rejected unless the OpenTopoData fallback is on (below).
+- **Draw**: click waypoints on the map (up to 30). BRouter follows the roads between them and the preview shows distance, ascent and the elevation profile before you save.
+- **Synthetic**: build a route from segments of a given length and grade, for intervals and tests. It has no map.
+- **Preview and tuning**: a route's page shows the resistance each point will ask for. Gain, flat-road level, downhill relief and lead time come from the rider and apply from the next connect; the preview is a guide (the live ride adds smoothing).
+- **Ride**: choose it on the ride screen (or tap "Ride this route"), then Start. The map marker and profile cursor follow you. The up and down arrows (or Harder and Easier) shift the level by a bias on top of the route's own level. The ride ends at the finish line.
+
+`docker compose up -d` now also starts BRouter. Drawing needs its map data: open **Settings, Map regions**, find the 5 degree squares you want and download them; progress shows there. A draw over a missing region says which one to download. The regions live in the `brouter-segments` volume and are shared with BRouter.
+
+To use a BRouter running elsewhere, set **Settings, BRouter URL** and leave the segments directory empty; Wattson then skips the local missing-region check. On arm64 (Raspberry Pi) the pinned BRouter image is amd64 only, so it runs under emulation (see Docker above) or on another machine through that URL.
+
+Privacy: importing and riding use only your own server. The map background is loaded by your browser from `tiles.openfreemap.org`. With **public fallback** on, a draw BRouter cannot answer sends its waypoints to `brouter.de`, and with **OpenTopoData** on, routes above 60 degrees latitude send their coordinates to `api.opentopodata.org` to get elevation. Both are off by default.
+
 ## Quick start (CLI)
 
 ```

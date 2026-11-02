@@ -55,9 +55,10 @@ export function StartPicker({ value, onChange }: { value: StartChoice; onChange(
   });
   const routeList = routes.data ?? [];
   const workoutList = workouts.data ?? [];
+  // Judge only fresh lists: right after a save, the cached list is invalidated and still lacks the new item.
   const missing =
-    (value.kind === 'route' && !!routes.data && !routeList.some((r) => r.id === value.id)) ||
-    (value.kind === 'workout' && !!workouts.data && !workoutList.some((w) => w.id === value.id));
+    (value.kind === 'route' && !!routes.data && !routes.isFetching && !routeList.some((r) => r.id === value.id)) ||
+    (value.kind === 'workout' && !!workouts.data && !workouts.isFetching && !workoutList.some((w) => w.id === value.id));
   useEffect(() => {
     if (missing) onChange({ kind: 'free' });
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -70,6 +70,11 @@ describe('Ride workout and ERG', () => {
     expect(ws.commands.at(-1)).not.toHaveProperty('route_id');
   });
 
+  it('a ?workout= that is not in the list falls back to a free ride', async () => {
+    await setup('/?workout=9');
+    await waitFor(() => expect(screen.getByLabelText('Ride')).toHaveValue('free'));
+  });
+
   it('shows position, target, next block and countdown from ticks; fetches the workout once', async () => {
     const { ws, stub } = await setup('/?workout=5');
     push(ws, { state: 'riding', mode: 'interval', workout_id: 5, block_index: 0, block_count: 2, block_remaining_s: 75, level: 4 });

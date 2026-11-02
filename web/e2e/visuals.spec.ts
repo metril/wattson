@@ -189,10 +189,13 @@ test('street photos crossfade between two blob-loaded layers in a real browser',
 test('on a TV the view fills the left of a rail layout and View is in the top bar', async ({ page, routeId }, info) => {
   test.skip(info.project.name !== 'tv', 'the TV layout');
   await ride(page, routeId);
+  // The rail applies once the route has loaded; measure after it settles.
+  await expect
+    .poll(async () => (await page.getByTestId('route-map').boundingBox())?.height ?? 0, { message: 'the view is tall, not a strip' })
+    .toBeGreaterThan(650);
   const map = (await page.getByTestId('route-map').boundingBox())!;
   const view = (await page.getByRole('button', { name: 'View' }).boundingBox())!;
   const rail = (await page.getByRole('button', { name: 'Pause' }).boundingBox())!;
-  expect(map.height, 'the view is tall, not a strip').toBeGreaterThan(650);
   expect(view.y + view.height, 'View sits above the view').toBeLessThanOrEqual(map.y);
   expect(rail.x, 'controls are in a right-hand rail').toBeGreaterThan(map.x + map.width);
   expect(rail.y + rail.height, 'inside the screen with its overscan margin').toBeLessThanOrEqual(1080 * 0.95 + 1);

@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func ergBody() map[string]any {
@@ -312,8 +311,13 @@ func TestEditWorkoutDuringRideNoEffect(t *testing.T) {
 	if resp, b := ts.do(t, admin, "PUT", fmt.Sprintf("/api/workouts/%d", w.ID), one); resp.StatusCode != 200 {
 		t.Fatalf("put: %d %s", resp.StatusCode, b)
 	}
-	time.Sleep(100 * time.Millisecond)
-	if tk := ts.ride(t, admin); tk.BlockCount != 2 || tk.Level != 4 {
-		t.Errorf("block_count = %d level = %d after an edit, want the 2 blocks and level 4 resolved at start", tk.BlockCount, tk.Level)
+	// level_delta is a synchronous round trip through the engine loop, which
+	// re-steps the mode and republishes: had the edit reached the ride, the
+	// snapshot would now show one block, and a level of 3 rather than 5.
+	if resp, b := ts.command(t, admin, "level_delta", 1); resp.StatusCode != 204 {
+		t.Fatalf("level_delta: %d %s", resp.StatusCode, b)
+	}
+	if tk := ts.ride(t, admin); tk.BlockCount != 2 || tk.Level != 5 {
+		t.Errorf("block_count = %d level = %d after an edit and a +1 bias, want the 2 blocks and level 5 resolved at start", tk.BlockCount, tk.Level)
 	}
 }

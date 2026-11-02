@@ -53,6 +53,8 @@ type Service struct {
 
 	smu     sync.Mutex // guards sources
 	sources map[int64]*riderSource
+
+	up uploader
 }
 
 // NewService builds a Service.
@@ -69,7 +71,9 @@ func NewService(d ServiceDeps) *Service {
 	if d.PollMax == 0 {
 		d.PollMax = 2 * time.Minute
 	}
-	return &Service{d: d, stateKey: d.Box.Derive(stateLabel), sources: map[int64]*riderSource{}}
+	s := &Service{d: d, stateKey: d.Box.Derive(stateLabel), sources: map[int64]*riderSource{}}
+	s.up.init()
+	return s
 }
 
 // Seal AADs bind each sealed value to its rider and field.

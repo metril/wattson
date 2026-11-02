@@ -154,6 +154,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 		fake = stravatest.New(t)
 		d.Strava = strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: svc, Logger: logger,
 			Client: strava.NewClient(fake.Endpoints(), nil), PollEvery: 10 * time.Millisecond, PollMax: 2 * time.Second})
+		t.Cleanup(d.Strava.Close) // runs before the store closes
 	}
 	h, err := newRouter(d, cfg.extra...)
 	if err != nil {

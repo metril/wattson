@@ -168,8 +168,16 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 		h := v.(serveHooks)
 		rd.SimDial, rd.TickEvery, rd.SimPeriod = h.simDial, h.tickEvery, h.tickEvery
 	}
+	stravaSvc := strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: svc, Logger: logger,
+		Client: strava.NewClient(strava.Prod, &http.Client{Timeout: 30 * time.Second})})
+	// Runs after the recorder has stopped (see releaseBike below) and before
+	// the store closes; the deferred call covers the early-return paths.
+	defer stravaSvc.Close()
+	// Uploads cut short by the last shutdown continue before rides recovered
+	// below can start new ones.
+	stravaSvc.Resume(ctx)
 	// Settle rides a crash left open before a new one can start.
-	if fin, del, err := history.Recover(ctx, st, minRideSamples, nil); err != nil {
+	if fin, del, err := history.Recover(ctx, st, minRideSamples, stravaSvc.AutoUpload); err != nil {
 		logger.Warn("ride recovery incomplete", "finished", fin, "deleted", del, "err", err)
 	} else if fin+del > 0 {
 		logger.Info("recovered unfinished rides", "finished", fin, "deleted", del)
@@ -183,6 +191,7 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 		RouteInfo:  storeRouteInfo(st),
 		MinSamples: minRideSamples,
 		Logger:     logger,
+		OnFinished: stravaSvc.AutoUpload,
 	})
 	go func() {
 		defer close(recDone)
@@ -210,8 +219,6 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	// aborts a stalled transfer itself) and cancelled on shutdown below.
 	tiles := maptiles.New(svc.Get, &http.Client{})
 	defer tiles.Close()
-	stravaSvc := strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: svc, Logger: logger,
-		Client: strava.NewClient(strava.Prod, &http.Client{Timeout: 30 * time.Second})})
 	h, err := api.NewServer(api.Deps{Store: st, Settings: svc, Box: box, Auth: au,
 		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr, Tiles: tiles,
 		Strava: stravaSvc})
@@ -249,7 +256,8 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	}
 
 	releaseBike()
-	tiles.Close() // cancel any map download so its requests end before HTTP drains
+	stravaSvc.Close() // after the recorder finalized its last ride, before the store closes
+	tiles.Close()     // cancel any map download so its requests end before HTTP drains
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(sctx); err != nil {

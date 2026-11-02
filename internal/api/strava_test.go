@@ -1,13 +1,23 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/muktihari/fit/decoder"
+	"github.com/muktihari/fit/profile/filedef"
+
+	"github.com/metril/wattson/internal/integrations/strava"
+	"github.com/metril/wattson/internal/integrations/strava/stravatest"
+	"github.com/metril/wattson/internal/store"
 )
 
 const stravaPW = "bob-password-1"
@@ -414,5 +424,405 @@ func TestStravaCacheControl(t *testing.T) {
 	resp, _ := ts.do(t, admin, "GET", fmt.Sprintf("/api/riders/%d/strava", ts.riderOf(t, admin)), nil)
 	if resp.Header.Get("Cache-Control") != "private, no-store" {
 		t.Errorf("Cache-Control = %q", resp.Header.Get("Cache-Control"))
+	}
+}
+
+// connectedRide connects the admin's rider to the fake Strava and seeds a
+// finished 120-sample route ride.
+func (ts *testServer) connectedRide(t testing.TB, admin *http.Client) (rider int64, r store.Ride) {
+	t.Helper()
+	ts.sharedApp(t, admin)
+	rider = ts.riderOf(t, admin)
+	ts.stravaConnectFlow(t, admin, rider)
+	return rider, ts.seedRide(t, rider, 120, true)
+}
+
+func (ts *testServer) rideStrava(t testing.TB, c *http.Client, id int64) StravaStatusOut {
+	t.Helper()
+	resp, b := ts.do(t, c, "GET", fmt.Sprintf("/api/rides/%d/strava", id), nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("get ride strava: %d %s", resp.StatusCode, b)
+	}
+	return decode[StravaStatusOut](t, b)
+}
+
+// settled polls until the ride's upload leaves "uploading".
+func (ts *testServer) settled(t testing.TB, c *http.Client, id int64) StravaStatusOut {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st := ts.rideStrava(t, c, id)
+		if st.Status != "uploading" {
+			return st
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still uploading: %+v", st)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (ts *testServer) postUpload(t testing.TB, c *http.Client, id int64) (int, StravaStatusOut, []byte) {
+	t.Helper()
+	resp, b := ts.do(t, c, "POST", fmt.Sprintf("/api/rides/%d/strava", id), nil)
+	var out StravaStatusOut
+	if resp.StatusCode < 300 {
+		out = decode[StravaStatusOut](t, b)
+	}
+	return resp.StatusCode, out, b
+}
+
+func fitRecords(t testing.TB, b []byte) int {
+	t.Helper()
+	lis := filedef.NewListener()
+	defer lis.Close()
+	dec := decoder.New(bytes.NewReader(b), decoder.WithMesgListener(lis), decoder.WithBroadcastOnly())
+	for dec.Next() {
+		if _, err := dec.Decode(); err != nil {
+			t.Fatalf("decode fit: %v", err)
+		}
+	}
+	act, ok := lis.File().(*filedef.Activity)
+	if !ok {
+		t.Fatal("not an activity file")
+	}
+	return len(act.Records)
+}
+
+func TestStravaUploadFlow(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	code, st, b := ts.postUpload(t, admin, r.ID)
+	if code != 202 || st.Status != "uploading" {
+		t.Fatalf("POST = %d %s", code, b)
+	}
+	st = ts.settled(t, admin, r.ID)
+	if st.Status != "done" || st.ActivityID != 777 || st.ActivityURL != "https://www.strava.com/activities/777" || st.UploadID == 0 || st.Error != "" {
+		t.Fatalf("status = %+v", st)
+	}
+	ups := ts.Fake.Uploads()
+	if len(ups) != 1 {
+		t.Fatalf("uploads = %d", len(ups))
+	}
+	u := ups[0]
+	if u.DataType != "fit" || u.Trainer != "1" || u.Name != "Loop" || u.Description != "Recorded with Wattson" ||
+		u.ExternalID != fmt.Sprintf("wattson-%d-%d", r.ID, r.StartedAt.Unix()) {
+		t.Errorf("upload = %+v", u)
+	}
+	if n := fitRecords(t, u.FIT); n != 120 {
+		t.Errorf("fit records = %d", n)
+	}
+	// The ride list carries the state too.
+	_, lb := ts.do(t, admin, "GET", "/api/rides", nil)
+	if l := decode[RideList](t, lb); len(l.Rides) != 1 || l.Rides[0].Strava.Status != "done" {
+		t.Errorf("list = %s", lb)
+	}
+	if lg := ts.Log.String(); regexp.MustCompile(`shh|\ba1\b|\br1\b`).MatchString(lg) {
+		t.Errorf("log contains a secret or token:\n%s", lg)
+	}
+}
+
+func TestStravaUploadIdempotent(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.Fake.ProcessingPolls(5)
+	var wg sync.WaitGroup
+	codes := make([]int, 10)
+	for i := range codes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i], _, _ = ts.postUpload(t, admin, r.ID)
+		}()
+	}
+	wg.Wait()
+	for i, c := range codes {
+		if c != 202 && c != 200 {
+			t.Errorf("POST %d = %d", i, c)
+		}
+	}
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" {
+		t.Fatalf("status = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Fatalf("uploads after concurrent POSTs = %d", n)
+	}
+	if code, st, b := ts.postUpload(t, admin, r.ID); code != 200 || st.Status != "done" {
+		t.Errorf("POST after done = %d %s", code, b)
+	}
+	ride, err := ts.Store.Ride(context.Background(), r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.Strava.AutoUpload(context.Background(), ride)
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Errorf("uploads after done = %d", n)
+	}
+}
+
+func TestStravaUploadDuplicate(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.Fake.DuplicateOf(555)
+	ts.postUpload(t, admin, r.ID)
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" || st.ActivityID != 555 || st.Error != "" {
+		t.Errorf("status = %+v", st)
+	}
+}
+
+func TestStravaUploadError(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.Fake.FailNextUpload(200, "Malformed GPS")
+	ts.postUpload(t, admin, r.ID)
+	if st := ts.settled(t, admin, r.ID); st.Status != "error" || !strings.Contains(st.Error, "Malformed GPS") || st.ActivityID != 0 {
+		t.Fatalf("status = %+v", st)
+	}
+	if code, _, b := ts.postUpload(t, admin, r.ID); code != 202 {
+		t.Fatalf("retry = %d %s", code, b)
+	}
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" || st.Error != "" {
+		t.Errorf("after retry = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 2 {
+		t.Errorf("uploads = %d", n)
+	}
+}
+
+func TestStravaUploadRateLimited(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.Fake.FailNextUpload(429, "Rate Limit Exceeded")
+	ts.postUpload(t, admin, r.ID)
+	if st := ts.settled(t, admin, r.ID); st.Status != "error" || !strings.Contains(st.Error, "rate limit") {
+		t.Errorf("status = %+v", st)
+	}
+}
+
+func TestStravaUploadNotConnected(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	ts.sharedApp(t, admin)
+	r := ts.seedRide(t, ts.riderOf(t, admin), 120, true)
+	code, _, b := ts.postUpload(t, admin, r.ID)
+	if code != 409 || errCode(t, b) != "strava_not_connected" {
+		t.Fatalf("POST = %d %s", code, b)
+	}
+	if st := ts.rideStrava(t, admin, r.ID); st.Status != "none" {
+		t.Errorf("status = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 0 {
+		t.Errorf("uploads = %d", n)
+	}
+}
+
+func TestStravaUploadInProgressRide(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, _ := ts.connectedRide(t, admin)
+	open, err := ts.Store.CreateRide(context.Background(), store.Ride{RiderID: rider, Mode: "free", StartedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, b := ts.postUpload(t, admin, open.ID)
+	if code != 409 || errCode(t, b) != "ride_in_progress" {
+		t.Errorf("POST = %d %s", code, b)
+	}
+	if resp, b := ts.do(t, admin, "GET", fmt.Sprintf("/api/rides/%d/strava", open.ID), nil); resp.StatusCode != 409 || errCode(t, b) != "ride_in_progress" {
+		t.Errorf("GET = %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestStravaUploadOwnershipAndScope(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.addUser(t, "bob", "bob-password-1", false)
+	bob := ts.loginAs(t, "bob", "bob-password-1")
+	if code, _, _ := ts.postUpload(t, bob, r.ID); code != 404 {
+		t.Errorf("bob POST = %d, want 404", code)
+	}
+	if resp, _ := ts.do(t, bob, "GET", fmt.Sprintf("/api/rides/%d/strava", r.ID), nil); resp.StatusCode != 404 {
+		t.Errorf("bob GET = %d, want 404", resp.StatusCode)
+	}
+	// A read-scope (kiosk) token cannot start an upload.
+	tok := ts.mintToken(t, "kiosk", true, "read")
+	if resp, _ := ts.do(t, nil, "POST", fmt.Sprintf("/api/rides/%d/strava", r.ID), nil, bearer(tok)...); resp.StatusCode != 403 {
+		t.Errorf("read token POST = %d, want 403", resp.StatusCode)
+	}
+	if n := len(ts.Fake.Uploads()); n != 0 {
+		t.Errorf("uploads = %d", n)
+	}
+}
+
+func TestRefreshPersisted(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	ctx := context.Background()
+	l, err := ts.Store.StravaLink(ctx, rider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.ExpiresAt = time.Now().Add(-time.Hour)
+	if err := ts.Store.PutStravaLink(ctx, l); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, b := ts.postUpload(t, admin, r.ID); code != 202 {
+		t.Fatalf("POST = %d %s", code, b)
+	}
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" {
+		t.Fatalf("status = %+v", st)
+	}
+	if ups := ts.Fake.Uploads(); len(ups) != 1 || ups[0].Bearer != "a2" {
+		t.Fatalf("uploads = %+v", ups)
+	}
+	l, err = ts.Store.StravaLink(ctx, rider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ts.Box.OpenFor(l.RefreshEnc, fmt.Sprintf("strava.rider.%d.refresh_token", rider)); err != nil || got != "r2" {
+		t.Errorf("stored refresh token = %q, %v", got, err)
+	}
+	if lg := ts.Log.String(); regexp.MustCompile(`shh|\b[ar][12]\b`).MatchString(lg) {
+		t.Errorf("log contains a secret or token:\n%s", lg)
+	}
+}
+
+func TestUploadUnauthorizedClearsLink(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	ts.Fake.Unauthorized(true)
+	ts.postUpload(t, admin, r.ID)
+	if st := ts.settled(t, admin, r.ID); st.Status != "error" || !strings.Contains(st.Error, "reconnect") {
+		t.Fatalf("status = %+v", st)
+	}
+	if l, _ := ts.stravaLink(t, admin, rider); l.Connected {
+		t.Errorf("link still connected: %+v", l)
+	}
+}
+
+func TestAutoUpload(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	ctx := context.Background()
+	ts.Strava.AutoUpload(ctx, r) // auto_upload is off by default
+	if st := ts.rideStrava(t, admin, r.ID); st.Status != "none" || len(ts.Fake.Uploads()) != 0 {
+		t.Fatalf("auto_upload off: %+v, %d uploads", st, len(ts.Fake.Uploads()))
+	}
+	if resp, b := ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"auto_upload": true}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	ts.Strava.AutoUpload(ctx, r)
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" || len(ts.Fake.Uploads()) != 1 {
+		t.Errorf("auto_upload on: %+v, %d uploads", st, len(ts.Fake.Uploads()))
+	}
+}
+
+func TestAutoUploadNotConnected(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	ts.sharedApp(t, admin)
+	rider := ts.riderOf(t, admin)
+	if resp, b := ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"auto_upload": true}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	r := ts.seedRide(t, rider, 120, false)
+	ts.Strava.AutoUpload(context.Background(), r)
+	if st := ts.rideStrava(t, admin, r.ID); st.Status != "none" || len(ts.Fake.Uploads()) != 0 {
+		t.Errorf("status = %+v", st)
+	}
+}
+
+func TestResumeUploading(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	ctx := context.Background()
+	// A previous run uploaded the file and went away mid-processing.
+	ts.Fake.ProcessingPolls(2)
+	src, err := ts.Strava.Source(ctx, rider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, err := strava.NewClient(ts.Fake.Endpoints(), nil).Upload(ctx, src, strava.UploadReq{FIT: stravatest.SampleFIT(t), ExternalID: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if won, err := ts.Store.ClaimStravaUpload(ctx, r.ID, time.Now()); err != nil || !won {
+		t.Fatalf("claim: %v %v", won, err)
+	}
+	if err := ts.Store.SetStravaState(ctx, r.ID, store.StravaState{Status: "uploading", UploadID: up.ID, UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	// A second run, with a fresh service on the same store, finishes it.
+	svc2 := strava.NewService(strava.ServiceDeps{Store: ts.Store, Box: ts.Box, Settings: ts.Settings, Client: strava.NewClient(ts.Fake.Endpoints(), nil), PollEvery: 10 * time.Millisecond, PollMax: 2 * time.Second})
+	t.Cleanup(svc2.Close)
+	// A ride that never got its upload ID is reported interrupted.
+	lost := ts.seedRide(t, rider, 120, false)
+	if won, err := ts.Store.ClaimStravaUpload(ctx, lost.ID, time.Now()); err != nil || !won {
+		t.Fatalf("claim: %v %v", won, err)
+	}
+	svc2.Resume(ctx)
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" || st.ActivityID != 777 {
+		t.Errorf("resumed = %+v", st)
+	}
+	if st := ts.settled(t, admin, lost.ID); st.Status != "error" || st.Error != "interrupted; retry" {
+		t.Errorf("lost = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Errorf("uploads = %d, want the earlier run's only", n)
+	}
+}
+
+func TestCloseStopsWorkers(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.Fake.ProcessingPolls(1000)
+	if code, _, b := ts.postUpload(t, admin, r.ID); code != 202 {
+		t.Fatalf("POST = %d %s", code, b)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ts.rideStrava(t, admin, r.ID).UploadID == 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("upload id never saved")
+		}
+	}
+	done := make(chan struct{})
+	go func() { ts.Strava.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not return within 1 s")
+	}
+	if st := ts.rideStrava(t, admin, r.ID); st.Status != "uploading" {
+		t.Errorf("status after close = %+v, want uploading (resumable)", st)
+	}
+	if code, _, _ := ts.postUpload(t, admin, r.ID); code != 202 && code != 200 {
+		t.Errorf("POST after close = %d", code)
+	}
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Errorf("uploads = %d", n)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/history"
 	"github.com/metril/wattson/internal/integrations/fitexport"
+	"github.com/metril/wattson/internal/integrations/strava"
 	"github.com/metril/wattson/internal/store"
 )
 
@@ -56,6 +57,18 @@ type RideOut struct {
 	Strava        StravaStatusOut `json:"strava" doc:"Strava upload state of the ride."`
 }
 
+// stravaStatus renders a ride's stored Strava state.
+func stravaStatus(st store.StravaState) StravaStatusOut {
+	o := StravaStatusOut{Status: st.Status, UploadID: st.UploadID, ActivityID: st.ActivityID, Error: st.Error}
+	if o.Status == "" {
+		o.Status = "none"
+	}
+	if st.ActivityID != 0 {
+		o.ActivityURL = "https://www.strava.com/activities/" + strconv.FormatInt(st.ActivityID, 10)
+	}
+	return o
+}
+
 func rideSummary(r store.Ride) RideOut {
 	s := r.Summary
 	o := RideOut{ID: r.ID, RiderID: r.RiderID, RiderName: r.RiderName, RouteID: r.RouteID, RouteName: r.RouteName,
@@ -63,14 +76,7 @@ func rideSummary(r store.Ride) RideOut {
 		AscentM: s.AscentM, AvgPowerW: s.AvgPowerW, MaxPowerW: s.MaxPowerW, NPW: s.NPW, KJ: s.KJ,
 		AvgCadenceRpm: s.AvgCadenceRpm, AvgHRBpm: s.AvgHRBpm, MaxHRBpm: s.MaxHRBpm, AvgSpeedKmh: s.AvgSpeedKmh,
 		MaxSpeedKmh: s.MaxSpeedKmh, SampleCount: r.SampleCount,
-		Strava: StravaStatusOut{Status: r.Strava.Status, UploadID: r.Strava.UploadID, ActivityID: r.Strava.ActivityID,
-			Error: r.Strava.Error}}
-	if o.Strava.Status == "" {
-		o.Strava.Status = "none"
-	}
-	if r.Strava.ActivityID != 0 {
-		o.Strava.ActivityURL = "https://www.strava.com/activities/" + strconv.FormatInt(r.Strava.ActivityID, 10)
-	}
+		Strava: stravaStatus(r.Strava)}
 	if r.EndedAt != nil {
 		t := r.EndedAt.UTC()
 		o.EndedAt = &t
@@ -169,6 +175,13 @@ type rideDetailIn struct {
 }
 
 type rideDetailBody struct{ Body RideDetail }
+
+type stravaStatusBody struct{ Body StravaStatusOut }
+
+type stravaUploadOut struct {
+	Status int
+	Body   StravaStatusOut
+}
 
 type rideFitOut struct {
 	ContentType string `header:"Content-Type"`
@@ -310,4 +323,55 @@ func (d Deps) registerRides(api huma.API) {
 				Disposition: `attachment; filename="` + fitexport.Filename(r) + `"`, Body: buf.Bytes()}, nil
 		})
 	binaryResponse(api, "/api/rides/{id}/fit", fitMediaType, "The ride as a FIT activity file.")
+	d.registerRideStrava(api)
+}
+
+func (d Deps) registerRideStrava(api huma.API) {
+	register(api, route{Method: http.MethodGet, Path: "/api/rides/{id}/strava", ID: "getRideStrava", Tag: "rides",
+		Summary: "Get a ride's Strava upload status",
+		Description: "Returns the ride's Strava upload state: `none`, `uploading`, `done` (with the activity) or `error` " +
+			"(with the reason). A ride of another user returns 404 unless the caller is an admin; a ride still recording is " +
+			"409 `ride_in_progress`.",
+		Scope: auth.ScopeRead, Errors: []int{http.StatusConflict}},
+		func(ctx context.Context, in *rideIDIn) (*stravaStatusBody, error) {
+			r, err := d.ownedRide(ctx, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &stravaStatusBody{Body: stravaStatus(r.Strava)}, nil
+		})
+
+	register(api, route{Method: http.MethodPost, Path: "/api/rides/{id}/strava", ID: "uploadRideStrava", Tag: "rides",
+		Summary: "Upload a ride to Strava",
+		Description: "Uploads the ride to its rider's connected Strava account as a FIT activity. The upload runs in the " +
+			"background: the response is 202 with status `uploading` while a worker runs (poll `GET /api/rides/{id}/strava`), " +
+			"and 200 when the ride is already `done`, which is never uploaded again. Only one upload is ever started per ride, " +
+			"however many requests arrive; a failed ride (`error`) can be retried. Strava reporting a duplicate counts as done " +
+			"with the existing activity. Errors: 409 `strava_not_connected` (the rider has not connected Strava), 409 " +
+			"`ride_in_progress`; 404 for a ride of another user unless the caller is an admin.",
+		Scope: auth.ScopeControl, Status: http.StatusAccepted, AlsoOK: []int{http.StatusOK},
+		Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
+		func(ctx context.Context, in *rideIDIn) (*stravaUploadOut, error) {
+			if d.Strava == nil {
+				return nil, errNoStrava
+			}
+			r, err := d.ownedRide(ctx, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			st, _, err := d.Strava.Upload(ctx, r.ID)
+			switch {
+			case errors.Is(err, strava.ErrNotConnected):
+				return nil, apiErr(http.StatusConflict, "strava_not_connected", "the rider has not connected Strava")
+			case errors.Is(err, store.ErrNotFound):
+				return nil, errNoRide()
+			case err != nil:
+				return nil, err
+			}
+			code := http.StatusAccepted
+			if st.Status == "done" {
+				code = http.StatusOK
+			}
+			return &stravaUploadOut{Status: code, Body: stravaStatus(st)}, nil
+		})
 }

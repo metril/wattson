@@ -31,6 +31,19 @@ describe('UsersPage', () => {
     expect(api.bodies('PATCH /api/users/3')[0]).toEqual({ is_admin: true });
   });
 
+  it('refreshes the session after changing your own admin flag', async () => {
+    const me = { user: bob, scopes: ['admin'], via: 'session' };
+    const api = stubApi({
+      'GET /api/users': [200, [root, bob]],
+      'GET /api/auth/me': [200, me],
+      'PATCH /api/users/2': [200, { ...bob, is_admin: false }],
+    });
+    renderWithClient(<UsersPage />);
+    await waitFor(() => expect(api.bodies('GET /api/auth/me')).toHaveLength(1));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Admin: bob' }));
+    await waitFor(() => expect(api.bodies('GET /api/auth/me')).toHaveLength(2));
+  });
+
   it('shows the last_admin refusal inline and leaves the toggle as it was', async () => {
     stubApi({
       'GET /api/users': [200, [{ ...root, is_bootstrap: false, is_admin: false }, bob]],

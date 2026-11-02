@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TextArea } from '@/components/TextArea';
 import { Toggle } from '@/components/Toggle';
 import { ProvidersCard } from '@/features/oidc/ProvidersCard';
@@ -12,6 +12,8 @@ function Body({ s }: { s: SettingsOut }) {
     'auth.trusted_proxies': s.auth.trusted_proxies,
   });
   const [proxies, setProxies] = useState(s.auth.trusted_proxies.join('\n'));
+  // After a save the server's normalised list replaces whatever was typed.
+  useEffect(() => setProxies(s.auth.trusted_proxies.join('\n')), [f.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const keys = ['auth.allow_local_login', 'auth.trusted_proxies'];
   return (
     <form

@@ -10,6 +10,7 @@ import { SecretInput } from '@/components/SecretInput';
 import { TestButton } from '@/components/TestButton';
 import { Toggle } from '@/components/Toggle';
 import { PROVIDERS_KEY, type ProviderOut } from './queries';
+import { useSettings } from '@/pages/settings/form';
 import { RedirectUri } from './RedirectUri';
 
 type Create = components['schemas']['CreateProviderInBody'];
@@ -42,6 +43,8 @@ export function ProviderForm({
   const [name, setName] = useState(initial?.display_name ?? '');
   const [slug, setSlug] = useState(initial?.slug ?? '');
   const [slugEdited, setSlugEdited] = useState(false);
+  const publicUrl = useSettings().data?.general.public_url;
+  const previewUri = `${(publicUrl || window.location.origin).replace(/\/+$/, '')}/api/auth/oidc/${slug.trim() || '{slug}'}/callback`;
   const [discovery, setDiscovery] = useState(initial?.discovery_url ?? '');
   const [clientId, setClientId] = useState(initial?.client_id ?? '');
   const [secret, setSecret] = useState<string | undefined>();
@@ -116,7 +119,17 @@ export function ProviderForm({
         submit();
       }}
     >
-      {initial && <RedirectUri uri={initial.redirect_uri} name={initial.display_name} />}
+      {initial ? (
+        <RedirectUri uri={initial.redirect_uri} name={initial.display_name} />
+      ) : (
+        <div className="flex flex-col gap-1">
+          <RedirectUri uri={previewUri} name="new provider" label="Redirect URI (preview)" />
+          <p className="text-xs text-dim">
+            Register this at your provider. It follows the slug and the Public URL setting
+            {publicUrl ? '' : ' (not set, so this browser address is used)'}; the saved provider shows the final value.
+          </p>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="Display name"

@@ -6,6 +6,7 @@ import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
 import { Card } from '@/components/Card';
 import { Toggle } from '@/components/Toggle';
+import { ME_KEY, useMe } from '@/lib/auth';
 
 type User = components['schemas']['UserOut'];
 const USERS_KEY = ['users'] as const;
@@ -25,13 +26,17 @@ export function UsersPage() {
     queryKey: USERS_KEY,
     queryFn: async () => unwrap(await api.GET('/api/users')),
   });
+  const meId = useMe().data?.user.id;
   const [error, setError] = useState<string | null>(null);
   const patch = useMutation({
     mutationFn: async (v: { id: number; body: { is_admin?: boolean; disabled?: boolean } }) =>
       unwrap(await api.PATCH('/api/users/{id}', { params: { path: { id: v.id } }, body: v.body })),
     onMutate: () => setError(null),
-    onSuccess: (u) =>
-      qc.setQueryData<User[]>(USERS_KEY, (old) => old?.map((x) => (x.id === u.id ? u : x))),
+    onSuccess: (u) => {
+      qc.setQueryData<User[]>(USERS_KEY, (old) => old?.map((x) => (x.id === u.id ? u : x)));
+      // Changing your own flags changes what the shell and route guards let you see.
+      if (u.id === meId) void qc.invalidateQueries({ queryKey: ME_KEY });
+    },
     onError: (e) => {
       setError(refusal(e));
       void qc.invalidateQueries({ queryKey: USERS_KEY });

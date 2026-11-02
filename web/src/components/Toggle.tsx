@@ -1,6 +1,9 @@
 import { useId, type ReactNode } from 'react';
 
-/** Switch with a 48 px hit area. `srOnly` keeps the label for assistive tech only (table cells). */
+/**
+ * Switch whose whole label row is the hit area: at least 48 x 48 px even when
+ * `srOnly` hides the text (table cells), while the 24 px control stays centred.
+ */
 export function Toggle({
   label,
   hint,
@@ -18,27 +21,26 @@ export function Toggle({
 }) {
   const id = useId();
   return (
-    <div className="flex items-start gap-3">
-      <input
-        id={id}
-        type="checkbox"
-        role="switch"
-        checked={checked}
-        disabled={disabled}
-        aria-describedby={hint ? `${id}-hint` : undefined}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-3 size-6 shrink-0 accent-accent disabled:opacity-50"
-      />
-      <div className={srOnly ? 'sr-only' : 'min-w-0 py-2'}>
-        <label htmlFor={id} className="block min-h-6 leading-6">
-          {label}
-        </label>
-        {hint && (
-          <p id={`${id}-hint`} className="text-xs text-dim">
-            {hint}
-          </p>
-        )}
-      </div>
+    <div>
+      <label
+        className={`flex min-h-touch min-w-touch items-center gap-3 ${srOnly ? 'justify-center' : ''} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <input
+          type="checkbox"
+          role="switch"
+          checked={checked}
+          disabled={disabled}
+          aria-describedby={hint ? `${id}-hint` : undefined}
+          onChange={(e) => onChange(e.target.checked)}
+          className="size-6 shrink-0 accent-accent disabled:opacity-50"
+        />
+        <span className={srOnly ? 'sr-only' : 'min-w-0'}>{label}</span>
+      </label>
+      {hint && (
+        <p id={`${id}-hint`} className="pb-2 pl-9 text-xs text-dim">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

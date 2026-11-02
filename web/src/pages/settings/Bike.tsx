@@ -86,7 +86,7 @@ function Body({ s, compact, onSaved }: { s: SettingsOut; compact?: boolean; onSa
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        void f.submit();
+        void f.submit(shown);
       }}
     >
       <FormCard title="Bike connection" compact={compact}>
@@ -240,7 +240,7 @@ function Body({ s, compact, onSaved }: { s: SettingsOut; compact?: boolean; onSa
           240,
           '0 never releases. A connecting or ready bike with no commands for this long is released; a ride in progress never is.',
         )}
-        <SaveBar dirty={f.dirty} pending={f.pending} saved={f.saved} banner={f.banner(shown)} />
+        <SaveBar dirty={f.dirtyFor(shown)} pending={f.pending} saved={f.saved} banner={f.banner(shown)} />
       </FormCard>
     </form>
   );

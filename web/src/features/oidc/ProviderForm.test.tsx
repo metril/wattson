@@ -1,6 +1,6 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { apiError, providerFixture, renderWithClient, stubApi } from '@/test-utils';
+import { apiError, providerFixture, renderWithClient, settingsFixture, stubApi } from '@/test-utils';
 import { ProviderForm } from './ProviderForm';
 
 async function fillCreate() {
@@ -56,7 +56,7 @@ describe('ProviderForm', () => {
     await userEvent.type(screen.getByLabelText('Display name'), 'X');
     await userEvent.click(screen.getByRole('button', { name: /create provider/i }));
     expect(await screen.findByText(/client secret is required/i)).toBeInTheDocument();
-    expect(api.calls).toHaveLength(0);
+    expect(api.calls.filter((c) => c.key.startsWith('POST'))).toHaveLength(0);
   });
 
   it('edit without touching the secret sends only changed fields and no client_secret', async () => {
@@ -99,6 +99,15 @@ describe('ProviderForm', () => {
     await userEvent.click(screen.getByRole('button', { name: /check discovery/i }));
     expect(await screen.findByRole('status')).toHaveTextContent('issuer https://auth.example');
     expect(api.bodies('POST /api/admin/oidc-providers/discover')[0]).toEqual({ discovery_url: 'https://auth.example/' });
+  });
+
+  it('previews the redirect URI from the public URL and slug while creating', async () => {
+    stubApi({ 'GET /api/settings': [200, settingsFixture()] });
+    renderWithClient(<ProviderForm onDone={() => {}} />);
+    await userEvent.type(screen.getByLabelText('Display name'), 'Authentik Home');
+    expect(
+      await screen.findByText('https://w.example/api/auth/oidc/authentik-home/callback'),
+    ).toBeInTheDocument();
   });
 
   it('explains that link-by-email skips admin accounts', () => {

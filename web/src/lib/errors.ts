@@ -6,7 +6,10 @@ export function errMessage(e: unknown): string {
     if (e.code === 'bike_busy') return 'Release the bike on the Ride screen first.';
     return e.message;
   }
-  return "Couldn't reach the server.";
+  // fetch() rejects with a TypeError when the network is down.
+  if (e instanceof TypeError) return "Couldn't reach the server.";
+  console.error(e);
+  return e instanceof Error && e.message ? e.message : 'Something went wrong.';
 }
 
 /** `section.field: problem` as returned with 400 invalid_setting. */

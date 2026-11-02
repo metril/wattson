@@ -72,6 +72,20 @@ describe('BikeForm', () => {
     expect(api.bodies('PATCH /api/settings')[0]).toEqual({ bike: { idle_release_min: 30 } });
   });
 
+  it('ignores edits to fields that are no longer shown', async () => {
+    const api = setup();
+    renderWithClient(<BikeForm />);
+    await userEvent.click(await screen.findByRole('radio', { name: /esphome proxy/i }));
+    await userEvent.type(screen.getByLabelText('ESPHome host'), 'proxy.local');
+    await userEvent.click(screen.getByRole('radio', { name: /local adapter/i }));
+    const idle = screen.getByLabelText(/idle auto-release/i);
+    await userEvent.clear(idle);
+    await userEvent.type(idle, '5');
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(api.bodies('PATCH /api/settings')).toHaveLength(1));
+    expect(api.bodies('PATCH /api/settings')[0]).toEqual({ bike: { idle_release_min: 5 } });
+  });
+
   it('shows the release hint when saving is refused with bike_busy', async () => {
     setup({}, { 'PATCH /api/settings': apiError(409, 'bike_busy') });
     renderWithClient(<BikeForm />);

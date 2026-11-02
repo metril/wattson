@@ -54,14 +54,17 @@ export function useSettingsForm(server: Flat | undefined, onSaved?: () => void) 
   const [version, setVersion] = useState(0);
   const save = useSaveSettings();
 
-  const changes = (): Flat => {
+  // Only fields currently on screen count: edits to hidden fields are neither
+  // sent nor validated, so they cannot block a save.
+  const changes = (shown?: string[]): Flat => {
     const out: Flat = {};
     for (const [k, v] of Object.entries(draft)) {
+      if (shown && !shown.includes(k)) continue;
       if (!same(v, server?.[k])) out[k] = v;
     }
     return out;
   };
-  const dirty = Object.keys(changes()).length > 0;
+  const dirtyFor = (shown?: string[]) => Object.keys(changes(shown)).length > 0;
 
   const edit = (k: string, v: Value | undefined) => {
     setSaved(false);
@@ -74,8 +77,8 @@ export function useSettingsForm(server: Flat | undefined, onSaved?: () => void) 
     });
   };
 
-  async function submit() {
-    const ch = changes();
+  async function submit(shown?: string[]) {
+    const ch = changes(shown);
     if (Object.keys(ch).length === 0) return;
     const bad = Object.entries(ch).find(([, v]) => typeof v === 'number' && Number.isNaN(v));
     if (bad) {
@@ -98,7 +101,8 @@ export function useSettingsForm(server: Flat | undefined, onSaved?: () => void) 
     value: <T extends Value | undefined>(k: string): T => (k in draft ? draft[k] : server?.[k]) as T,
     edit,
     submit,
-    dirty,
+    dirty: dirtyFor(),
+    dirtyFor,
     pending: save.isPending,
     saved,
     version,

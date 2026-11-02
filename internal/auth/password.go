@@ -66,12 +66,18 @@ func formatPHC(m, t uint32, p uint8, salt, key []byte) string {
 		argon2.Version, m, t, p, b64.EncodeToString(salt), b64.EncodeToString(key))
 }
 
+// queuedKey carries an optional test hook, see export_test.go.
+type queuedKey struct{}
+
 // derive runs argon2id under the global semaphore. Waiting for the semaphore
 // honours ctx, so a cancelled request leaves the queue instead of burning
 // 12 MiB and ~50 ms of CPU for nobody.
 func derive(ctx context.Context, pw string, salt []byte, m, t uint32, p uint8, n uint32) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if f, ok := ctx.Value(queuedKey{}).(func()); ok {
+		f() // test hook: the caller is about to block on the semaphore
 	}
 	select {
 	case hashSem <- struct{}{}:

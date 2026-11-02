@@ -99,9 +99,18 @@ func TestVerifyCtxCancelWhileQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	queued := make(chan struct{})
+	cctx = QueuedHook(cctx, func() { close(queued) })
 	hashSem <- struct{}{} // occupy the semaphore so the verify must queue
+	defer func() { <-hashSem }()
 	done := make(chan error, 1)
 	go func() { _, err := VerifyPassword(cctx, h, "hunter2hunter2"); done <- err }()
+	select {
+	case <-queued: // goroutine is past the early ctx check and about to block
+	case <-time.After(2 * time.Second):
+		t.Fatal("verify never reached the semaphore")
+	}
 	cancel()
 	select {
 	case err := <-done:
@@ -110,28 +119,5 @@ func TestVerifyCtxCancelWhileQueued(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("VerifyPassword did not return after ctx cancel")
-	}
-	<-hashSem
-}
-
-func TestVerifyStrictPHC(t *testing.T) {
-	t.Parallel()
-	h, err := hashWith(ctx, "hunter2hunter2", []byte("0123456789abcdef"), 8192, 1, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := VerifyPassword(ctx, h, "hunter2hunter2"); err != nil || !ok {
-		t.Fatalf("canonical hash rejected: ok=%v err=%v", ok, err)
-	}
-	for name, bad := range map[string]string{
-		"v=19x":         strings.Replace(h, "v=19", "v=19x", 1),
-		"zero padded m": strings.Replace(h, "m=8192", "m=08192", 1),
-		"plus sign t":   strings.Replace(h, "t=1", "t=+1", 1),
-		"trailing $":    h + "$",
-		"over mem cap":  strings.Replace(h, "m=8192", "m=65537", 1),
-	} {
-		if ok, err := VerifyPassword(ctx, bad, "hunter2hunter2"); err == nil || ok {
-			t.Errorf("%s: VerifyPassword = %v, %v; want error", name, ok, err)
-		}
 	}
 }

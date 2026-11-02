@@ -27,6 +27,7 @@ type Authenticator struct {
 
 	mu      sync.Mutex
 	touched map[int64]time.Time // token id -> last last_used_at write
+	tswept  time.Time
 }
 
 // NewAuthenticator builds an Authenticator. publicURL returns the configured
@@ -124,6 +125,14 @@ func (a *Authenticator) touchDue(id int64, now time.Time) bool {
 	if last, ok := a.touched[id]; ok && now.Sub(last) < touchEvery {
 		return false
 	}
+	if now.Sub(a.tswept) >= touchEvery { // drop entries that no longer throttle
+		for k, t := range a.touched {
+			if now.Sub(t) >= touchEvery {
+				delete(a.touched, k)
+			}
+		}
+		a.tswept = now
+	}
 	a.touched[id] = now
 	return true
 }
@@ -151,26 +160,49 @@ func safeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
 
-// originOK is true when no Origin header is sent or its host is this
-// request's Host or the public URL's host.
+// originOK is true when the Origin header names this request's Host or the
+// public URL's host (default ports normalized per scheme). With no Origin,
+// the request passes unless the browser says Sec-Fetch-Site: cross-site.
 func (a *Authenticator) originOK(r *http.Request) bool {
 	vals := r.Header.Values("Origin")
 	if len(vals) == 0 {
-		return true
+		return r.Header.Get("Sec-Fetch-Site") != "cross-site"
 	}
 	o, err := url.Parse(vals[0])
 	if err != nil || o.Host == "" { // includes "null"
 		return false
 	}
-	if strings.EqualFold(o.Host, r.Host) {
+	want := canonHost(o.Host, o.Scheme)
+	if canonHost(r.Host, o.Scheme) == want {
 		return true
 	}
 	if a.publicURL != nil {
-		if p, err := url.Parse(a.publicURL(r.Context())); err == nil && p.Host != "" && strings.EqualFold(o.Host, p.Host) {
+		if p, err := url.Parse(a.publicURL(r.Context())); err == nil && p.Host != "" &&
+			canonHost(p.Host, p.Scheme) == want {
 			return true
 		}
 	}
 	return false
+}
+
+// canonHost lowercases hostport and drops the port when it is scheme's
+// default (443 for https, 80 for http).
+func canonHost(hostport, scheme string) string {
+	u, err := url.Parse("//" + hostport)
+	if err != nil {
+		return strings.ToLower(hostport)
+	}
+	host, port := strings.ToLower(u.Hostname()), u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if port != "" {
+		host += ":" + port
+	}
+	return host
 }
 
 func writeCSRF(w http.ResponseWriter) {

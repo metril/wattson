@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -250,17 +251,92 @@ func TestCookieMutationForeignOrigin403(t *testing.T) {
 		cookie         bool
 		want           int
 	}{
-		"same host":          {"POST", "http://wattson.local:8080", true, 204},
-		"same host upper":    {"DELETE", "http://WATTSON.local:8080", true, 204},
-		"public url host":    {"PUT", publicURL, true, 204},
-		"no origin":          {"POST", "", true, 204},
-		"null origin":        {"POST", "null", true, 403},
-		"other port":         {"POST", "http://wattson.local:9999", true, 403},
-		"bearer foreign":     {"POST", "https://evil.example", false, 204},
-		"cookie GET foreign": {"GET", "https://evil.example", true, 204},
-		"cookie OPTIONS":     {"OPTIONS", "https://evil.example", true, 204},
+		"same host":           {"POST", "http://wattson.local:8080", true, 204},
+		"same host upper":     {"DELETE", "http://WATTSON.local:8080", true, 204},
+		"public url host":     {"PUT", publicURL, true, 204},
+		"no origin":           {"POST", "", true, 204},
+		"null origin":         {"POST", "null", true, 403},
+		"other port":          {"POST", "http://wattson.local:9999", true, 403},
+		"bearer foreign":      {"POST", "https://evil.example", false, 204},
+		"cookie GET foreign":  {"GET", "https://evil.example", true, 204},
+		"cookie OPTIONS":      {"OPTIONS", "https://evil.example", true, 204},
+		"public default port": {"POST", "https://wattson.example:443", true, 403}, // public URL is :8443, not 443
 	} {
 		if got := do(tc.method, tc.origin, tc.cookie).Code; got != tc.want {
+			t.Errorf("%s: code %d, want %d", name, got, tc.want)
+		}
+	}
+}
+
+func TestCSRFDefaultPorts(t *testing.T) {
+	t.Parallel()
+	st := storetest.New(t)
+	a := auth.NewAuthenticator(st, func(context.Context) string { return "https://wattson.example" },
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	u := mkUser(t, st, "rider", false, false)
+	c := mkSession(t, st, u.ID)
+	h := a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	for name, tc := range map[string]struct {
+		target, origin string
+		want           int
+	}{
+		"https explicit 443 vs public": {"http://10.0.0.1/x", "https://wattson.example:443", 204},
+		"https implicit vs public":     {"http://10.0.0.1/x", "https://wattson.example", 204},
+		"http 80 vs host":              {"http://wattson.local/x", "http://wattson.local:80", 204},
+		"host has :80, origin none":    {"http://wattson.local:80/x", "http://wattson.local", 204},
+		"https 443 vs host":            {"https://wattson.local/x", "https://wattson.local:443", 204},
+		"http :443 is not default":     {"http://wattson.local/x", "http://wattson.local:443", 403},
+		"https :80 is not default":     {"http://wattson.local/x", "https://wattson.local:80", 403},
+		"ipv6 default port":            {"http://[::1]/x", "http://[::1]:80", 204},
+		"foreign still refused":        {"http://wattson.local/x", "https://evil.example:443", 403},
+	} {
+		r := httptest.NewRequest("POST", tc.target, nil)
+		r.Header.Set("Origin", tc.origin)
+		withCookie(r, c)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.want {
+			t.Errorf("%s: code %d, want %d", name, w.Code, tc.want)
+		}
+	}
+}
+
+func TestCSRFSecFetchSiteWithoutOrigin(t *testing.T) {
+	t.Parallel()
+	st := storetest.New(t)
+	a := newAuth(t, st)
+	u := mkUser(t, st, "rider", false, false)
+	c := mkSession(t, st, u.ID)
+	tok := mkToken(t, st, u.ID, "read", "control")
+	h := a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	do := func(method, site string, cookie bool) int {
+		r := httptest.NewRequest(method, "http://wattson.local/x", nil)
+		if site != "" {
+			r.Header.Set("Sec-Fetch-Site", site)
+		}
+		if cookie {
+			withCookie(r, c)
+		} else {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for name, tc := range map[string]struct {
+		method, site string
+		cookie       bool
+		want         int
+	}{
+		"cross-site cookie POST": {"POST", "cross-site", true, 403},
+		"same-origin":            {"POST", "same-origin", true, 204},
+		"same-site":              {"POST", "same-site", true, 204},
+		"none (navigation)":      {"POST", "none", true, 204},
+		"absent":                 {"POST", "", true, 204},
+		"cross-site GET":         {"GET", "cross-site", true, 204},
+		"cross-site bearer":      {"POST", "cross-site", false, 204},
+	} {
+		if got := do(tc.method, tc.site, tc.cookie); got != tc.want {
 			t.Errorf("%s: code %d, want %d", name, got, tc.want)
 		}
 	}
@@ -306,30 +382,30 @@ func TestLimiter(t *testing.T) {
 		for i := 0; i < 9; i++ {
 			l.Fail("ip")
 		}
-		if ok, _ := l.Allow("ip"); !ok {
+		if res, _ := l.Allow("ip"); res == nil {
 			t.Fatal("blocked after 9 failures")
 		}
 		l.Fail("ip")
-		ok, retry := l.Allow("ip")
-		if ok || retry != 10*time.Minute {
-			t.Fatalf("ok=%v retry=%v", ok, retry)
+		res, retry := l.Allow("ip")
+		if res != nil || retry != 10*time.Minute {
+			t.Fatalf("res=%v retry=%v", res, retry)
 		}
-		if ok, _ := l.Allow("other"); !ok {
+		if res, _ := l.Allow("other"); res == nil {
 			t.Fatal("keys not independent")
 		}
 		time.Sleep(4 * time.Minute)
-		if _, retry := l.Allow("ip"); retry != 6*time.Minute {
+		if res, retry := l.Allow("ip"); res != nil || retry != 6*time.Minute {
 			t.Fatalf("retry after 4m = %v", retry)
 		}
 		time.Sleep(6 * time.Minute)
-		if ok, retry := l.Allow("ip"); !ok || retry != 0 {
-			t.Fatalf("after window: ok=%v retry=%v", ok, retry)
+		if res, retry := l.Allow("ip"); res == nil || retry != 0 {
+			t.Fatalf("after window: res=%v retry=%v", res, retry)
 		}
 		for i := 0; i < 10; i++ {
 			l.Fail("ip")
 		}
 		l.Reset("ip")
-		if ok, _ := l.Allow("ip"); !ok {
+		if res, _ := l.Allow("ip"); res == nil {
 			t.Fatal("Reset did not clear")
 		}
 	})
@@ -343,22 +419,26 @@ func TestLimiterSlidingAndBounded(t *testing.T) {
 		time.Sleep(30 * time.Second)
 		l.Fail("k")
 		l.Fail("k")
-		ok, retry := l.Allow("k")
-		if ok || retry != 30*time.Second {
-			t.Fatalf("ok=%v retry=%v, want blocked for 30s (oldest leaves first)", ok, retry)
+		res, retry := l.Allow("k")
+		if res != nil || retry != 30*time.Second {
+			t.Fatalf("res=%v retry=%v, want blocked for 30s (oldest leaves first)", res, retry)
 		}
 		time.Sleep(30 * time.Second)
-		if ok, _ := l.Allow("k"); !ok {
+		res, _ = l.Allow("k")
+		if res == nil {
 			t.Fatal("oldest failure should have left the window")
 		}
+		res.Release()
 		// Many failures past max do not extend the lockout beyond the window.
 		for i := 0; i < 1000; i++ {
 			l.Fail("flood")
 		}
 		time.Sleep(time.Minute)
-		if ok, _ := l.Allow("flood"); !ok {
+		res, _ = l.Allow("flood")
+		if res == nil {
 			t.Fatal("still blocked after window")
 		}
+		res.Release()
 		// Expired keys are swept so the map cannot grow without bound.
 		for i := 0; i < 20000; i++ {
 			l.Fail(string(rune('a'+i%26)) + time.Duration(i).String())
@@ -367,6 +447,115 @@ func TestLimiterSlidingAndBounded(t *testing.T) {
 		l.Fail("trigger")
 		if n := l.Size(); n > 2 {
 			t.Fatalf("limiter retains %d keys after expiry", n)
+		}
+	})
+}
+
+func TestLimiterConcurrentReservations(t *testing.T) {
+	t.Parallel()
+	const n, max = 50, 5
+	l := auth.NewLimiter(max, time.Minute)
+	var (
+		wg      sync.WaitGroup
+		start   = make(chan struct{})
+		mu      sync.Mutex
+		granted []*auth.Reservation
+	)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if res, _ := l.Allow("ip"); res != nil {
+				mu.Lock()
+				granted = append(granted, res)
+				mu.Unlock()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if len(granted) != max {
+		t.Fatalf("%d concurrent attempts admitted, want %d", len(granted), max)
+	}
+	if res, _ := l.Allow("ip"); res != nil {
+		t.Fatal("admitted while all slots in flight")
+	}
+	if res, _ := l.Allow("other"); res == nil {
+		t.Fatal("other key affected")
+	}
+	// Release frees a slot; double-release does not free two.
+	granted[0].Release()
+	granted[0].Release()
+	r1, _ := l.Allow("ip")
+	if r1 == nil {
+		t.Fatal("slot not freed by Release")
+	}
+	if r2, _ := l.Allow("ip"); r2 != nil {
+		t.Fatal("double Release freed two slots")
+	}
+	// Fail converts in-flight to a recorded failure: still no free slot.
+	granted[1].Fail()
+	granted[1].Fail()
+	if r, _ := l.Allow("ip"); r != nil {
+		t.Fatal("Fail freed the slot")
+	}
+	// Success releases and clears recorded failures.
+	granted[2].Success()
+	granted[3].Release()
+	granted[4].Release()
+	r1.Release()
+	if r, _ := l.Allow("ip"); r == nil {
+		t.Fatal("Success did not clear failures")
+	}
+}
+
+func TestLimiterFailedReservationsLockOut(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		l := auth.NewLimiter(3, time.Minute)
+		for i := 0; i < 3; i++ {
+			res, _ := l.Allow("k")
+			if res == nil {
+				t.Fatalf("attempt %d refused", i)
+			}
+			res.Fail()
+		}
+		res, retry := l.Allow("k")
+		if res != nil || retry != time.Minute {
+			t.Fatalf("res=%v retry=%v", res, retry)
+		}
+		time.Sleep(time.Minute)
+		if res, _ := l.Allow("k"); res == nil {
+			t.Fatal("still locked after window")
+		}
+	})
+}
+
+func TestTouchedPruned(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		st := storetest.New(t)
+		a := newAuth(t, st)
+		u := mkUser(t, st, "rider", false, false)
+		toks := []string{mkToken(t, st, u.ID, "read"), mkToken(t, st, u.ID, "read"), mkToken(t, st, u.ID, "read")}
+		use := func(tok string) {
+			r := httptest.NewRequest("GET", "/", nil)
+			r.Header.Set("Authorization", "Bearer "+tok)
+			if _, ok := a.Identify(r); !ok {
+				t.Fatal("not identified")
+			}
+		}
+		for _, tok := range toks {
+			use(tok)
+		}
+		if n := a.TouchedLen(); n != 3 {
+			t.Fatalf("touched = %d, want 3", n)
+		}
+		time.Sleep(2 * time.Minute)
+		use(toks[0])
+		if n := a.TouchedLen(); n != 1 {
+			t.Fatalf("touched = %d after expiry sweep, want 1", n)
 		}
 	})
 }

@@ -22,7 +22,7 @@ import (
 // Version is set at build time via -ldflags.
 var Version = "dev"
 
-const usage = "usage: wattson <scan|probe|drive|ride|openapi|asyncapi|version> [flags]  (run a subcommand with -h for its flags)\n"
+const usage = "usage: wattson <scan|probe|drive|ride|serve|admin|openapi|asyncapi|healthcheck|version> [flags]  (run a subcommand with -h for its flags)\n"
 
 // newTransport opens the BLE transport; tests replace it (or use deps).
 var newTransport = openTransport
@@ -35,14 +35,20 @@ type deps struct {
 	selftestTimeout time.Duration              // probe --selftest notification wait
 	connectTimeout  time.Duration              // bound on one BLE connect; 0 = 30s
 	simDial         func(sim.Config) bike.Dial // ride --sim; nil = sim.Dial
+	getenv          func(string) string        // serve/admin/healthcheck; nil = os.Getenv
 }
 
 // exitInterrupted is the conventional exit code after SIGINT.
 const exitInterrupted = 130
 
 // lastLevel is the level drive most recently set (0 = none yet); a forced exit
-// reports it so the rider can lower resistance by hand.
+// reports it so the rider can lower resistance by hand. serve sets it to
+// serveLevel while it runs.
 var lastLevel atomic.Int32
+
+// serveLevel marks lastLevel while `wattson serve` runs: the server owns the
+// bike but no particular level is known.
+const serveLevel = -1
 
 func defaultDeps() deps {
 	return deps{newTransport: newTransport, now: time.Now, selftestTimeout: 3 * time.Second, simDial: sim.Dial}
@@ -76,7 +82,9 @@ func watchSignals(sigs <-chan os.Signal, done <-chan struct{}, cancel func(), le
 	case <-done:
 		return
 	}
-	if n := level(); n > 0 {
+	if n := level(); n < 0 { // serve: shutdown was still returning the bike to its floor
+		fmt.Fprintln(stderr, "forced exit during shutdown; the bike may not have been returned to its minimum level — lower resistance at the console")
+	} else if n > 0 {
 		fmt.Fprintf(stderr, "forced exit; bike may still be at level %d — lower resistance at the console\n", n)
 	} else {
 		fmt.Fprintln(stderr, "forced exit; no resistance level had been set")
@@ -101,6 +109,12 @@ func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) i
 		return cmdDrive(ctx, d, args[1:], stdout, stderr)
 	case "ride":
 		return cmdRide(ctx, d, args[1:], stdout, stderr)
+	case "serve":
+		return cmdServe(ctx, d, args[1:], stdout, stderr)
+	case "admin":
+		return cmdAdmin(ctx, d, args[1:], stdout, stderr)
+	case "healthcheck":
+		return cmdHealthcheck(ctx, d, args[1:], stdout, stderr)
 	case "openapi":
 		return cmdOpenAPI(stdout, stderr)
 	case "asyncapi":

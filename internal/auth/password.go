@@ -9,7 +9,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -85,7 +88,23 @@ func derive(ctx context.Context, pw string, salt []byte, m, t uint32, p uint8, n
 		return nil, ctx.Err()
 	}
 	defer func() { <-hashSem }()
-	return argon2.IDKey([]byte(pw), salt, t, m, p, n), nil
+	key := argon2.IDKey([]byte(pw), salt, t, m, p, n)
+	scheduleFree()
+	return key, nil
+}
+
+var freeScheduled atomic.Bool
+
+// scheduleFree hands the 12 MiB argon2 work area back to the OS shortly after
+// a hash (one call covers a burst of them): the idle RSS budget (30 MB) has no
+// room for memory the runtime keeps for reuse.
+func scheduleFree() {
+	if freeScheduled.CompareAndSwap(false, true) {
+		time.AfterFunc(time.Second, func() {
+			freeScheduled.Store(false)
+			debug.FreeOSMemory()
+		})
+	}
 }
 
 // VerifyPassword reports whether pw matches the PHC hash, using the

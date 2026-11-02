@@ -2,7 +2,7 @@ BINARY  := wattson
 VERSION ?= dev
 LDFLAGS := -s -w -X github.com/metril/wattson/internal/cli.Version=$(VERSION)
 
-.PHONY: all build go-build test go-test lint clean openapi
+.PHONY: all build go-build test go-test lint clean openapi serve
 
 all: build
 
@@ -11,6 +11,10 @@ build: go-build
 
 go-build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/wattson
+
+## serve: build and run the server on :8080 with the data in ./data
+serve: build
+	./$(BINARY) serve --data-dir ./data --listen :8080
 
 ## test: run the Go test suite
 test: go-test

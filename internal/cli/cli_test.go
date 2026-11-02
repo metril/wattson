@@ -35,6 +35,15 @@ func TestUsageMentionsRide(t *testing.T) {
 	}
 }
 
+func TestUsageMentionsServerCommands(t *testing.T) {
+	t.Parallel()
+	for _, w := range []string{"serve", "admin", "healthcheck"} {
+		if !strings.Contains(usage, w) {
+			t.Errorf("usage lacks %q: %q", w, usage)
+		}
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	t.Parallel()
 	var out, errb bytes.Buffer

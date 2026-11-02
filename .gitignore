@@ -5,3 +5,4 @@
 /esphome/secrets.yaml
 /esphome/.esphome/
 *.bin
+/data/

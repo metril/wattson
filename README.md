@@ -3,10 +3,30 @@
 Go CLI to probe and drive a Merach exercise bike (S29R2) over BLE, locally via BlueZ or through an ESPHome Bluetooth proxy.
 
 ```
-wattson scan | probe | drive | ride | version
+wattson serve | admin | healthcheck | scan | probe | drive | ride | version
 ```
 
-## Quick start
+## Server
+
+`wattson serve` runs the web/API server that controls the bike (simulator or real), with users, OIDC sign-in, API tokens and a ride WebSocket. All state lives in one data directory (`wattson.db` and `secret.key`).
+
+```
+make build
+./wattson serve --data-dir ./data --listen :8080     # or WATTSON_DATA_DIR / WATTSON_LISTEN (defaults /data, :8080)
+# create the first admin with POST /api/setup (the web UI wraps it); the log prints the URL
+```
+
+Everything else is configured through the API and stored in SQLite. Stop it with Ctrl-C or SIGTERM: the bike is returned to its minimum level first, and the log says plainly if that could not be confirmed.
+
+```
+./wattson admin reset-password <user>    # locked out: prints a new password once
+./wattson admin disable-oidc             # broken IdP: disable providers, re-enable local login
+./wattson healthcheck                    # for Docker HEALTHCHECK
+```
+
+Docs: [authentication and OIDC](docs/auth.md), [API quick start](docs/api.md), [openapi.json](docs/openapi.json), [asyncapi.yaml](docs/asyncapi.yaml).
+
+## Quick start (CLI)
 
 ```
 make build                    # builds ./wattson
@@ -52,5 +72,6 @@ Docs: [hardware runbook](docs/hardware-runbook.md), [ESPHome proxy](docs/esphome
 ```
 make build     # build ./wattson
 make go-test   # go vet + go test -race ./...
+make serve     # build and run the server on :8080 with ./data
 make lint      # gofmt check + go vet
 ```

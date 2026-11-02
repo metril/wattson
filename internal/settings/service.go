@@ -126,3 +126,26 @@ func (s *Service) Update(ctx context.Context, fn func(*Settings) error) (Setting
 	}
 	return next, nil
 }
+
+// EnableLocalLogin stores auth.allow_local_login = true and leaves every other
+// setting untouched. It is the break-glass path of `wattson admin`: it works
+// on the raw auth section, so it needs no secret.key and no other section
+// has to decode.
+func EnableLocalLogin(ctx context.Context, st *store.Store) error {
+	rows, err := st.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	a := Defaults().Auth
+	if raw, ok := rows["auth"]; ok {
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			return fmt.Errorf("settings: decode auth: %w", err)
+		}
+	}
+	a.AllowLocalLogin = true
+	b, err := json.Marshal(a)
+	if err != nil {
+		return fmt.Errorf("settings: encode auth: %w", err)
+	}
+	return st.PutSettings(ctx, map[string]string{"auth": string(b)})
+}

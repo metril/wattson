@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { Banner } from '@/components/Banner';
 import { BikeBar } from '@/features/ride/BikeBar';
 import { LevelControls } from '@/features/ride/LevelControls';
+import { PrefetchPill } from '@/features/ride/PrefetchPill';
 import { MetricGrid } from '@/features/ride/MetricGrid';
 import { RideControls } from '@/features/ride/RideControls';
 import { ErgControls } from '@/features/ride/ErgControls';
@@ -115,6 +116,7 @@ export function RidePage() {
       )}
       {cmdError && <Banner tone="error">{cmdError}</Banner>}
       {state === 'ready' && <StartPicker value={choice} onChange={setChoice} />}
+      {state === 'ready' && choice.kind === 'route' && <PrefetchPill routeId={choice.id} />}
       {complete && (
         <Banner tone="ok">
           <p className="text-lg font-medium">{complete === 'workout' ? 'Workout complete' : 'Route complete'}</p>

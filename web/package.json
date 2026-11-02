@@ -4,11 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p tsconfig.sw.json && vite build",
     "preview": "vite preview",
     "test": "vitest run && node --test scripts/*.test.mjs",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit",
+    "lint": "tsc --noEmit && tsc -p tsconfig.sw.json",
     "openapi": "openapi-typescript ../docs/openapi.json -o src/lib/openapi.d.ts",
     "size": "node scripts/check-size.mjs",
     "e2e": "playwright test"

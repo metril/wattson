@@ -2,7 +2,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, type Plugin } from 'vite';
+import { build, defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -20,10 +20,36 @@ function restoreGitkeep(): Plugin {
   };
 }
 
+// The service worker is a classic script at a fixed URL (/sw.js, never hashed)
+// that cannot import chunks, so it is bundled on its own as a single IIFE
+// after the app build.
+function serviceWorker(): Plugin {
+  const root = import.meta.dirname;
+  return {
+    name: 'wattson-service-worker',
+    apply: 'build',
+    async closeBundle() {
+      await build({
+        configFile: false,
+        root,
+        publicDir: false,
+        logLevel: 'warn',
+        build: {
+          outDir: resolve(root, '../internal/web/dist'),
+          emptyOutDir: false,
+          copyPublicDir: false,
+          target: 'es2020',
+          lib: { entry: resolve(root, 'src/sw/sw.ts'), formats: ['iife'], name: 'wattsonSW', fileName: () => 'sw.js' },
+        },
+      });
+    },
+  };
+}
+
 const backend = 'http://localhost:8080';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), restoreGitkeep()],
+  plugins: [react(), tailwindcss(), serviceWorker(), restoreGitkeep()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

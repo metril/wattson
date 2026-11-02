@@ -229,7 +229,6 @@ describe('Ride route mode', () => {
       await screen.findByTestId('mapview');
       expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
       expect(localStorage.getItem('wattson.view')).toBe('2d');
-      expect(localStorage.getItem('wattson.view.fell_back')).toBe('1');
       expect(
         screen.getByText('3D was too slow on this display, so the ride switched to 2D. Choose 3D in View to try again.'),
       ).toBeInTheDocument();
@@ -243,10 +242,9 @@ describe('Ride route mode', () => {
       expect(await screen.findByText('The 3D view stopped responding, so the ride switched to 2D.')).toBeInTheDocument();
     });
 
-    it('choosing 3D in the menu clears fell_back, resets the tier and passes it on', async () => {
+    it('choosing 3D in the menu resets the tier and passes it on', async () => {
       withWebgl();
       vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(16);
-      localStorage.setItem('wattson.view.fell_back', '1');
       localStorage.setItem('wattson.view.tier', 'lite');
       await riding();
       await screen.findByTestId('mapview');
@@ -254,7 +252,6 @@ describe('Ride route mode', () => {
       await userEvent.click(screen.getByRole('radio', { name: /3D flyover/ }));
       await screen.findByTestId('ride3d');
       expect(localStorage.getItem('wattson.view')).toBe('3d');
-      expect(localStorage.getItem('wattson.view.fell_back')).toBe('0');
       expect(localStorage.getItem('wattson.view.tier')).toBe('full');
       expect(screen.getByTestId('ride3d')).toHaveAttribute('data-tier', 'full');
     });

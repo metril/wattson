@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { STYLE_URL, type GeoLine } from '@/features/map/MapView';
 import { extrapolate, routeBearing, smoothBearing } from '@/lib/camera';
-import { FpsMonitor } from '@/lib/fps-monitor';
+import { FpsMonitor, type FpsOpts } from '@/lib/fps-monitor';
+import { loadMapLibre } from '@/lib/maplibre';
+import { DEM_MAX_ZOOM } from '@/sw/corridor';
 import { positionAt, type Profile } from '@/lib/route-math';
 import type { TickStore } from '@/lib/tick-store';
 import { savePrefs, type Tier } from '@/lib/view-prefs';
@@ -9,10 +11,18 @@ import { savePrefs, type Tier } from '@/lib/view-prefs';
 export const DEM_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 const BLANK_STYLE = { version: 8 as const, sources: {}, layers: [] };
 
-type Ml = typeof import('maplibre-gl');
+type Ml = import('@/lib/maplibre').MapLibre;
 type MlMap = import('maplibre-gl').Map;
 type Marker = import('maplibre-gl').Marker;
 export type FallbackReason = 'slow' | 'context_lost' | 'webgl';
+
+/** An error event for the style document itself: not a tile (sourceId) and not another resource's URL. */
+function isStyleFailure(e: unknown): boolean {
+  const ev = e as { sourceId?: string; tile?: unknown; error?: { url?: unknown } } | undefined;
+  if (ev?.sourceId || ev?.tile) return false;
+  const url = ev?.error?.url;
+  return url === undefined || url === STYLE_URL;
+}
 
 const token = (name: string, fallback: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -48,7 +58,8 @@ export default function Ride3D(p: {
     let dead = false;
     let raf = 0;
     let tier: Tier = cb.current.tier;
-    const monitor = new FpsMonitor();
+    // Test hook: end-to-end tests shorten the warm-up and windows (and raise the threshold) to see the fallback quickly.
+    const monitor = new FpsMonitor((window as { __wattsonFps?: FpsOpts }).__wattsonFps);
     const lengthM = profile.length_m;
 
     let lastD = ticks.latest?.distance_m ?? 0;
@@ -116,7 +127,7 @@ export default function Ride3D(p: {
           tiles: [DEM_URL],
           encoding: 'terrarium',
           tileSize: 256,
-          maxzoom: t === 'lite' ? 11 : 13,
+          maxzoom: t === 'lite' ? 11 : DEM_MAX_ZOOM,
           attribution: 'Terrain: Mapzen, AWS Open Data',
         });
         map.setTerrain({ source: 'terrain', exaggeration: cb.current.exaggeration });
@@ -132,9 +143,10 @@ export default function Ride3D(p: {
         l.ready = true;
         monitor.arm();
       });
-      map.on('error', () => {
+      map.on('error', (e: unknown) => {
         // The hosted style failed before it loaded: terrain and route still work on a blank ground.
-        if (!l.ready && !fellBackStyle) {
+        // Sprite, glyph and tile failures (they carry their own URL or a source id) leave the style alone.
+        if (!l.ready && !fellBackStyle && isStyleFailure(e)) {
           fellBackStyle = true;
           map.setStyle(BLANK_STYLE);
         }
@@ -146,9 +158,7 @@ export default function Ride3D(p: {
     (async () => {
       let ml: Ml;
       try {
-        const [mod] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
-        const ns = mod as unknown as Ml & { default: Ml };
-        ml = ns.Map ? ns : ns.default;
+        ml = await loadMapLibre();
       } catch {
         fail('webgl');
         return;

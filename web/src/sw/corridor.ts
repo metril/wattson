@@ -5,7 +5,9 @@ export const CACHE = 'wattson-tiles-v1';
 export const MAX_ENTRIES = 4000;
 /** zoom → corridor buffer in metres */
 export const VECTOR_ZOOMS: Record<number, number> = { 14: 300, 13: 1000, 12: 3000, 10: 10000 };
-export const DEM_ZOOMS: Record<number, number> = { 12: 500, 11: 2000, 10: 5000, 8: 20000 };
+/** The highest DEM zoom the 3D view asks for (full tier): the corridor must prefetch it, or terrain is flat offline. */
+export const DEM_MAX_ZOOM = 13;
+export const DEM_ZOOMS: Record<number, number> = { 13: 500, 12: 500, 11: 2000, 10: 5000, 8: 20000 };
 export const MAX_URLS = 1500;
 
 const OPENFREEMAP = 'https://tiles.openfreemap.org';

@@ -2,9 +2,11 @@ import {
   CACHE,
   cacheKey,
   corridorTiles,
+  DEM_MAX_ZOOM,
   DEM_ZOOMS,
   evictCount,
   isTileRequest,
+  MAX_URLS,
   lonLatToTile,
   tileUrls,
   vectorTemplate,
@@ -61,6 +63,19 @@ describe('corridorTiles', () => {
   it('handles empty and single-point routes', () => {
     expect(corridorTiles([], [], VECTOR_ZOOMS)).toEqual([]);
     expect(corridorTiles([7.5], [45.5], { 14: 300 })).toContain('14/8533/5861');
+  });
+
+  it('prefetches the highest DEM zoom the 3D view draws, so terrain survives offline', () => {
+    expect(Math.max(...Object.keys(DEM_ZOOMS).map(Number))).toBe(DEM_MAX_ZOOM);
+  });
+
+  it('a 100 km route still fits under the URL cap with the z13 DEM', () => {
+    const n = 1000;
+    const lat = Array.from({ length: n + 1 }, (_, i) => 45 + (i / n) * (100 / 111.32));
+    const lon = lat.map(() => 7);
+    const all = corridorTiles(lon, lat, VECTOR_ZOOMS).length + corridorTiles(lon, lat, DEM_ZOOMS).length;
+    expect(all).toBeLessThan(MAX_URLS);
+    expect(corridorTiles(lon, lat, { 13: DEM_ZOOMS[13] }).length).toBeGreaterThan(20);
   });
 
   it('includes every requested zoom', () => {

@@ -9,12 +9,12 @@ afterEach(() => {
 
 describe('view prefs', () => {
   it('defaults', () => {
-    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full', fellBack: false });
+    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full' });
     expect(hasSavedTier()).toBe(false);
   });
   it('round trips and clamps exaggeration', () => {
-    savePrefs({ view: '3d', exaggeration: 9, tier: 'lite', fellBack: true });
-    expect(loadPrefs()).toEqual({ view: '3d', exaggeration: 3, tier: 'lite', fellBack: true });
+    savePrefs({ view: '3d', exaggeration: 9, tier: 'lite' });
+    expect(loadPrefs()).toEqual({ view: '3d', exaggeration: 3, tier: 'lite' });
     savePrefs({ exaggeration: 0.2 });
     expect(loadPrefs().exaggeration).toBe(1);
     expect(hasSavedTier()).toBe(true);
@@ -31,7 +31,7 @@ describe('view prefs', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked');
     });
-    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full', fellBack: false });
+    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full' });
     expect(() => savePrefs({ view: '3d' })).not.toThrow();
   });
 });

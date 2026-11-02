@@ -19,10 +19,10 @@ function creatorOf(header: string | null): string {
   }
 }
 
-async function fetchPhoto(id: string): Promise<Loaded> {
+async function fetchPhoto(id: string, onUnauthorized: () => void): Promise<Loaded> {
   const tok = getKioskToken();
   const res = await fetch(`/api/mapillary/images/${encodeURIComponent(id)}`, tok ? { headers: { Authorization: `Bearer ${tok}` } } : undefined);
-  if (res.status === 401) notifyUnauthorized(location.pathname + location.search); // revoked kiosk token or expired session
+  if (res.status === 401) onUnauthorized(); // revoked kiosk token or expired session
   if (!res.ok) throw new Error(`photo ${res.status}`);
   const creator = creatorOf(res.headers.get('X-Photo-Creator'));
   const blob = await res.blob();
@@ -44,7 +44,6 @@ export default function PhotoView({
   ticks,
   reducedMotion,
 }: {
-  routeId: number;
   photos: Photo[];
   ticks: TickStore;
   reducedMotion: boolean;
@@ -77,6 +76,13 @@ export default function PhotoView({
     let raf = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let finish: (() => void) | null = null;
+    // A revoked token fails the shown photo and its prefetches together: tell the app once per burst.
+    let unauthorized = false;
+    const onUnauthorized = () => {
+      if (unauthorized) return;
+      unauthorized = true;
+      notifyUnauthorized(location.pathname + location.search);
+    };
 
     const trim = () => {
       for (const [id, l] of ready) {
@@ -90,7 +96,8 @@ export default function PhotoView({
     const load = (p: Photo): Promise<Loaded> => {
       let e = loads.get(p.id);
       if (!e) {
-        e = fetchPhoto(p.id).then((l) => {
+        e = fetchPhoto(p.id, onUnauthorized).then((l) => {
+          unauthorized = false;
           if (!alive) {
             URL.revokeObjectURL(l.url);
             return l;

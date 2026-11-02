@@ -1,0 +1,9 @@
+{
+  "version": 8,
+  "name": "vector",
+  "sources": { "openmaptiles": { "type": "vector", "url": "https://tiles.openfreemap.org/planet" } },
+  "layers": [
+    { "id": "bg", "type": "background", "paint": { "background-color": "#16242a" } },
+    { "id": "water", "type": "fill", "source": "openmaptiles", "source-layer": "water", "paint": { "fill-color": "#1f4a5c" } }
+  ]
+}

@@ -70,8 +70,7 @@ const h = vi.hoisted(() => {
   return { state, FakeMap, FakeMarker, NavigationControl };
 });
 
-vi.mock('maplibre-gl', () => ({ Map: h.FakeMap, Marker: h.FakeMarker, NavigationControl: h.NavigationControl }));
-vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
+vi.mock('@/lib/maplibre', () => ({ loadMapLibre: async () => ({ Map: h.FakeMap, Marker: h.FakeMarker, NavigationControl: h.NavigationControl }) }));
 
 beforeEach(() => {
   h.state.maps.length = 0;

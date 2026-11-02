@@ -156,7 +156,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     if (v === '3d') {
       const t = detectTier(navigator);
       setTier(t);
-      savePrefs({ fellBack: false, tier: t });
+      savePrefs({ tier: t });
     }
   };
   const setExag = (x: number) => {
@@ -164,7 +164,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     savePrefs({ exaggeration: x });
   };
   const fellBack = useRef((reason: 'slow' | 'context_lost' | 'webgl') => {
-    savePrefs({ view: '2d', fellBack: true });
+    savePrefs({ view: '2d' });
     setWant('2d');
     setNote(FALLBACK_NOTE[reason]);
   }).current;
@@ -229,7 +229,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
             <Suspense fallback={<div className="h-64 rounded-panel border border-line bg-panel" />}>
               {view === 'photo' ? (
                 showMap || wide ? (
-                  <PhotoView routeId={routeId} photos={photoList} ticks={ticks} reducedMotion={reducedMotion} />
+                  <PhotoView photos={photoList} ticks={ticks} reducedMotion={reducedMotion} />
                 ) : null
               ) : view === '3d' ? (
                 // A flyover in a hidden phone panel would still run WebGL, so it mounts only when shown.

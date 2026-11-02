@@ -75,8 +75,10 @@ export async function apiAs(baseURL: string, cookies: Cookie[], method: string, 
 
 const RAMP = resolve(import.meta.dirname, '../../internal/route/testdata/ramp.gpx');
 const STYLE = readFileSync(resolve(import.meta.dirname, 'fixtures/blank-style.json'), 'utf8');
+/** The same ground plus one vector source, so MapLibre's worker really fetches and decodes tiles. */
+export const VECTOR_STYLE = readFileSync(resolve(import.meta.dirname, 'fixtures/vector-style.json'), 'utf8');
 const FLAT_DEM = readFileSync(resolve(import.meta.dirname, 'fixtures/flat-terrarium.png'));
-/** A vector tile body is never decoded (the blank style has no vector source); a few bytes will do. */
+/** A tile with no features: all the vector style's worker needs to decode. */
 const EMPTY_TILE = Buffer.from([0x1a, 0x00]);
 
 /** Imports the ramp GPX (1.1 km due north from 45.0N 7.0E, 100 to 150 m) through the API; returns the route id. */
@@ -105,10 +107,10 @@ export function useFakeMapillary(baseURL: string, cookies: Cookie[], fake: FakeM
  * tiles are empty, and every Terrarium tile is flat (0 m). Pass a context to
  * also cover a service worker's fetches.
  */
-export async function stubMapNetwork(target: Pick<Page, 'route'> | Pick<BrowserContext, 'route'>) {
+export async function stubMapNetwork(target: Pick<Page, 'route'> | Pick<BrowserContext, 'route'>, style: string = STYLE) {
   await target.route('https://tiles.openfreemap.org/**', (route) => {
     const u = new URL(route.request().url());
-    if (u.pathname === '/styles/liberty') return route.fulfill({ status: 200, contentType: 'application/json', body: STYLE });
+    if (u.pathname === '/styles/liberty') return route.fulfill({ status: 200, contentType: 'application/json', body: style });
     if (u.pathname === '/planet')
       return route.fulfill({
         status: 200,

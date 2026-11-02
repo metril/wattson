@@ -52,7 +52,7 @@ const live = () => urls.filter((u) => !revoked.includes(u));
 
 function setup(reducedMotion = false, list = photos) {
   const store = new TickStore();
-  const ui = <PhotoView routeId={7} photos={list} ticks={store} reducedMotion={reducedMotion} />;
+  const ui = <PhotoView photos={list} ticks={store} reducedMotion={reducedMotion} />;
   const r = render(ui);
   return { store, ...r };
 }
@@ -138,7 +138,7 @@ describe('PhotoView', () => {
     const store = new TickStore();
     render(
       <Profiler id="p" onRender={(_i, phase) => phase === 'update' && updates++}>
-        <PhotoView routeId={7} photos={photos} ticks={store} reducedMotion />
+        <PhotoView photos={photos} ticks={store} reducedMotion />
       </Profiler>,
     );
     await at(store, 22);
@@ -155,7 +155,9 @@ describe('PhotoView', () => {
     respond = () => new Response('{}', { status: 401 });
     const { store } = setup();
     await at(store, 22);
+    await waitFor(() => expect(fetches.length).toBeGreaterThanOrEqual(4)); // the photo and its three prefetches all fail
     await waitFor(() => expect(handler).toHaveBeenCalled());
+    expect(handler).toHaveBeenCalledTimes(1);
     setUnauthorizedHandler(() => {});
   });
 

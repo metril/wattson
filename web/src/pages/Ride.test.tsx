@@ -119,9 +119,9 @@ describe('RidePage', () => {
     // Not at once: the banner would pop in and out (and shift the page) on every ordinary page load.
     expect(screen.queryByText(/Reconnecting/)).not.toBeInTheDocument();
     expect(await screen.findByText(/Reconnecting/)).toBeInTheDocument();
-    for (const name of ['Pause', 'Stop', 'Increase level', 'Decrease level']) {
-      expect(screen.getByRole('button', { name })).toBeDisabled();
-    }
+    for (const name of ['Pause', 'Stop']) expect(screen.getByRole('button', { name })).toBeDisabled();
+    // The level buttons use aria-disabled so a focused one keeps focus (see LevelControls).
+    for (const name of ['Increase level', 'Decrease level']) expect(screen.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
     // releasing the bike is an HTTP call and stays available
     expect(screen.getByRole('button', { name: 'Release' })).toBeEnabled();
   });

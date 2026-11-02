@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { loadMapLibre } from '@/lib/maplibre';
 import type { components } from '@/lib/openapi';
 
 export const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
@@ -47,10 +48,7 @@ export default function MapView(p: {
     (async () => {
       let ml: typeof import('maplibre-gl');
       try {
-        const [mod] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
-        // The UMD build may arrive as a bare default export, depending on the bundler's interop.
-        const ns = mod as unknown as typeof import('maplibre-gl') & { default: typeof import('maplibre-gl') };
-        ml = ns.Map ? ns : ns.default;
+        ml = await loadMapLibre();
       } catch {
         if (!dead) setFailed(true);
         return;

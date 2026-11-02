@@ -368,10 +368,12 @@ html.ride-dark .ride-view .ride-viewbox {
   border: 1px solid var(--line);
   color: var(--chalk);
 }
-.metric-step:active:not(:disabled) {
+.metric-step:active:not(:disabled):not([aria-disabled='true']) {
   background: var(--panel);
 }
-.metric-step:disabled {
+/* aria-disabled, not disabled, while the socket is down: a disabled button that had focus drops it to the page body, where the arrows change the level. */
+.metric-step:disabled,
+.metric-step[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.5;
 }

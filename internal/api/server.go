@@ -152,7 +152,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 // the one Terrarium bucket (a path source matches by prefix).
 const csp = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org https://s3.amazonaws.com/elevation-tiles-prod/; " +
 	"img-src 'self' data: blob: https://tiles.openfreemap.org https://s3.amazonaws.com/elevation-tiles-prod/; " +
-	"worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
+	"worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
 	"object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 
 func securityHeaders(next http.Handler) http.Handler {

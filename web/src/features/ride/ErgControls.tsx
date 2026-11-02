@@ -14,7 +14,7 @@ const step =
 /**
  * ERG target controls. "−10 W" / "+10 W" send level_delta, which the engine
  * turns into a 10 W nudge (in a workout, an adjustment on top of the blocks).
- * Free ERG also takes a typed target. ArrowUp and ArrowDown nudge too (while focus is on the page or the ride control buttons).
+ * These use aria-disabled, not disabled, so focus stays put when the socket drops. Free ERG also takes a typed target. ArrowUp and ArrowDown nudge too (while focus is on the page or the ride control buttons).
  */
 export function ErgControls({
   send,
@@ -55,11 +55,11 @@ export function ErgControls({
   return (
     <div className="metric-wide m-wide flex flex-col gap-3 rounded-panel bg-panel p-3">
       <div className="flex items-center gap-3">
-        <button type="button" data-nav className={step} disabled={disabled} onClick={() => bump(-1)}>
+        <button type="button" data-nav className={step} aria-disabled={disabled || undefined} onClick={() => bump(-1)}>
           <Minus aria-hidden className="size-7" />
           <span>−10 W</span>
         </button>
-        <button type="button" data-nav className={step} disabled={disabled} onClick={() => bump(1)}>
+        <button type="button" data-nav className={step} aria-disabled={disabled || undefined} onClick={() => bump(1)}>
           <Plus aria-hidden className="size-7" />
           <span>+10 W</span>
         </button>
@@ -87,7 +87,7 @@ export function ErgControls({
               error={text !== '' ? (ergError(watts) ?? undefined) : undefined}
             />
           </div>
-          <Button ref={setBtn} type="submit" variant="primary" disabled={disabled || invalid} className="mb-px">
+          <Button ref={setBtn} type="submit" variant="primary" aria-disabled={disabled || invalid || undefined} className="mb-px aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
             Set
           </Button>
         </form>

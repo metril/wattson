@@ -56,10 +56,10 @@ export function LevelControls({
         <span ref={bias} hidden={!route} className="numeral text-lg" />
         <span ref={reported} className="text-sm text-dim" />
       </div>
-      <button type="button" data-nav className={`${step} m-minus`} aria-label={route ? 'Easier' : 'Decrease level'} disabled={disabled} onClick={() => bump(-1)}>
+      <button type="button" data-nav className={`${step} m-minus`} aria-label={route ? 'Easier' : 'Decrease level'} aria-disabled={disabled || undefined} onClick={() => bump(-1)}>
         <Minus aria-hidden className="size-9" />
       </button>
-      <button type="button" data-nav className={`${step} m-plus`} aria-label={route ? 'Harder' : 'Increase level'} disabled={disabled} onClick={() => bump(1)}>
+      <button type="button" data-nav className={`${step} m-plus`} aria-label={route ? 'Harder' : 'Increase level'} aria-disabled={disabled || undefined} onClick={() => bump(1)}>
         <Plus aria-hidden className="size-9" />
       </button>
     </div>

@@ -72,6 +72,10 @@ export default defineConfig({
         // would pull shared code such as React into them and make index.html preload them)
         // keeps them lazy. scripts/check-size.mjs budgets these names.
         chunkFileNames: (chunk) => `assets/${LAZY_NAMES[chunk.name] ?? chunk.name}-[hash].js`,
+        // MapLibre's worker is loaded by URL (lib/maplibre.ts): a same-origin file, not a blob:. It gets its own
+        // budgeted name so the maplibre chunk's size check does not count it.
+        assetFileNames: (asset) =>
+          (asset.names ?? []).some((n) => n.includes('maplibre-gl-csp-worker')) ? 'assets/mlworker-[hash].js' : 'assets/[name]-[hash][extname]',
       },
     },
   },

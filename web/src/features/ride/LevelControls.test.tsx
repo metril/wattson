@@ -62,9 +62,23 @@ describe('LevelControls', () => {
   it('is inert when disabled', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     render(<LevelControls socket={{ send, ticks: new TickStore() }} disabled />);
-    expect(screen.getByRole('button', { name: 'Increase level' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Increase level' })).toHaveAttribute('aria-disabled', 'true');
     await userEvent.keyboard('{ArrowUp}');
+    await userEvent.click(screen.getByRole('button', { name: 'Increase level' }));
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps focus when disabled mid-use, so the next arrow key does not change the level', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const socket = { send, ticks: new TickStore() };
+    const { rerender } = render(<LevelControls socket={socket} />);
+    const plus = screen.getByRole('button', { name: 'Increase level' });
+    plus.focus();
+    rerender(<LevelControls socket={socket} disabled />); // a WebSocket blip
+    expect(plus).toHaveFocus();
+    rerender(<LevelControls socket={socket} />); // reconnected, focus still on the button
+    await userEvent.keyboard('{ArrowUp}');
+    expect(send).not.toHaveBeenCalled(); // the arrows move focus from a - / + button; they are not level keys
   });
 
   it('reports a rejected command', async () => {

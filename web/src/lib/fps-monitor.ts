@@ -1,4 +1,4 @@
-type Opts = { warmupMs?: number; windowMs?: number; threshold?: number; badWindows?: number };
+export type FpsOpts = { warmupMs?: number; windowMs?: number; threshold?: number; badWindows?: number };
 
 /**
  * Watches requestAnimationFrame timestamps. After a warm-up it measures whole
@@ -8,7 +8,7 @@ type Opts = { warmupMs?: number; windowMs?: number; threshold?: number; badWindo
  * while visible are genuinely slow frames and count as such.
  */
 export class FpsMonitor {
-  private o: Required<Opts>;
+  private o: Required<FpsOpts>;
   private subs = new Set<(fps: number) => void>();
   private t0 = -1;
   private winStart = -1;
@@ -17,19 +17,13 @@ export class FpsMonitor {
   private bad = 0;
   private fired = false;
   private warm = false;
-  private _fps = 0;
 
-  constructor(o: Opts = {}) {
+  constructor(o: FpsOpts = {}) {
     this.o = { warmupMs: 8000, windowMs: 5000, threshold: 24, badWindows: 2, ...o };
   }
 
-  get fps(): number {
-    return this._fps;
-  }
-
-  onDegrade(fn: (fps: number) => void): () => void {
+  onDegrade(fn: (fps: number) => void): void {
     this.subs.add(fn);
-    return () => this.subs.delete(fn);
   }
 
   /** Starts a fresh warm-up and allows another onDegrade. */
@@ -56,23 +50,20 @@ export class FpsMonitor {
     const span = now - this.winStart;
     if (!this.warm) {
       if (now - this.t0 >= this.o.warmupMs) {
-        if (span > 0) this._fps = (this.count * 1000) / span;
         this.warm = true;
         this.winStart = now;
         this.count = 0;
-      } else if (span >= 1000) {
-        this._fps = (this.count * 1000) / span;
       }
       return;
     }
     if (span < this.o.windowMs) return;
-    this._fps = (this.count * 1000) / span;
-    this.bad = this._fps < this.o.threshold ? this.bad + 1 : 0;
+    const fps = (this.count * 1000) / span;
+    this.bad = fps < this.o.threshold ? this.bad + 1 : 0;
     this.winStart = now;
     this.count = 0;
     if (this.bad >= this.o.badWindows && !this.fired) {
       this.fired = true;
-      for (const fn of this.subs) fn(this._fps);
+      for (const fn of this.subs) fn(fps);
     }
   }
 }

@@ -9,16 +9,15 @@ export type Caps = {
   photoNote?: string | null;
 };
 export type Tier = 'full' | 'lite';
-export type Prefs = { view: ViewMode; exaggeration: number; tier: Tier; fellBack: boolean };
+export type Prefs = { view: ViewMode; exaggeration: number; tier: Tier };
 
 const K = {
   view: 'wattson.view',
   exaggeration: 'wattson.view.exaggeration',
   tier: 'wattson.view.tier',
-  fellBack: 'wattson.view.fell_back',
 } as const;
 
-const DEFAULTS: Prefs = { view: '2d', exaggeration: 1.5, tier: 'full', fellBack: false };
+const DEFAULTS: Prefs = { view: '2d', exaggeration: 1.5, tier: 'full' };
 
 function get(key: string): string | null {
   try {
@@ -37,7 +36,6 @@ export function loadPrefs(): Prefs {
     view: v === '3d' || v === 'photo' || v === '2d' ? v : DEFAULTS.view,
     exaggeration: e,
     tier: t === 'lite' || t === 'full' ? t : DEFAULTS.tier,
-    fellBack: get(K.fellBack) === '1',
   };
 }
 
@@ -51,7 +49,6 @@ export function savePrefs(p: Partial<Prefs>): void {
     if (p.view !== undefined) localStorage.setItem(K.view, p.view);
     if (p.exaggeration !== undefined) localStorage.setItem(K.exaggeration, String(p.exaggeration));
     if (p.tier !== undefined) localStorage.setItem(K.tier, p.tier);
-    if (p.fellBack !== undefined) localStorage.setItem(K.fellBack, p.fellBack ? '1' : '0');
   } catch {
     /* storage blocked: preferences last for this page only */
   }

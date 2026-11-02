@@ -13,8 +13,6 @@ describe('FpsMonitor', () => {
     m.onDegrade(fn);
     run(m, 0, 20000, 1000 / 60);
     expect(fn).not.toHaveBeenCalled();
-    expect(m.fps).toBeGreaterThan(55);
-    expect(m.fps).toBeLessThan(65);
   });
 
   it('20 fps: quiet during warm-up, one call at about 18 s', () => {
@@ -93,11 +91,4 @@ describe('FpsMonitor', () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
-  it('unsubscribe stops calls', () => {
-    const m = new FpsMonitor();
-    const fn = vi.fn();
-    m.onDegrade(fn)();
-    run(m, 0, 30000, 50);
-    expect(fn).not.toHaveBeenCalled();
-  });
 });

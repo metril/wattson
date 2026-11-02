@@ -38,8 +38,8 @@ const h = vi.hoisted(() => {
     on(ev: string, fn: (e?: unknown) => void) {
       (this.handlers[ev] ??= []).push(fn);
     }
-    emit(ev: string) {
-      this.handlers[ev]?.forEach((f) => f());
+    emit(ev: string, e?: unknown) {
+      this.handlers[ev]?.forEach((f) => f(e));
     }
     addSource(id: string, s: Record<string, unknown>) {
       this.sources[id] = s;
@@ -77,7 +77,7 @@ const h = vi.hoisted(() => {
   const state = { maps: [] as FakeMap[], fail: false };
   return { state, FakeMap, FakeMarker };
 });
-vi.mock('maplibre-gl', () => ({ Map: h.FakeMap, Marker: h.FakeMarker }));
+vi.mock('@/lib/maplibre', () => ({ loadMapLibre: async () => ({ Map: h.FakeMap, Marker: h.FakeMarker }) }));
 vi.mock('@/features/map/MapView', () => ({ STYLE_URL: 'style-url' }));
 
 // Manual rAF: step(ms) advances the clock and runs the queued callbacks once.
@@ -186,6 +186,28 @@ describe('Ride3D', () => {
     expect(renders).toHaveBeenCalledTimes(1);
   });
 
+  it('swaps in the blank style only when the style document itself fails to load', async () => {
+    setup();
+    await waitFor(() => expect(h.state.maps.length).toBe(1));
+    const m = h.state.maps[0];
+    // Sprite, glyph and tile errors (another URL, or a source id) are not a style failure.
+    act(() => m.emit('error', { error: { url: 'https://tiles.example/sprite.json', status: 404 } }));
+    act(() => m.emit('error', { error: { url: 'https://tiles.example/glyphs/Noto/0-255.pbf' } }));
+    act(() => m.emit('error', { sourceId: 'openmaptiles', tile: {}, error: new Error('tile') }));
+    expect(m.setStyle).not.toHaveBeenCalled();
+    act(() => m.emit('error', { error: { url: 'style-url', status: 0 } }));
+    expect(m.setStyle).toHaveBeenCalledTimes(1);
+    act(() => m.emit('error', { error: { url: 'style-url', status: 0 } }));
+    expect(m.setStyle).toHaveBeenCalledTimes(1); // once
+
+    // After the style is loaded, nothing swaps it.
+    setup();
+    await waitFor(() => expect(h.state.maps.length).toBe(2));
+    const m2 = await ready(1);
+    act(() => m2.emit('error', { error: { url: 'style-url' } }));
+    expect(m2.setStyle).not.toHaveBeenCalled();
+  });
+
   it('webglcontextlost triggers fallback', async () => {
     const { onFallback } = setup();
     const m = await ready();
@@ -212,6 +234,18 @@ describe('Ride3D', () => {
     for (let i = 0; i < 500 && !onFallback.mock.calls.length; i++) step(50);
     expect(onFallback).toHaveBeenCalledWith('slow');
     expect(onFallback).toHaveBeenCalledTimes(1);
+  });
+
+  it('window.__wattsonFps (a test hook) shortens the slow-display detection', async () => {
+    (window as { __wattsonFps?: unknown }).__wattsonFps = { warmupMs: 100, windowMs: 100, threshold: 1e6 };
+    try {
+      setup();
+      await ready();
+      for (let i = 0; i < 60 && h.state.maps.length < 2; i++) step(16); // ~1 s, not the 18 s of the defaults
+      expect(h.state.maps).toHaveLength(2);
+    } finally {
+      delete (window as { __wattsonFps?: unknown }).__wattsonFps;
+    }
   });
 
   it('terrain height changes re-apply the terrain', async () => {

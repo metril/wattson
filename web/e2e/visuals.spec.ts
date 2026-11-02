@@ -28,6 +28,12 @@ async function ride(page: import('@playwright/test').Page, routeId: number) {
   await expect(state).toHaveText('riding');
 }
 
+/** Presses Harder to the bias limit: the simulated bike then covers the route several times faster. */
+async function pedalHarder(page: import('@playwright/test').Page) {
+  const harder = page.getByRole('button', { name: 'Harder' });
+  for (let i = 0; i < 12; i++) await harder.click();
+}
+
 async function chooseView(page: import('@playwright/test').Page, name: '2D map' | '3D flyover' | 'Street photos') {
   await page.getByRole('button', { name: 'View' }).click();
   await page.getByRole('radio', { name }).click();
@@ -78,22 +84,23 @@ test('3D flyover pitches the camera, is remembered per device and 2D on another 
   }
 });
 
-test('fallback simulation: a ~10 fps display drops 3D to 2D and says why', async ({ page, routeId }) => {
-  test.setTimeout(150_000);
+test('fallback simulation: a slow display drops 3D to 2D and says why', async ({ page, routeId }, info) => {
+  test.skip(info.project.name !== 'tablet', 'one project covers the fallback');
+  test.setTimeout(30_000);
+  // The test hook shortens the warm-up and windows, and a threshold no display reaches makes every window slow.
   await page.addInitScript(() => {
-    // Every animation frame arrives 100 ms apart, like a very slow display.
-    window.requestAnimationFrame = (cb) => window.setTimeout(() => cb(performance.now()), 100);
-    window.cancelAnimationFrame = (id) => window.clearTimeout(id);
+    (window as unknown as { __wattsonFps: object }).__wattsonFps = { warmupMs: 200, windowMs: 300, threshold: 1e6 };
   });
   await ride(page, routeId);
 
   await chooseView(page, '3D flyover');
   await expect(page.getByTestId('route-3d')).toBeVisible();
-  // Two warm-ups (full tier, then lite) and their windows.
-  await expect(page.getByText(/3D was too slow on this display/)).toBeVisible({ timeout: 100_000 });
+  // Full tier steps down to lite, then lite falls back to 2D.
+  await expect(page.getByText(/3D was too slow on this display/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('route-3d')).toHaveCount(0);
   await expect(page.locator('.maplibregl-canvas')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('wattson.view'))).toBe('2d');
+  expect(await page.evaluate(() => localStorage.getItem('wattson.view.tier'))).toBe('lite');
 });
 
 test('reduced motion turns the 3D option off', async ({ page, routeId }) => {
@@ -110,12 +117,13 @@ test('street photos follow the ride, credit Mapillary, never touch it from the b
   routeId,
   fakeMapillary,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const direct: string[] = [];
   page.on('request', (r) => {
     if (r.url().startsWith(fakeMapillary.url)) direct.push(r.url());
   });
   await ride(page, routeId);
+  await pedalHarder(page);
 
   // The server builds the photo list in the background; the option enables once it is ready.
   await page.getByRole('button', { name: 'View' }).click();
@@ -129,19 +137,20 @@ test('street photos follow the ride, credit Mapillary, never touch it from the b
   await expect(photo).toContainText('on Mapillary, CC BY-SA 4.0');
   await expect(photo).toContainText('e2e');
 
-  await expect.poll(() => photo.getAttribute('data-photo-id'), { timeout: 30_000 }).not.toBe(first);
+  await expect.poll(() => photo.getAttribute('data-photo-id'), { timeout: 15_000 }).not.toBe(first);
 
   // Mapillary goes away: the panel says so and keeps the last photo.
   fakeMapillary.fail = true;
-  await expect(page.getByText('Street photos unavailable right now')).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText('Street photos unavailable right now')).toBeVisible({ timeout: 30_000 });
   await expect(photo).toHaveAttribute('data-photo-id', /^\d+$/);
 
   expect(direct, 'the browser only talks to the Wattson server').toEqual([]);
 });
 
 test('street photos crossfade between two blob-loaded layers in a real browser', async ({ page, routeId }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(60_000);
   await ride(page, routeId);
+  await pedalHarder(page);
   await page.getByRole('button', { name: 'View' }).click();
   const option = page.getByRole('radio', { name: /Street photos/ });
   await expect(option).toBeEnabled({ timeout: 20_000 });
@@ -149,23 +158,23 @@ test('street photos crossfade between two blob-loaded layers in a real browser',
   const photo = page.getByTestId('photo-view');
   await expect(photo).toHaveAttribute('data-photo-id', /^\d+$/, { timeout: 10_000 });
 
-  // Sample both layers every frame for a while: a swap shows the new photo fading in over the old one.
+  // Sample both layers every frame until a swap has shown the new photo fading in over the old one and finished.
   const seen = await photo.evaluate(
     (root) =>
       new Promise<{ mid: boolean; blobs: boolean; settled: boolean }>((done) => {
         const [a, b] = Array.from(root.querySelectorAll('img'));
         let mid = false;
-        const end = performance.now() + 20_000;
+        const give_up = performance.now() + 25_000;
         const tick = () => {
           const oa = Number(getComputedStyle(a).opacity);
           const ob = Number(getComputedStyle(b).opacity);
           if (oa > 0 && ob > 0 && (oa < 1 || ob < 1)) mid = true;
-          if (mid && performance.now() > end - 1500) {
-            const shown = [a, b].filter((i) => Number(getComputedStyle(i).opacity) === 1 && i.getAttribute('src'));
-            done({ mid, blobs: shown.every((i) => i.currentSrc.startsWith('blob:') && i.naturalWidth === 64), settled: shown.length >= 1 });
+          const shown = [a, b].filter((i) => Number(getComputedStyle(i).opacity) === 1 && i.getAttribute('src'));
+          if (mid && shown.length === 1 && [oa, ob].includes(0)) {
+            done({ mid, blobs: shown.every((i) => i.currentSrc.startsWith('blob:') && i.naturalWidth === 64), settled: true });
             return;
           }
-          if (performance.now() > end + 20_000) {
+          if (performance.now() > give_up) {
             done({ mid, blobs: false, settled: false });
             return;
           }

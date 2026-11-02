@@ -1842,6 +1842,11 @@ export interface components {
             grade_pct: number;
             /**
              * Format: int64
+             * @description Heart rate, bpm; 0 when no sensor
+             */
+            heart_rate_bpm: number;
+            /**
+             * Format: int64
              * @description Resistance level (1 to 32) the engine last asked the bike for.
              */
             level: number;

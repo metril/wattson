@@ -20,9 +20,11 @@ import (
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
+	"github.com/metril/wattson/internal/history"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
+	"github.com/metril/wattson/internal/route"
 	"github.com/metril/wattson/internal/secretbox"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -165,10 +167,36 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 		h := v.(serveHooks)
 		rd.SimDial, rd.TickEvery, rd.SimPeriod = h.simDial, h.tickEvery, h.tickEvery
 	}
+	// Settle rides a crash left open before a new one can start.
+	if fin, del, err := history.Recover(ctx, st, minRideSamples); err != nil {
+		logger.Warn("ride recovery incomplete", "finished", fin, "deleted", del, "err", err)
+	} else if fin+del > 0 {
+		logger.Info("recovered unfinished rides", "finished", fin, "deleted", del)
+	}
 	mgr := ridectl.New(rd)
+	events, unsub := mgr.Subscribe(256)
+	recCtx, stopRec := context.WithCancel(context.Background())
+	recDone := make(chan struct{})
+	rec := history.NewRecorder(history.RecorderDeps{
+		Store:      st,
+		RouteInfo:  storeRouteInfo(st),
+		MinSamples: minRideSamples,
+		Logger:     logger,
+	})
+	go func() {
+		defer close(recDone)
+		_ = rec.Run(recCtx, events)
+	}()
 	var closeBike sync.Once
 	releaseBike := func() {
-		closeBike.Do(func() { releaseAtShutdown(mgr, logger) })
+		closeBike.Do(func() {
+			// Closing the manager ends the final ride; the recorder then
+			// finalizes it before the store closes.
+			releaseAtShutdown(mgr, logger)
+			unsub()
+			stopRec()
+			<-recDone
+		})
 	}
 	// Tile downloads run for minutes: no overall client timeout (the manager
 	// aborts a stalled transfer itself) and cancelled on shutdown below.
@@ -219,6 +247,24 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	}
 	logger.Info("stopped")
 	return nil
+}
+
+// minRideSamples is the shortest ride (seconds at 1 Hz) worth keeping.
+const minRideSamples = 10
+
+// storeRouteInfo names and decodes a stored route for the ride recorder.
+func storeRouteInfo(st *store.Store) func(context.Context, int64) (string, *route.Profile, error) {
+	return func(ctx context.Context, id int64) (string, *route.Profile, error) {
+		r, err := st.Route(ctx, id)
+		if err != nil {
+			return "", nil, err
+		}
+		p, err := route.Decode(r.Points)
+		if err != nil {
+			return "", nil, err
+		}
+		return r.Name, p, nil
+	}
 }
 
 // releaseAtShutdown ends any ride and returns the bike to its floor level,

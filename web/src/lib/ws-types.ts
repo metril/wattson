@@ -12,6 +12,7 @@ export type Tick = {
   speed_kmh: number;
   power_w: number;
   cadence_rpm: number;
+  heart_rate_bpm: number;
   grade_pct: number;
   level: number;
   reported_level: number;

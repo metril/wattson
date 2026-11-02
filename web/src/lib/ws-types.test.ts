@@ -17,6 +17,7 @@ const sampleTick: Required<Tick> = {
   speed_kmh: 0,
   power_w: 0,
   cadence_rpm: 0,
+  heart_rate_bpm: 0,
   grade_pct: 0,
   level: 0,
   reported_level: 0,

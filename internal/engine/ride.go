@@ -71,6 +71,7 @@ type Tick struct {
 	SpeedKmh      float64   `json:"speed_kmh" doc:"Simulated speed in kilometres per hour."`
 	PowerW        float64   `json:"power_w" doc:"Rider power in watts."`
 	CadenceRpm    float64   `json:"cadence_rpm" doc:"Pedalling cadence in revolutions per minute."`
+	HeartRateBpm  int       `json:"heart_rate_bpm" doc:"Heart rate, bpm; 0 when no sensor"`
 	GradePct      float64   `json:"grade_pct" doc:"Road grade of the current mode, in percent."`
 	Level         int       `json:"level" doc:"Resistance level (1 to 32) the engine last asked the bike for."`
 	ReportedLevel int       `json:"reported_level" doc:"Resistance level (1 to 32) the bike last reported; 0 when unknown."`

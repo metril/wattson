@@ -2110,6 +2110,11 @@
             "format": "double",
             "type": "number"
           },
+          "heart_rate_bpm": {
+            "description": "Heart rate, bpm; 0 when no sensor",
+            "format": "int64",
+            "type": "integer"
+          },
           "level": {
             "description": "Resistance level (1 to 32) the engine last asked the bike for.",
             "format": "int64",
@@ -2166,6 +2171,7 @@
           "speed_kmh",
           "power_w",
           "cadence_rpm",
+          "heart_rate_bpm",
           "grade_pct",
           "level",
           "reported_level",

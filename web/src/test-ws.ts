@@ -57,6 +57,7 @@ export const tickFixture = (over: Partial<Tick> = {}): Tick => ({
   speed_kmh: 0,
   power_w: 0,
   cadence_rpm: 0,
+  heart_rate_bpm: 0,
   grade_pct: 0,
   level: 5,
   reported_level: 0,

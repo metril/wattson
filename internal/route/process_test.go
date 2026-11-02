@@ -313,3 +313,15 @@ func TestProcessLengthSnapsToGrid(t *testing.T) {
 		t.Fatalf("length %v samples %d", p.LengthM, p.Len())
 	}
 }
+
+func TestEleAt(t *testing.T) {
+	t.Parallel()
+	p := &Profile{StepM: 10, LengthM: 20,
+		Lat: make([]float64, 3), Lon: make([]float64, 3), Grade: make([]float64, 3),
+		Ele: []float64{100, 110, 130}}
+	for _, c := range []struct{ d, want float64 }{{5, 105}, {15, 120}, {-1, 100}, {999, 130}, {math.NaN(), 100}} {
+		if got := p.EleAt(c.d); got != c.want {
+			t.Errorf("EleAt(%v) = %v, want %v", c.d, got, c.want)
+		}
+	}
+}

@@ -89,6 +89,22 @@ func (p *Profile) PosAt(d float64) (lat, lon float64) {
 	return p.Lat[i] + (p.Lat[i+1]-p.Lat[i])*t, lerpLon(p.Lon[i], p.Lon[i+1], t)
 }
 
+// EleAt returns the elevation in metres at distance d metres, linearly
+// interpolated and clamped to the route.
+func (p *Profile) EleAt(d float64) float64 {
+	n := p.Len()
+	switch {
+	case n == 0:
+		return 0
+	case !(d > 0) || n == 1:
+		return p.Ele[0]
+	case d >= p.LengthM:
+		return p.Ele[n-1]
+	}
+	i, t := p.locate(d)
+	return p.Ele[i] + (p.Ele[i+1]-p.Ele[i])*t
+}
+
 // Stats summarises a Profile.
 type Stats struct {
 	DistanceM, AscentM, DescentM, MinGradePct, MaxGradePct float64

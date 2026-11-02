@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Navigate, useLocation } from 'react-router';
 import { Banner } from '@/components/Banner';
-import { api, unwrap } from './api';
+import { api, dropKioskToken, getKioskToken, unwrap, wasKioskDropped } from './api';
 import type { components } from './openapi';
 
 type Schemas = components['schemas'];
@@ -18,7 +18,12 @@ export function useMe() {
     staleTime: 30_000,
     queryFn: async () => {
       const r = await api.GET('/api/auth/me');
-      if (r.response.status === 401) return null;
+      if (r.response.status === 401) {
+        // The server prefers a Bearer token over the cookie, so a revoked kiosk
+        // token would block every sign-in. Drop it and send the display to pairing.
+        if (getKioskToken()) dropKioskToken();
+        return null;
+      }
       return unwrap(r);
     },
   });
@@ -54,6 +59,7 @@ export function RequireAuth({ children, admin }: { children: ReactNode; admin?: 
   }
   if (info.data?.needs_setup) return <Navigate to="/setup" replace />;
   if (!me.data) {
+    if (wasKioskDropped()) return <Navigate to="/kiosk" replace />;
     const rt = encodeURIComponent(loc.pathname + loc.search);
     return <Navigate to={`/login?return_to=${rt}`} replace />;
   }

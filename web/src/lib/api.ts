@@ -20,6 +20,23 @@ export function setKioskToken(t: string | null): void {
   }
 }
 
+// Set when a stored kiosk token turned out to be revoked, so the pairing screen can say so.
+let kioskDropped = false;
+
+/** Forget a dead kiosk token and remember why the display is unpaired. */
+export function dropKioskToken(): void {
+  setKioskToken(null);
+  kioskDropped = true;
+}
+
+export function wasKioskDropped(): boolean {
+  return kioskDropped;
+}
+
+export function clearKioskDropped(): void {
+  kioskDropped = false;
+}
+
 let onUnauthorized: (returnTo: string) => void = () => {};
 
 export function setUnauthorizedHandler(fn: (returnTo: string) => void): void {

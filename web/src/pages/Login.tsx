@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
-import { api, ApiError, unwrap } from '@/lib/api';
+import { api, ApiError, clearKioskDropped, unwrap } from '@/lib/api';
 import { AUTH_INFO_KEY, ME_KEY, useAuthInfo } from '@/lib/auth';
 import { errMessage } from '@/lib/errors';
 import { Banner } from '@/components/Banner';
@@ -103,6 +103,7 @@ export function LoginPage() {
         return;
       }
       unwrap(r);
+      clearKioskDropped();
       qc.removeQueries({ queryKey: ME_KEY });
       qc.removeQueries({ queryKey: AUTH_INFO_KEY });
       navigate(returnTo, { replace: true });

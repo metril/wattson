@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { getKioskToken, setKioskToken } from '@/lib/api';
+import { clearKioskDropped, getKioskToken, setKioskToken, wasKioskDropped } from '@/lib/api';
 import { ME_KEY } from '@/lib/auth';
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -27,6 +27,7 @@ export function KioskPage() {
   // Read once: the fragment is scrubbed right away.
   const [fragment] = useState(() => new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token'));
   const [stored] = useState(getKioskToken);
+  const [unpaired] = useState(wasKioskDropped);
   const valid = !!fragment && fragment.startsWith('wat_');
   const needsConfirm = valid && !!stored && stored !== fragment;
 
@@ -35,6 +36,7 @@ export function KioskPage() {
     if (needsConfirm) return;
     if (valid) {
       setKioskToken(fragment);
+      clearKioskDropped();
       void qc.invalidateQueries({ queryKey: ME_KEY });
     }
     if (valid || (!fragment && stored)) navigate('/', { replace: true });
@@ -57,6 +59,7 @@ export function KioskPage() {
               variant="primary"
               onClick={() => {
                 setKioskToken(fragment);
+                clearKioskDropped();
                 void qc.invalidateQueries({ queryKey: ME_KEY });
                 navigate('/', { replace: true });
               }}
@@ -72,6 +75,14 @@ export function KioskPage() {
   if (valid || stored) return null;
   return (
     <Shell>
+      {unpaired && (
+        <Banner tone="warn">
+          <p className="font-medium">This display was unpaired — scan a new code or sign in</p>
+          <Link to="/login" className="text-accent underline">
+            Sign in
+          </Link>
+        </Banner>
+      )}
       <Card className="text-dim">Scan the pairing QR code from Settings → Tokens</Card>
     </Shell>
   );

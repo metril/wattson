@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Layout } from '@/components/Layout';
 import { RequireAuth, ME_KEY } from '@/lib/auth';
-import { getKioskToken, setKioskToken, setUnauthorizedHandler } from '@/lib/api';
+import { dropKioskToken, getKioskToken, setUnauthorizedHandler } from '@/lib/api';
 import { KioskPage } from '@/pages/Kiosk';
 import { LoginPage } from '@/pages/Login';
 import { SetupPage } from '@/pages/Setup';
@@ -27,7 +27,7 @@ export function AppRoutes() {
       qc.setQueryData(ME_KEY, null);
       // A paired display whose token was revoked goes back to the pairing hint.
       if (getKioskToken()) {
-        setKioskToken(null);
+        dropKioskToken();
         navigate('/kiosk', { replace: true });
         return;
       }

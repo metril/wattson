@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
 import { AppRoutes } from '@/App';
+import { clearKioskDropped, getKioskToken } from '@/lib/api';
 
 function Probe() {
   const l = useLocation();
@@ -44,7 +45,11 @@ function renderAt(path: string) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+  clearKioskDropped();
+});
 
 describe('RequireAuth', () => {
   it('needs_setup renders /setup', async () => {
@@ -78,5 +83,15 @@ describe('RequireAuth', () => {
     stub({ me: 'user' });
     renderAt('/settings/tokens');
     expect(await screen.findByRole('heading', { name: 'API tokens' })).toBeInTheDocument();
+  });
+
+  it('a revoked kiosk token is dropped and the display goes to /kiosk, not /login', async () => {
+    localStorage.setItem('wattson.kiosk_token', 'wat_dead');
+    stub({ me: null });
+    renderAt('/');
+    expect(await screen.findByText(/This display was unpaired/)).toBeInTheDocument();
+    expect(screen.getByTestId('loc')).toHaveTextContent(/^\/kiosk$/);
+    expect(getKioskToken()).toBeNull();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
   });
 });

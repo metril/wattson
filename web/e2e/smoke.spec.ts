@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { completeSetup, levelText, metric, watchCsp } from './helpers';
+import { ADMIN, completeSetup, levelText, metric, watchCsp } from './helpers';
 
 test('first run to a simulated ride', async ({ page }) => {
   const csp = watchCsp(page);
@@ -56,4 +56,32 @@ test('first run to a simulated ride', async ({ page }) => {
   await expect(page.getByTestId('ride-state')).toHaveText('idle');
 
   expect(csp.violations).toEqual([]);
+});
+
+test('a revoked kiosk token sends the display to pairing, then sign-in works', async ({ page, context }) => {
+  await completeSetup(page);
+
+  // Pair a kiosk with a fresh token.
+  const created = await page.request.post('/api/tokens', { data: { name: 'e2e kiosk', scopes: ['read', 'control'] } });
+  expect(created.ok()).toBe(true);
+  const { id, token } = (await created.json()) as { id: number; token: string };
+  await page.goto(`/kiosk#token=${token}`);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId('ride-state')).toBeVisible();
+
+  // Revoke it, then reload: the display lands on pairing, not a dead-end login.
+  expect((await page.request.delete(`/api/tokens/${id}`)).ok()).toBe(true);
+  await context.clearCookies();
+  await page.reload();
+  await expect(page).toHaveURL(/\/kiosk$/);
+  await expect(page.getByText('This display was unpaired — scan a new code or sign in')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('wattson.kiosk_token'))).toBeNull();
+
+  // Normal sign-in works now that the dead token is gone.
+  await page.getByRole('link', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await page.getByLabel('Username').fill(ADMIN.username);
+  await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByTestId('ride-state')).toBeVisible();
 });

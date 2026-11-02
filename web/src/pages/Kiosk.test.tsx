@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
 import { KioskPage } from './Kiosk';
+import { dropKioskToken, clearKioskDropped } from '@/lib/api';
 import { stubApi } from '@/test-utils';
 
 function Probe() {
@@ -25,6 +26,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
+  clearKioskDropped();
   window.history.replaceState(null, '', '/');
 });
 
@@ -47,6 +49,15 @@ describe('KioskPage', () => {
     renderKiosk();
     expect(screen.getByText(/Scan the pairing QR code from Settings → Tokens/)).toBeInTheDocument();
     expect(screen.getByTestId('loc')).toHaveTextContent('/kiosk');
+  });
+
+  it('says the display was unpaired after a revoked token, with a sign-in link', () => {
+    localStorage.setItem('wattson.kiosk_token', 'wat_dead');
+    dropKioskToken();
+    renderKiosk();
+    expect(screen.getByText(/This display was unpaired — scan a new code or sign in/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+    expect(screen.getByText(/Scan the pairing QR code/)).toBeInTheDocument();
   });
 
   it('goes straight to the ride screen when already paired', async () => {

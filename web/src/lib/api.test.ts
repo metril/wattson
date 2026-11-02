@@ -51,6 +51,15 @@ describe('api client', () => {
     expect(h).not.toHaveBeenCalled();
   });
 
+  it.each(['/login', '/setup', '/kiosk'])('401 on public route %s does not redirect', async (path) => {
+    window.history.replaceState(null, '', path);
+    stubFetch(401, { error: { code: 'unauthorized', message: 'm' } });
+    const h = vi.fn();
+    setUnauthorizedHandler(h);
+    await api.GET('/api/riders');
+    expect(h).not.toHaveBeenCalled();
+  });
+
   it('me 401 does not redirect', async () => {
     stubFetch(401, { error: { code: 'unauthorized', message: 'm' } });
     const h = vi.fn();

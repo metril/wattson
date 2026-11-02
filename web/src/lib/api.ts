@@ -28,6 +28,8 @@ export function setUnauthorizedHandler(fn: (returnTo: string) => void): void {
 
 // These two endpoints answer 401 as part of normal operation.
 const NO_REDIRECT = new Set(['/api/auth/login', '/api/auth/me']);
+// Already on a public screen: a 401 there must not bounce the user around.
+const PUBLIC_ROUTES = new Set(['/login', '/setup', '/kiosk']);
 
 const middleware: Middleware = {
   onRequest({ request }) {
@@ -36,7 +38,11 @@ const middleware: Middleware = {
     return request;
   },
   onResponse({ request, response }) {
-    if (response.status === 401 && !NO_REDIRECT.has(new URL(request.url).pathname)) {
+    if (
+      response.status === 401 &&
+      !NO_REDIRECT.has(new URL(request.url).pathname) &&
+      !PUBLIC_ROUTES.has(location.pathname)
+    ) {
       onUnauthorized(location.pathname + location.search);
     }
     return response;

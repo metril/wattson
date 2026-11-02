@@ -64,7 +64,6 @@ export function createCore(env: Env) {
     return serial(async () => {
       try {
         const cache = await env.caches.open(CACHE);
-        await cache.delete(key);
         await cache.put(key, res);
       } catch (e) {
         fail(e);

@@ -83,6 +83,7 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeWebSocket);
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -332,7 +333,6 @@ describe('Ride route mode', () => {
         status = 'ready';
         await act(async () => void vi.advanceTimersByTime(3100)); // the 3 s poll
         await waitFor(() => expect(screen.getByTestId('photoview')).toBeInTheDocument());
-        vi.useRealTimers();
       });
 
       it('shows the server message on error and the empty text when there is no coverage', async () => {

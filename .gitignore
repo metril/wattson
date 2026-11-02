@@ -2,3 +2,6 @@
 /dist
 *.hexlog
 .superpowers/
+/esphome/secrets.yaml
+/esphome/.esphome/
+*.bin

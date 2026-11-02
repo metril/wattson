@@ -1,0 +1,94 @@
+# Dedicated ESPHome Bluetooth proxy for Wattson (ESP32 placed next to the bike).
+#
+# Standalone on purpose: this repo is public, so it cannot pull the private
+# fleet package (esphome/common). The fleet defaults (SNTP, syslog, gateway)
+# are inlined below. Values come from esphome/secrets.yaml (gitignored; copy
+# secrets.example.yaml). See docs/esphome-proxy.md.
+#
+# DEDICATED: the proxy accepts ONE Bluetooth subscriber. Wattson is that
+# subscriber, so never add this device to Home Assistant's ESPHome integration.
+substitutions:
+  name: wattson-proxy
+  friendly_name: Wattson Proxy
+  static_ip: !secret wattson_proxy_static_ip
+  gateway: 10.10.76.1
+  subnet: 255.255.255.0
+  dns: 10.10.76.1
+  ntp_server: 10.10.76.1
+  syslog_host: 10.10.76.3
+  syslog_port: "1514"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: false
+  min_version: 2026.9.0
+
+esp32:
+  board: esp32-s3-devkitc-1 # change to match the board (e.g. esp32dev, esp32-c6-devkitc-1)
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret wattson_proxy_api_key
+  # No Home Assistant client connects; do not reboot for lack of one.
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    id: ota_esphome
+    encryption: {} # inherits the API key (ESPHome >= 2026.9)
+
+safe_mode:
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: ${gateway}
+    subnet: ${subnet}
+    dns1: ${dns}
+  ap:
+    ssid: ${name}
+    password: !secret ap_password
+
+captive_portal:
+
+time:
+  - platform: sntp
+    id: sys_time
+    servers:
+      - ${ntp_server}
+
+udp:
+  - id: syslog_udp
+    addresses:
+      - ${syslog_host}
+
+syslog:
+  udp_id: syslog_udp
+  time_id: sys_time
+  port: ${syslog_port}
+  level: INFO
+  strip: true
+  facility: 16
+
+esp32_ble:
+  connection_timeout: 20s
+
+# Continuous scan so the bike's advertisements are always visible to a client.
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 320ms
+    window: 30ms
+    active: true
+
+bluetooth_proxy:
+  active: true # required for GATT connections
+  connection_slots: 3

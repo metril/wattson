@@ -67,4 +67,32 @@ describe('ViewMenu', () => {
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View' })).toHaveFocus();
   });
+
+  it('arrows move focus without selecting; Enter selects', async () => {
+    const p = setup();
+    await open();
+    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-controls');
+    screen.getByRole('radio', { name: '2D map' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('radio', { name: /3D flyover/ })).toHaveFocus();
+    expect(p.onChange).not.toHaveBeenCalled();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(screen.getByRole('radio', { name: '2D map' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}{Enter}');
+    expect(p.onChange).toHaveBeenCalledTimes(1);
+    expect(p.onChange).toHaveBeenCalledWith('photo');
+  });
+
+  it('arrows skip disabled options', async () => {
+    setup({ caps: { ...caps, webgl: false } });
+    await open();
+    screen.getByRole('radio', { name: '2D map' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('radio', { name: 'Street photos' })).toHaveFocus();
+  });
+
+  it('aria-controls is absent while closed', () => {
+    setup();
+    expect(screen.getByRole('button', { name: 'View' })).not.toHaveAttribute('aria-controls');
+  });
 });

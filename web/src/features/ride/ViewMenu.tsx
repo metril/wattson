@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Eye } from 'lucide-react';
 import { unavailableReason, type Caps, type ViewMode } from '@/lib/view-prefs';
 
@@ -8,7 +8,11 @@ const OPTIONS: { v: ViewMode; label: string }[] = [
   { v: 'photo', label: 'Street photos' },
 ];
 
-/** A "View" button that opens an inline radio group (no hover, works with arrows and Enter). */
+/**
+ * A "View" button that opens an inline radio group (no hover, works with
+ * arrows and Enter). Arrows only move focus; Enter or Space selects, so a
+ * D-pad pass over 3D never builds a WebGL map on the way.
+ */
 export function ViewMenu(p: {
   value: ViewMode;
   caps: Caps;
@@ -18,11 +22,12 @@ export function ViewMenu(p: {
 }) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
+  const group = useRef<HTMLDivElement>(null);
   const id = useId();
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       setOpen(false);
@@ -32,13 +37,23 @@ export function ViewMenu(p: {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
+  const onArrow = (e: KeyboardEvent<HTMLDivElement>) => {
+    const dir = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault(); // also keeps the ride's arrow keys from changing resistance
+    const items = Array.from(group.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+    if (!items.length) return;
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    items[(at + dir + items.length) % items.length].focus();
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <button
         ref={btn}
         type="button"
         aria-expanded={open}
-        aria-controls={id}
+        aria-controls={open ? id : undefined}
         onClick={() => setOpen((o) => !o)}
         className="inline-flex min-h-touch items-center justify-center gap-2 self-start rounded-control border border-line bg-raised px-4 text-chalk"
       >
@@ -47,32 +62,38 @@ export function ViewMenu(p: {
       </button>
       {open && (
         <div id={id} className="flex flex-col gap-1 rounded-panel border border-line bg-panel p-2">
-          <div role="radiogroup" aria-label="Ride view" className="flex flex-col gap-1">
+          <div ref={group} role="radiogroup" aria-label="Ride view" onKeyDown={onArrow} className="flex flex-col gap-1">
             {OPTIONS.map(({ v, label }) => {
               const why = unavailableReason(v, p.caps);
+              const checked = p.value === v;
               return (
-                <label
+                <button
                   key={v}
-                  className={`flex min-h-touch items-center gap-3 rounded-control px-3 ${why ? 'text-dim' : 'cursor-pointer text-chalk'}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  aria-labelledby={`${id}-${v}-l`}
+                  aria-describedby={why ? `${id}-${v}-d` : undefined}
+                  tabIndex={checked ? 0 : -1}
+                  disabled={!!why}
+                  onClick={() => p.onChange(v)}
+                  className={`flex min-h-touch items-center gap-3 rounded-control px-3 text-left ${why ? 'text-dim' : 'text-chalk'}`}
                 >
-                  <input
-                    type="radio"
-                    name={`${id}-view`}
-                    checked={p.value === v}
-                    disabled={!!why}
-                    aria-describedby={why ? `${id}-${v}` : undefined}
-                    onChange={() => p.onChange(v)}
-                    className="size-5 accent-accent"
-                  />
+                  <span
+                    aria-hidden
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${checked ? 'border-accent' : 'border-line'}`}
+                  >
+                    {checked && <span className="size-2.5 rounded-full bg-accent" />}
+                  </span>
                   <span className="flex flex-col">
-                    {label}
+                    <span id={`${id}-${v}-l`}>{label}</span>
                     {why && (
-                      <span id={`${id}-${v}`} className="text-sm text-dim">
+                      <span id={`${id}-${v}-d`} className="text-sm text-dim">
                         {why}
                       </span>
                     )}
                   </span>
-                </label>
+                </button>
               );
             })}
           </div>

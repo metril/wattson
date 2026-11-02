@@ -30,7 +30,10 @@ const FALLBACK_NOTE = {
 
 function probeWebgl(): boolean {
   try {
-    return !!document.createElement('canvas').getContext('webgl2');
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) return false;
+    gl.getExtension?.('WEBGL_lose_context')?.loseContext(); // free the probe's context slot
+    return true;
   } catch {
     return false;
   }
@@ -95,10 +98,11 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const [prefs] = useState(loadPrefs);
   const [want, setWant] = useState<ViewMode>(prefs.view);
   const [exaggeration, setExaggeration] = useState(prefs.exaggeration);
-  const [tier] = useState(() => (hasSavedTier() ? prefs.tier : detectTier(navigator)));
+  const [tier, setTier] = useState(() => (hasSavedTier() ? prefs.tier : detectTier(navigator)));
   const [note, setNote] = useState<string | null>(null);
   const [webgl] = useState(probeWebgl);
   const reducedMotion = useMedia('(prefers-reduced-motion: reduce)');
+  const wide = useMedia('(min-width: 768px)'); // Tailwind md: the map panel is always shown
   // Street photos arrive with PhotoView; until then the option reports no photos.
   const caps: Caps = { webgl, reducedMotion, photos: false, map: hasMap };
   const view = effectiveView(want, caps);
@@ -119,7 +123,11 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     setWant(v);
     setNote(null);
     savePrefs({ view: v });
-    if (v === '3d') savePrefs({ fellBack: false, tier: detectTier(navigator) });
+    if (v === '3d') {
+      const t = detectTier(navigator);
+      setTier(t);
+      savePrefs({ fellBack: false, tier: t });
+    }
   };
   const setExag = (x: number) => {
     setExaggeration(x);
@@ -183,15 +191,18 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
         {hasMap && (
           <div ref={wrap} data-testid="route-map" className={showMap ? 'block' : 'hidden md:block'}>
             <Suspense fallback={<div className="h-64 rounded-panel border border-line bg-panel" />}>
-              {view === '3d' && r && prof ? (
-                <Ride3D
-                  profile={prof}
-                  line={r.geojson}
-                  ticks={ticks}
-                  exaggeration={exaggeration}
-                  tier={tier}
-                  onFallback={fellBack}
-                />
+              {view === '3d' ? (
+                // A flyover in a hidden phone panel would still run WebGL, so it mounts only when shown.
+                r && prof && (showMap || wide) ? (
+                  <Ride3D
+                    profile={prof}
+                    line={r.geojson}
+                    ticks={ticks}
+                    exaggeration={exaggeration}
+                    tier={tier}
+                    onFallback={fellBack}
+                  />
+                ) : null
               ) : (
                 <MapView className="h-64 md:h-72 min-[1600px]:h-96" onReady={setMap} />
               )}

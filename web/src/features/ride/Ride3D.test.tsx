@@ -83,6 +83,9 @@ vi.mock('@/features/map/MapView', () => ({ STYLE_URL: 'style-url' }));
 // Manual rAF: step(ms) advances the clock and runs the queued callbacks once.
 let queue: ((t: number) => void)[] = [];
 let clock = 1000;
+const cancelRaf = vi.fn(() => {
+  queue = [];
+});
 const step = (ms = 16) => {
   clock += ms;
   const q = queue;
@@ -114,9 +117,7 @@ beforeEach(() => {
   queue = [];
   clock = 1000;
   vi.stubGlobal('requestAnimationFrame', (f: (t: number) => void) => queue.push(f));
-  vi.stubGlobal('cancelAnimationFrame', () => {
-    queue = [];
-  });
+  vi.stubGlobal('cancelAnimationFrame', cancelRaf);
   vi.stubGlobal('devicePixelRatio', 3);
 });
 afterEach(() => {
@@ -219,6 +220,23 @@ describe('Ride3D', () => {
     rerender(<Ride3D profile={profile} line={line} ticks={ticks} exaggeration={2.5} tier="full" onFallback={onFallback} />);
     expect(m.terrain.at(-1)).toEqual({ source: 'terrain', exaggeration: 2.5 });
     expect(h.state.maps).toHaveLength(1);
+  });
+
+  it('unmount cancels the frame loop and unsubscribes from ticks', async () => {
+    const ticks = new TickStore();
+    const unsub = vi.fn();
+    vi.spyOn(ticks, 'subscribe').mockReturnValue(unsub);
+    cancelRaf.mockClear();
+    const { unmount } = render(
+      <Ride3D profile={profile} line={line} ticks={ticks} exaggeration={1.5} tier="full" onFallback={vi.fn()} />,
+    );
+    await ready();
+    step();
+    expect(queue).toHaveLength(1);
+    unmount();
+    expect(unsub).toHaveBeenCalledTimes(1);
+    expect(cancelRaf).toHaveBeenCalled();
+    expect(queue).toHaveLength(0);
   });
 
   it('removes the map on unmount', async () => {

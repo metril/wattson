@@ -39,6 +39,27 @@ vi.mock('@/features/ride/Ride3D', () => ({
   ),
 }));
 
+/** matchMedia for the two queries RouteView watches; the returned setter fires change events. */
+function mockMedia(init: { wide: boolean; reduced: boolean }) {
+  const on = { ...init };
+  const subs = { wide: new Set<() => void>(), reduced: new Set<() => void>() };
+  vi.stubGlobal('matchMedia', (q: string) => {
+    const k = q.includes('reduced-motion') ? 'reduced' : 'wide';
+    return {
+      get matches() {
+        return on[k];
+      },
+      media: q,
+      addEventListener: (_: string, fn: () => void) => subs[k].add(fn),
+      removeEventListener: (_: string, fn: () => void) => subs[k].delete(fn),
+    };
+  });
+  return (k: 'wide' | 'reduced', v: boolean) => {
+    on[k] = v;
+    act(() => subs[k].forEach((f) => f()));
+  };
+}
+
 const withWebgl = () =>
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((type: string) =>
     type === 'webgl2' ? {} : null) as unknown as HTMLCanvasElement['getContext']);
@@ -173,6 +194,10 @@ describe('Ride route mode', () => {
   });
 
   describe('views', () => {
+    let setMedia: (k: 'wide' | 'reduced', v: boolean) => void;
+    beforeEach(() => {
+      setMedia = mockMedia({ wide: true, reduced: false });
+    });
     const riding = async () => {
       const { ws } = await setup();
       tick(ws, { distance_m: 1 });
@@ -210,9 +235,11 @@ describe('Ride route mode', () => {
       expect(await screen.findByText('The 3D view stopped responding, so the ride switched to 2D.')).toBeInTheDocument();
     });
 
-    it('choosing 3D in the menu clears fell_back and switches', async () => {
+    it('choosing 3D in the menu clears fell_back, resets the tier and passes it on', async () => {
       withWebgl();
+      vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(16);
       localStorage.setItem('wattson.view.fell_back', '1');
+      localStorage.setItem('wattson.view.tier', 'lite');
       await riding();
       await screen.findByTestId('mapview');
       await userEvent.click(screen.getByRole('button', { name: 'View' }));
@@ -220,7 +247,40 @@ describe('Ride route mode', () => {
       await screen.findByTestId('ride3d');
       expect(localStorage.getItem('wattson.view')).toBe('3d');
       expect(localStorage.getItem('wattson.view.fell_back')).toBe('0');
-      expect(localStorage.getItem('wattson.view.tier')).toMatch(/^(full|lite)$/);
+      expect(localStorage.getItem('wattson.view.tier')).toBe('full');
+      expect(screen.getByTestId('ride3d')).toHaveAttribute('data-tier', 'full');
+    });
+
+    it('3D stays unmounted while the phone map panel is hidden', async () => {
+      withWebgl();
+      setMedia('wide', false);
+      localStorage.setItem('wattson.view', '3d');
+      await riding();
+      await screen.findByRole('button', { name: 'Map' });
+      expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Map' }));
+      expect(await screen.findByTestId('ride3d')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Hide map' }));
+      expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
+    });
+
+    it('reduced motion turned on mid-ride unmounts 3D', async () => {
+      withWebgl();
+      localStorage.setItem('wattson.view', '3d');
+      await riding();
+      await screen.findByTestId('ride3d');
+      setMedia('reduced', true);
+      await screen.findByTestId('mapview');
+      expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
+    });
+
+    it('the WebGL probe releases its context', async () => {
+      const lose = vi.fn();
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((type: string) =>
+        type === 'webgl2' ? { getExtension: () => ({ loseContext: lose }) } : null) as unknown as HTMLCanvasElement['getContext']);
+      await riding();
+      await screen.findByTestId('mapview');
+      expect(lose).toHaveBeenCalled();
     });
 
     it('without WebGL a saved 3D view shows the 2D map and 3D is disabled', async () => {

@@ -3,8 +3,9 @@ type Opts = { warmupMs?: number; windowMs?: number; threshold?: number; badWindo
 /**
  * Watches requestAnimationFrame timestamps. After a warm-up it measures whole
  * windows; consecutive windows below the threshold fire onDegrade once per
- * arm(). A gap over 250 ms (hidden tab, screensaver) restarts the window
- * instead of counting as slow frames.
+ * arm(). A pause (tab hidden, or a gap over 1 s such as a screensaver)
+ * restarts the current window and keeps the bad-window count; shorter gaps
+ * while visible are genuinely slow frames and count as such.
  */
 export class FpsMonitor {
   private o: Required<Opts>;
@@ -43,10 +44,10 @@ export class FpsMonitor {
       this.t0 = this.winStart = this.last = now;
       return;
     }
-    if (now - this.last > 250) {
+    const gap = now - this.last;
+    if (gap > 1000 || (gap > 250 && typeof document !== 'undefined' && document.hidden)) {
       this.winStart = now;
       this.count = 0;
-      this.bad = 0;
       this.last = now;
       return;
     }

@@ -191,7 +191,9 @@ func (d Deps) registerRiders(api huma.API) {
 	register(api, route{Method: http.MethodPatch, Path: "/api/riders/{id}", ID: "updateRider", Tag: "riders",
 		Summary: "Update a rider",
 		Description: "Changes the fields present in the body of one of the caller's riders. The merged profile is " +
-			"validated (`min_level` must not exceed `max_level`). A rider owned by someone else returns 404.",
+			"validated (`min_level` must not exceed `max_level`). A rider owned by someone else returns 404. Changing the rider " +
+			"bound to the connected bike is allowed, but the connection keeps the profile it was made with: the change " +
+			"applies at the next connect.",
 		Scope: auth.ScopeControl},
 		func(ctx context.Context, in *patchRiderIn) (*riderOutBody, error) {
 			id, _ := auth.FromContext(ctx)

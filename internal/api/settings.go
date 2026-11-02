@@ -39,7 +39,7 @@ type BikeOut struct {
 	Address        string `json:"address" doc:"Bluetooth address of the bike, AA:BB:CC:DD:EE:FF; empty when unset."`
 	ESPHomeHost    string `json:"esphome_host" doc:"ESPHome Bluetooth proxy as host or host:port (default port 6053); empty when unset."`
 	ESPHomeKeySet  bool   `json:"esphome_key_set" doc:"Whether an ESPHome API encryption key is stored. The key itself is never returned."`
-	IdleReleaseMin int    `json:"idle_release_min" doc:"Minutes without pedalling before the bike is released, 0 to 240; 0 disables."`
+	IdleReleaseMin int    `json:"idle_release_min" doc:"Minutes without a command before a bike that is connecting or ready is released, 0 to 240; 0 disables. A bike that is riding or paused is never released; the clock restarts when the ride stops."`
 	SimCadenceRpm  int    `json:"sim_cadence_rpm" doc:"Cadence of the simulated bike, in revolutions per minute, 0 to 150."`
 }
 
@@ -112,7 +112,7 @@ type BikePatch struct {
 	Address        *string `json:"address,omitempty" doc:"Bluetooth address AA:BB:CC:DD:EE:FF; empty clears it."`
 	ESPHomeHost    *string `json:"esphome_host,omitempty" doc:"ESPHome proxy as host or host:port; empty clears it."`
 	ESPHomeKey     *string `json:"esphome_key,omitempty" doc:"ESPHome API encryption key, base64 of 32 bytes. Omit to keep the stored key; an empty string clears it."`
-	IdleReleaseMin *int    `json:"idle_release_min,omitempty" doc:"Minutes without pedalling before release, 0 to 240."`
+	IdleReleaseMin *int    `json:"idle_release_min,omitempty" doc:"Minutes without a command before a connecting or ready bike is released, 0 to 240; 0 disables."`
 	SimCadenceRpm  *int    `json:"sim_cadence_rpm,omitempty" doc:"Simulated cadence in revolutions per minute, 0 to 150."`
 }
 

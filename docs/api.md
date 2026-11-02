@@ -15,6 +15,8 @@ export TOKEN=wat_…
 
 Errors are always `{"error":{"code":"snake_case","message":"…"}}`.
 
+A state-changing request authenticated by the session cookie (browser use) is refused with `403 csrf` when its `Origin` names a foreign host, or when the browser sends `Sec-Fetch-Site: cross-site` with no `Origin`. This applies to every such route, including those that document no scope (for example logout). Requests with a bearer token are exempt.
+
 ## Bike and ride
 
 ```

@@ -25,7 +25,9 @@ func newHumaAPI(r chi.Router) huma.API {
 	cfg := huma.DefaultConfig("Wattson API", "1.0.0")
 	cfg.Info.Description = "REST API of the Wattson server, which controls a Merach exercise bike. " +
 		"Authenticate with an API token (`Authorization: Bearer <token>`) or the session cookie " +
-		"set by the login flow."
+		"set by the login flow. A state-changing request authenticated by the session cookie (this includes routes " +
+		"that document no scope, such as logout) is refused with 403 `csrf` when its Origin header names a foreign host " +
+		"or, with no Origin, the browser reports `Sec-Fetch-Site: cross-site`. Bearer-token requests are exempt."
 	cfg.CreateHooks = nil // no "$schema" property on responses
 	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"bearer": {Type: "http", Scheme: "bearer", Description: "API token from Settings → Tokens"},

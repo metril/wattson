@@ -78,7 +78,7 @@
             "type": "boolean"
           },
           "idle_release_min": {
-            "description": "Minutes without pedalling before the bike is released, 0 to 240; 0 disables.",
+            "description": "Minutes without a command before a bike that is connecting or ready is released, 0 to 240; 0 disables. A bike that is riding or paused is never released; the clock restarts when the ride stops.",
             "format": "int64",
             "type": "integer"
           },
@@ -123,7 +123,7 @@
             "type": "string"
           },
           "idle_release_min": {
-            "description": "Minutes without pedalling before release, 0 to 240.",
+            "description": "Minutes without a command before a connecting or ready bike is released, 0 to 240; 0 disables.",
             "format": "int64",
             "type": "integer"
           },
@@ -1668,7 +1668,7 @@
     }
   },
   "info": {
-    "description": "REST API of the Wattson server, which controls a Merach exercise bike. Authenticate with an API token (`Authorization: Bearer \u003ctoken\u003e`) or the session cookie set by the login flow.",
+    "description": "REST API of the Wattson server, which controls a Merach exercise bike. Authenticate with an API token (`Authorization: Bearer \u003ctoken\u003e`) or the session cookie set by the login flow. A state-changing request authenticated by the session cookie (this includes routes that document no scope, such as logout) is refused with 403 `csrf` when its Origin header names a foreign host or, with no Origin, the browser reports `Sec-Fetch-Site: cross-site`. Bearer-token requests are exempt.",
     "title": "Wattson API",
     "version": "1.0.0"
   },
@@ -3590,7 +3590,7 @@
         ]
       },
       "patch": {
-        "description": "Changes the fields present in the body of one of the caller's riders. The merged profile is validated (`min_level` must not exceed `max_level`). A rider owned by someone else returns 404. Requires the `control` scope.",
+        "description": "Changes the fields present in the body of one of the caller's riders. The merged profile is validated (`min_level` must not exceed `max_level`). A rider owned by someone else returns 404. Changing the rider bound to the connected bike is allowed, but the connection keeps the profile it was made with: the change applies at the next connect. Requires the `control` scope.",
         "operationId": "updateRider",
         "parameters": [
           {

@@ -20,6 +20,14 @@ type ErrorResponse struct {
 type ErrorBody struct {
 	Code    string `json:"code" doc:"Machine-readable error code"`
 	Message string `json:"message" doc:"Human-readable explanation"`
+	// Details carries machine-readable data for the few errors that have any.
+	Details *ErrorDetails `json:"details,omitempty" doc:"Machine-readable data for specific error codes; absent otherwise."`
+}
+
+// ErrorDetails is the optional structured part of an error. Each field
+// belongs to the error codes its doc names.
+type ErrorDetails struct {
+	MissingTiles []string `json:"missing_tiles,omitempty" doc:"Map region tiles the request needs but that are not downloaded, such as E5_N45; set on 422 missing_tiles."`
 }
 
 // APIError is the error typed handlers return: the envelope plus the HTTP
@@ -44,6 +52,13 @@ func (e *APIError) ContentType(string) string { return "application/json" }
 func apiErr(status int, code, msg string) error {
 	e := &APIError{status: status}
 	e.ErrorResponse.Error = ErrorBody{Code: code, Message: msg}
+	return e
+}
+
+// apiErrDetails is apiErr with structured details.
+func apiErrDetails(status int, code, msg string, d *ErrorDetails) error {
+	e := apiErr(status, code, msg).(*APIError)
+	e.ErrorResponse.Error.Details = d
 	return e
 }
 

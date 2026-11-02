@@ -9,7 +9,9 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,12 +49,20 @@ func newHumaAPI(r chi.Router) huma.API {
 	return humachi.New(r, cfg)
 }
 
+// keep422 marks an operation whose handler returns 422 itself (an
+// unprocessable request that passed validation). finalizeSpec drops the
+// validation 422 huma adds to every other operation and this marker.
+const keep422 = "x-wattson-keep-422"
+
 // route describes one typed operation.
 type route struct {
 	Method, Path, ID, Tag, Summary, Description string
 	Scope                                       auth.Scope // "" = public
 	Status                                      int        // success status; 0 means 200 (204 without a body)
 	Errors                                      []int      // statuses beyond the defaults
+	// AlsoOK lists further success statuses the handler may return (through
+	// an output Status field); they are documented with Status's response.
+	AlsoOK []int
 	// MaxBody bounds the request body in bytes; 0 means 1 MiB.
 	MaxBody int64
 	// ReadTimeout bounds how long the request body may take to arrive; 0 keeps huma's default.
@@ -160,6 +170,9 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 	if rt.Scope != "" {
 		op.Security = []map[string][]string{{"bearer": {}}, {"cookie": {}}}
 	}
+	if slices.Contains(rt.Errors, http.StatusUnprocessableEntity) {
+		op.Extensions = map[string]any{keep422: true} // finalizeSpec keeps this op's 422
+	}
 	scope := rt.Scope
 	op.Middlewares = huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		if scope != "" {
@@ -179,6 +192,7 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 		}
 		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), humaCtxKey{}, ctx)))
 	}}
+	defer addOKStatuses(api, rt)
 	huma.Register(api, op, func(ctx context.Context, in *I) (*O, error) {
 		out, err := h(ctx, in)
 		if err == nil {
@@ -225,4 +239,34 @@ func routeErrors(rt route, hasBody, jsonBody bool) []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+// addOKStatuses documents rt.AlsoOK with the same response as rt's default status.
+func addOKStatuses(api huma.API, rt route) {
+	if len(rt.AlsoOK) == 0 {
+		return
+	}
+	item := api.OpenAPI().Paths[rt.Path]
+	if item == nil {
+		return
+	}
+	var op *huma.Operation
+	switch rt.Method {
+	case http.MethodPost:
+		op = item.Post
+	case http.MethodPut:
+		op = item.Put
+	case http.MethodPatch:
+		op = item.Patch
+	}
+	def := rt.Status
+	if def == 0 {
+		def = http.StatusOK
+	}
+	if op == nil || op.Responses[strconv.Itoa(def)] == nil {
+		return
+	}
+	for _, c := range rt.AlsoOK {
+		op.Responses[strconv.Itoa(c)] = op.Responses[strconv.Itoa(def)]
+	}
 }

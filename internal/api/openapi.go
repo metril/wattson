@@ -156,6 +156,8 @@ func (d Deps) registerAPI(api huma.API) {
 	d.registerSettings(api)
 	d.registerRiders(api)
 	d.registerRoutes(api)
+	d.registerDraw(api)
+	d.registerMaps(api)
 	d.registerOIDCProviders(api)
 	d.registerBike(api)
 	d.registerRide(api)
@@ -169,7 +171,11 @@ func finalizeSpec(api huma.API) {
 	for _, item := range oapi.Paths {
 		for _, op := range []*huma.Operation{item.Get, item.Put, item.Post, item.Delete, item.Patch} {
 			if op != nil {
-				delete(op.Responses, "422")
+				if _, keep := op.Extensions[keep422]; keep {
+					delete(op.Extensions, keep422)
+				} else {
+					delete(op.Responses, "422")
+				}
 				delete(op.Responses, "default")
 			}
 		}

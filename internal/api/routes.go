@@ -129,8 +129,8 @@ func (d Deps) buildRoute(ctx context.Context, pts []wroute.Point) (*wroute.Profi
 	return wroute.Process(pts)
 }
 
-// saveRoute stores p as a new route owned by userID.
-func (d Deps) saveRoute(ctx context.Context, userID int64, name, source string, spec RouteSpec, p *wroute.Profile) (store.Route, error) {
+// routeRecord builds the unsaved route (ID 0) for p.
+func (d Deps) routeRecord(userID int64, name, source string, spec RouteSpec, p *wroute.Profile) (store.Route, error) {
 	geo, err := json.Marshal(wroute.GeoJSON(p))
 	if err != nil {
 		return store.Route{}, err
@@ -140,9 +140,24 @@ func (d Deps) saveRoute(ctx context.Context, userID int64, name, source string, 
 		return store.Route{}, err
 	}
 	s := p.Stats()
-	return d.Store.CreateRoute(ctx, store.Route{UserID: userID, Name: name, Source: source,
+	return store.Route{UserID: userID, Name: name, Source: source,
 		DistanceM: s.DistanceM, AscentM: s.AscentM, DescentM: s.DescentM, MinGradePct: s.MinGradePct,
-		MaxGradePct: s.MaxGradePct, BBox: s.BBox, GeoJSON: geo, Spec: sp, Points: wroute.Encode(p)})
+		MaxGradePct: s.MaxGradePct, BBox: s.BBox, GeoJSON: geo, Spec: sp, Points: wroute.Encode(p),
+		CreatedAt: d.Now().UTC()}, nil
+}
+
+// saveRoute stores p as a new route owned by userID.
+func (d Deps) saveRoute(ctx context.Context, userID int64, name, source string, spec RouteSpec, p *wroute.Profile) (store.Route, error) {
+	r, err := d.routeRecord(userID, name, source, spec, p)
+	if err != nil {
+		return store.Route{}, err
+	}
+	return d.Store.CreateRoute(ctx, r)
+}
+
+func profileOut(routeID int64, p *wroute.Profile) ProfileOut {
+	return ProfileOut{RouteID: routeID, StepM: p.StepM, LengthM: round(p.LengthM, 2),
+		Lat: roundAll(p.Lat, 6), Lon: roundAll(p.Lon, 6), EleM: roundAll(p.Ele, 1), GradePct: roundAll(p.Grade, 2)}
 }
 
 // routeErr maps a route package failure to an API error. Anything
@@ -297,8 +312,7 @@ func (d Deps) registerRoutes(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			return &profileBody{Body: ProfileOut{RouteID: r.ID, StepM: p.StepM, LengthM: round(p.LengthM, 2),
-				Lat: roundAll(p.Lat, 6), Lon: roundAll(p.Lon, 6), EleM: roundAll(p.Ele, 1), GradePct: roundAll(p.Grade, 2)}}, nil
+			return &profileBody{Body: profileOut(r.ID, p)}, nil
 		})
 
 	register(api, route{Method: http.MethodPatch, Path: "/api/routes/{id}", ID: "renameRoute", Tag: "routes",

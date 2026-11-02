@@ -104,6 +104,10 @@
             "description": "Machine-readable error code",
             "type": "string"
           },
+          "details": {
+            "$ref": "#/components/schemas/ErrorDetails",
+            "description": "Machine-readable data for specific error codes; absent otherwise."
+          },
           "message": {
             "description": "Human-readable explanation",
             "type": "string"
@@ -113,6 +117,19 @@
           "code",
           "message"
         ],
+        "type": "object"
+      },
+      "ErrorDetails": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_tiles": {
+            "description": "Map region tiles the request needs but that are not downloaded, such as E5_N45; set on 422 missing_tiles.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "Status": {

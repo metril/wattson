@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,7 +16,9 @@ import (
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/esphomeapi"
+	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/ridectl"
+	wroute "github.com/metril/wattson/internal/route"
 )
 
 // connTestTimeout bounds every connection test.
@@ -54,6 +57,12 @@ type testBLEIn struct {
 	}
 }
 
+type testBRouterIn struct {
+	Body struct {
+		URL string `json:"url,omitempty" doc:"BRouter base URL to test, such as http://brouter:17777. Empty uses the stored URL."`
+	}
+}
+
 type testOut struct {
 	Body TestResult
 }
@@ -83,6 +92,7 @@ func orStored(v, stored string) string {
 }
 
 func (d Deps) registerConnTests(api huma.API) {
+	d.registerBRouterTest(api)
 	register(api, route{Method: http.MethodPost, Path: "/api/settings/test/ha", ID: "testHomeAssistant", Tag: "settings",
 		Summary: "Test the Home Assistant connection",
 		Description: "Calls `GET {url}/api/` with the token as a bearer credential, timing out after 5 seconds. " +
@@ -238,4 +248,92 @@ func sameMAC(scanned string, want blue.Address) bool {
 	mac, _, _ := strings.Cut(scanned, "/")
 	a, err := blue.ParseAddress(mac)
 	return err == nil && a.MAC == want.MAC
+}
+
+// brouterTestTimeout bounds the BRouter test; the first route after a start
+// loads a segment file, which takes a few seconds.
+const brouterTestTimeout = 10 * time.Second
+
+// metresPerDegree is the length of one degree of latitude.
+const metresPerDegree = 111320.0
+
+func (d Deps) registerBRouterTest(api huma.API) {
+	register(api, route{Method: http.MethodPost, Path: "/api/settings/test/brouter", ID: "testBRouter", Tag: "settings",
+		Summary: "Test the BRouter connection",
+		Description: "With at least one map region downloaded, asks BRouter for a 500 m route at the centre of that region and " +
+			"reports the routed length. Without any, only checks that something answers HTTP at `{url}/brouter`. " +
+			"Times out after 10 seconds, does not follow redirects and reports no reply text from the server, only status codes. " +
+			"An empty `url` uses the stored one. The result is always HTTP 200; check `ok`.",
+		Scope: auth.ScopeAdmin},
+		func(ctx context.Context, in *testBRouterIn) (*testOut, error) {
+			start := time.Now()
+			s, err := d.Settings.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+			base := orStored(in.Body.URL, s.BRouter.URL)
+			u, err := url.Parse(base)
+			if base == "" || err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+				return result(start, false, "BRouter URL is missing or not an absolute http(s) URL"), nil
+			}
+			ctx, cancel := context.WithTimeout(ctx, brouterTestTimeout)
+			defer cancel()
+			client := d.brouterClient()
+
+			tile := ""
+			if d.Tiles != nil {
+				if _, ts, err := d.Tiles.List(ctx); err == nil {
+					for _, t := range ts {
+						if t.Status == maptiles.StatusPresent {
+							tile = t.Name
+							break
+						}
+					}
+				}
+			}
+			if tile == "" {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/brouter", nil)
+				if err != nil {
+					return result(start, false, "invalid BRouter URL"), nil
+				}
+				resp, err := client.Do(req)
+				if err != nil {
+					return result(start, false, "BRouter is not reachable at %s", serverLabel(base)), nil
+				}
+				_ = resp.Body.Close()
+				return result(start, true, "BRouter reachable (no map regions downloaded)"), nil
+			}
+
+			lat0, lon0, err := wroute.ParseTile(tile)
+			if err != nil {
+				return nil, err
+			}
+			lat, lon := float64(lat0)+2.5, float64(lon0)+2.5
+			wps := []wroute.LonLat{{lon, lat}, {lon, lat + 500/metresPerDegree}}
+			pts, err := wroute.BRouter{BaseURL: base, Client: client}.Route(ctx, wps, s.BRouter.Profile)
+			if err != nil {
+				var be *wroute.BRouterError
+				switch {
+				case errors.As(err, &be):
+					return result(start, false, "BRouter answered HTTP %d for a test route in %s", be.Status, tile), nil
+				case isTransport(err):
+					return result(start, false, "BRouter is not reachable at %s", serverLabel(base)), nil
+				}
+				return result(start, false, "BRouter returned a reply that could not be used"), nil
+			}
+			var length float64
+			for i := 1; i < len(pts); i++ {
+				length += distanceM(pts[i-1].Lat, pts[i-1].Lon, pts[i].Lat, pts[i].Lon)
+			}
+			return result(start, true, "BRouter routed %.0f m in %s", length, tile), nil
+		})
+}
+
+// distanceM is the great-circle distance between two points in metres.
+func distanceM(lat1, lon1, lat2, lon2 float64) float64 {
+	const r = 6371000.0
+	p1, p2 := lat1*math.Pi/180, lat2*math.Pi/180
+	dp, dl := p2-p1, (lon2-lon1)*math.Pi/180
+	a := math.Sin(dp/2)*math.Sin(dp/2) + math.Cos(p1)*math.Cos(p2)*math.Sin(dl/2)*math.Sin(dl/2)
+	return 2 * r * math.Asin(math.Sqrt(a))
 }

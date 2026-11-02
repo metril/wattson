@@ -21,7 +21,7 @@ COPY --from=web /src/internal/web/dist ./internal/web/dist
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -ldflags "-s -w -X github.com/metril/wattson/internal/cli.Version=${VERSION}" \
       -o /out/wattson ./cmd/wattson \
- && mkdir /data
+ && mkdir /data /segments
 
 # ---- stage 3: runtime -----------------------------------------------------
 # distroless static (no shell, no package manager), uid/gid 65532.
@@ -31,6 +31,9 @@ FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c
 
 # /data is created owned by 65532 so a fresh named volume is writable.
 COPY --from=build --chown=65532:65532 /data /data
+# /segments holds BRouter map regions; the shared compose volume inherits its
+# ownership on first use, so wattson can download into it.
+COPY --from=build --chown=65532:65532 /segments /segments
 COPY --from=build /out/wattson /usr/local/bin/wattson
 
 # Where BlueZ's D-Bus socket is mounted (see compose.yml). The only variable

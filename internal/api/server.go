@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
 	"github.com/metril/wattson/internal/secretbox"
@@ -46,6 +47,9 @@ type Deps struct {
 	// deleting that route is refused with 409 route_in_use. Nil means no
 	// route is ever in use.
 	RouteInUse func(routeID int64) bool
+	// Tiles downloads and lists BRouter map regions (segments). Nil disables
+	// the /api/maps endpoints (503) and the local tile check when drawing.
+	Tiles *maptiles.Manager
 	// Bike is the single bike manager the bike, ride and WebSocket endpoints
 	// drive. When RiderInUse is nil, Bike.RiderInUse is used.
 	Bike *ridectl.Manager

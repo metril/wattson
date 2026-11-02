@@ -20,6 +20,7 @@ import (
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
+	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
 	"github.com/metril/wattson/internal/secretbox"
@@ -169,8 +170,12 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	releaseBike := func() {
 		closeBike.Do(func() { releaseAtShutdown(mgr, logger) })
 	}
+	// Tile downloads run for minutes: no overall client timeout (the manager
+	// aborts a stalled transfer itself) and cancelled on shutdown below.
+	tiles := maptiles.New(svc.Get, &http.Client{})
+	defer tiles.Close()
 	h, err := api.NewServer(api.Deps{Store: st, Settings: svc, Box: box, Auth: au,
-		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr})
+		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr, Tiles: tiles})
 	if err != nil {
 		releaseBike()
 		return err
@@ -205,6 +210,7 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	}
 
 	releaseBike()
+	tiles.Close() // cancel any map download so its requests end before HTTP drains
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(sctx); err != nil {

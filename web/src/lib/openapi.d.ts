@@ -316,6 +316,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maps/tiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List map regions
+         * @description Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the tiles a route crosses; each covers 5 by 5 degrees. Requires the `admin` scope.
+         */
+        get: operations["listMapTiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maps/tiles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download a map region
+         * @description Queues the tile for download from the segments server; tiles download one at a time. A tile already on disk or queued is returned as it is. Poll the list for progress. Errors: 400 `bad_tile_name`; 409 `segments_dir_unavailable` (the directory is missing or not writable). Requires the `admin` scope.
+         */
+        post: operations["downloadMapTile"];
+        /**
+         * Delete a map region
+         * @description Cancels the tile's download if one is running and deletes the tile and any partial file from the segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name. Requires the `admin` scope.
+         */
+        delete: operations["deleteMapTile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ride": {
         parameters: {
             query?: never;
@@ -422,6 +466,26 @@ export interface paths {
         get: operations["listRoutes"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/draw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draw a route with BRouter
+         * @description Routes between 2 to 30 waypoints with BRouter and, unless `dry_run` is set, stores the result as a route owned by the caller (201, source `draw`, the profile and waypoints kept in `spec`). With `dry_run` nothing is stored and the response is 200 with route id 0. When a local segments directory exists and lacks map regions the line crosses, the request is refused with 422 `missing_tiles` and the tile names in `error.details.missing_tiles` (download them under Map regions), unless the admin enabled the public BRouter fallback in Settings, in which case the waypoints are sent to that public server instead. Other errors: 400 for coordinates out of range; 422 `route_too_short`, `route_too_long` or `no_elevation`; 502 `brouter_unavailable` (BRouter cannot be reached), `brouter_error` (BRouter refused the route) or `elevation_unavailable`. Requires the `control` scope.
+         */
+        post: operations["drawRoute"];
         delete?: never;
         options?: never;
         head?: never;
@@ -554,6 +618,26 @@ export interface paths {
          * @description Scans for 5 seconds with the local adapter or the ESPHome proxy and looks for the bike's address. Without an address it only reports how many devices were seen. Empty body fields fall back to the stored settings. The result is always HTTP 200; check `ok`. Refused with 409 `bike_busy` while a bike is connected, because one adapter cannot scan while holding a bike. Requires the `admin` scope.
          */
         post: operations["testBLE"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/test/brouter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test the BRouter connection
+         * @description With at least one map region downloaded, asks BRouter for a 500 m route at the centre of that region and reports the routed length. Without any, only checks that something answers HTTP at `{url}/brouter`. Times out after 10 seconds, does not follow redirects and reports no reply text from the server, only status codes. An empty `url` uses the stored one. The result is always HTTP 200; check `ok`. Requires the `admin` scope.
+         */
+        post: operations["testBRouter"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1017,9 +1101,36 @@ export interface components {
              */
             rssi: number;
         };
+        DirOut: {
+            /** @description Whether the directory exists. */
+            exists: boolean;
+            /** @description Absolute path of the segments directory inside the container. */
+            path: string;
+            /** @description Whether Wattson can create files in it. */
+            writable: boolean;
+        };
         DiscoverInBody: {
             /** @description OIDC discovery URL: the issuer URL or the full .well-known/openid-configuration URL. */
             discovery_url: string;
+        };
+        DrawInBody: {
+            /** @description Compute the route and its profile but do not save it (the returned route has id 0). */
+            dry_run?: boolean;
+            /** @description Route name, up to 100 characters. Defaults to Route followed by today's date (YYYY-MM-DD). */
+            name?: string;
+            /**
+             * @description BRouter routing profile. Defaults to the profile in Settings → Integrations.
+             * @enum {string}
+             */
+            profile?: "trekking" | "fastbike" | "safety" | "shortest";
+            /** @description Waypoints in order as [longitude, latitude] pairs in degrees, 2 to 30. BRouter routes along roads between them. */
+            waypoints: number[][];
+        };
+        DrawOut: {
+            /** @description The route's elevation profile; route_id is 0 with dry_run. */
+            profile: components["schemas"]["ProfileOut"];
+            /** @description The route. With dry_run its id is 0 and nothing was stored. */
+            route: components["schemas"]["RouteDetail"];
         };
         ElevationOut: {
             /** @description Whether imported tracks without usable elevation (or above 60 degrees latitude) may be sent to OpenTopoData to look up elevations. Off by default: nothing leaves this host unless enabled. */
@@ -1036,8 +1147,14 @@ export interface components {
         ErrorBody: {
             /** @description Machine-readable error code */
             code: string;
+            /** @description Machine-readable data for specific error codes; absent otherwise. */
+            details?: components["schemas"]["ErrorDetails"];
             /** @description Human-readable explanation */
             message: string;
+        };
+        ErrorDetails: {
+            /** @description Map region tiles the request needs but that are not downloaded, such as E5_N45; set on 422 missing_tiles. */
+            missing_tiles?: string[];
         };
         ErrorResponse: {
             /** @description Error details. */
@@ -1651,6 +1768,10 @@ export interface components {
              */
             transport?: "local" | "esphome";
         };
+        TestBRouterInBody: {
+            /** @description BRouter base URL to test, such as http://brouter:17777. Empty uses the stored URL. */
+            url?: string;
+        };
         TestESPHomeInBody: {
             /** @description ESPHome proxy as host or host:port (default port 6053). Empty uses the stored host. */
             host?: string;
@@ -1751,6 +1872,42 @@ export interface components {
              * @enum {string}
              */
             state: "idle" | "connecting" | "ready" | "riding" | "paused" | "finished";
+        };
+        TileOut: {
+            /**
+             * Format: int64
+             * @description Bytes on disk (present) or received so far (downloading).
+             */
+            bytes: number;
+            /** @description Why the last download failed, such as HTTP 404. */
+            error?: string;
+            /** @description Tile name from its south-west corner, such as E5_N45 (5 degrees east, 45 degrees north). */
+            name: string;
+            /**
+             * @description present: on disk; queued: waiting for its turn; downloading: in progress; error: the last download failed.
+             * @enum {string}
+             */
+            status: "present" | "queued" | "downloading" | "error";
+            /**
+             * Format: int64
+             * @description Size announced by the segments server in bytes; 0 when unknown.
+             */
+            total_bytes: number;
+            /**
+             * Format: date-time
+             * @description Last change of the tile's file or download state, UTC.
+             */
+            updated_at: string;
+        };
+        TilesOut: {
+            /** @description Tile names the segments server offers; empty when the index could not be read. */
+            available: string[];
+            /** @description Why the list of available tiles could not be read. */
+            available_error?: string;
+            /** @description The segments directory. */
+            dir: components["schemas"]["DirOut"];
+            /** @description Tiles on disk plus queued, downloading and failed downloads, sorted by name. */
+            tiles: components["schemas"]["TileOut"][];
         };
         TokenOut: {
             /**
@@ -2894,6 +3051,223 @@ export interface operations {
             };
         };
     };
+    listMapTiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TilesOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    downloadMapTile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Tile name such as E5_N45. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TileOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteMapTile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Tile name such as E5_N45. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getRide: {
         parameters: {
             query?: never;
@@ -3425,6 +3799,102 @@ export interface operations {
             };
         };
     };
+    drawRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DrawInBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawOut"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     importRoute: {
         parameters: {
             query?: {
@@ -3485,6 +3955,15 @@ export interface operations {
             };
             /** @description Request Entity Too Large */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3563,6 +4042,15 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4067,6 +4555,75 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    testBRouter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestBRouterInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

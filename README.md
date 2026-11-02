@@ -36,7 +36,7 @@ The image is distroless (about 28 MB, runs as uid 65532) and needs no environmen
 
 For a bike on this host's Bluetooth adapter, the container talks to the host's BlueZ over the D-Bus socket that `compose.yml` mounts, and needs the host's numeric `bluetooth` group id; see [Docker in the hardware runbook](docs/hardware-runbook.md#docker). An ESPHome proxy needs neither. The container never uses host networking.
 
-Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` sits behind the `routing` profile and is not started by default.
+Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` (pinned by tag and digest) starts with it and reads the map regions that Wattson downloads into the shared `brouter-segments` volume (Settings, Map regions).
 
 ## Ride screen (web)
 

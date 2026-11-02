@@ -21,6 +21,7 @@ import (
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth/oidctest"
 	"github.com/metril/wattson/internal/ridectl"
 	"github.com/metril/wattson/internal/secretbox"
@@ -38,6 +39,7 @@ type testServer struct {
 	Auth     *auth.Authenticator
 	Log      *syncBuf // everything the server logged
 	Bike     *ridectl.Manager
+	Tiles    *maptiles.Manager // reads its directory and server from the settings
 }
 
 // syncBuf is a goroutine-safe log sink.
@@ -126,7 +128,9 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	}, logger)
 	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
 		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
-	d := Deps{Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
+	tiles := maptiles.New(svc.Get, http.DefaultClient)
+	t.Cleanup(tiles.Close)
+	d := Deps{Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
 		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck}
 	if cfg.noBike {
 		d.Bike = nil
@@ -138,7 +142,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { _ = mgr.Close(context.Background()) }) // runs first: ends WebSocket handlers
-	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr}
+	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles}
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.

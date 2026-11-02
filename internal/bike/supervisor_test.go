@@ -14,7 +14,6 @@ import (
 type fakeSession struct {
 	proto Protocol
 	max   int
-	floor int
 	tel   chan Telemetry
 	done  chan struct{}
 	once  sync.Once
@@ -23,10 +22,12 @@ type fakeSession struct {
 	writes []int
 	closed bool
 	err    error
+	werr   error // returned by every write (the level is still recorded)
+	kill   bool  // a failing write also ends the session (dead link)
 }
 
-func newFakeSession(proto Protocol, max, floor int) *fakeSession {
-	return &fakeSession{proto: proto, max: max, floor: floor,
+func newFakeSession(proto Protocol, max int) *fakeSession {
+	return &fakeSession{proto: proto, max: max,
 		tel: make(chan Telemetry, 16), done: make(chan struct{})}
 }
 
@@ -35,8 +36,15 @@ func (f *fakeSession) MaxLevel() int      { return f.max }
 
 func (f *fakeSession) write(level int) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.writes = append(f.writes, level)
+	werr, kill := f.werr, f.kill
+	f.mu.Unlock()
+	if werr != nil {
+		if kill {
+			f.end(werr)
+		}
+		return 0, werr
+	}
 	return level, nil
 }
 
@@ -66,10 +74,7 @@ func (f *fakeSession) drop() { f.end(errors.New("link lost")) }
 
 func (f *fakeSession) Close(context.Context) error {
 	f.mu.Lock()
-	if !f.closed {
-		f.closed = true
-		f.writes = append(f.writes, f.floor)
-	}
+	f.closed = true
 	f.mu.Unlock()
 	f.end(nil)
 	return nil
@@ -160,7 +165,7 @@ func drainEvents(ch <-chan Event) []EventKind {
 func TestConnectSendsFloor(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		s := newFakeSession(ProtoFitPlus, 16, 3)
+		s := newFakeSession(ProtoFitPlus, 16)
 		d := &fakeDial{}
 		d.push(dialResult{s: s})
 		sup := NewSupervisor(d.dial, SupervisorOptions{MinLevel: 3})
@@ -201,27 +206,42 @@ func FuzzSupervisorNeverBelowFloor(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, level, min int) {
 		synctest.Test(t, func(t *testing.T) {
-			lo := min
-			if lo < 1 {
-				lo = 1
+			lo := func(max int) int {
+				l := min
+				if l < 1 {
+					l = 1
+				}
+				if l > max {
+					l = max
+				}
+				return l
 			}
-			if lo > 16 {
-				lo = 16
+			check := func(name string, s *fakeSession, max int) {
+				for _, w := range s.Writes() {
+					if w < lo(max) || w > max {
+						t.Fatalf("%s wrote %d outside [%d,%d] (writes %v)", name, w, lo(max), max, s.Writes())
+					}
+				}
 			}
-			s := newFakeSession(ProtoFitPlus, 16, lo)
+			// The second session has a smaller range: the target must be
+			// re-clamped on reconnect.
+			s1, s2 := newFakeSession(ProtoFitPlus, 16), newFakeSession(ProtoFitPlus, 10)
 			d := &fakeDial{}
-			d.push(dialResult{s: s}, dialResult{s: newFakeSession(ProtoFitPlus, 16, lo)})
+			d.push(dialResult{s: s1}, dialResult{s: s2})
 			sup := NewSupervisor(d.dial, SupervisorOptions{MinLevel: min})
 			sup.Connect(context.Background())
 			synctest.Wait()
 			sup.SetLevel(context.Background(), level)
 			synctest.Wait()
+			s1.drop()
+			synctest.Wait()
+			time.Sleep(time.Second)
+			synctest.Wait()
+			sup.SetLevel(context.Background(), level)
+			synctest.Wait()
 			sup.Close(context.Background())
-			for _, w := range s.Writes() {
-				if w < lo || w > 16 {
-					t.Fatalf("wrote %d outside [%d,16] (writes %v)", w, lo, s.Writes())
-				}
-			}
+			check("s1", s1, 16)
+			check("s2", s2, 10)
 		})
 	})
 }
@@ -229,7 +249,7 @@ func FuzzSupervisorNeverBelowFloor(f *testing.F) {
 func TestReconnectResendsTarget(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		s1, s2 := newFakeSession(ProtoFitPlus, 16, 1), newFakeSession(ProtoFitPlus, 16, 1)
+		s1, s2 := newFakeSession(ProtoFitPlus, 16), newFakeSession(ProtoFitPlus, 16)
 		d := &fakeDial{}
 		d.push(dialResult{s: s1}, dialResult{s: s2})
 		sup := NewSupervisor(d.dial, SupervisorOptions{})
@@ -237,6 +257,9 @@ func TestReconnectResendsTarget(t *testing.T) {
 		synctest.Wait()
 		sup.SetLevel(context.Background(), 7)
 		synctest.Wait()
+		if w := s1.Writes(); !slices.Equal(w, []int{1, 7}) {
+			t.Fatalf("s1 writes %v", w)
+		}
 		s1.drop()
 		synctest.Wait()
 		if d.count() != 1 || sup.Caps().Connected {
@@ -265,8 +288,8 @@ func TestBackoffDoublesAndCaps(t *testing.T) {
 		for range 7 {
 			d.push(dialResult{err: errors.New("down")})
 		}
-		s := newFakeSession(ProtoFitPlus, 16, 1)
-		d.push(dialResult{s: s}, dialResult{s: newFakeSession(ProtoFitPlus, 16, 1)})
+		s := newFakeSession(ProtoFitPlus, 16)
+		d.push(dialResult{s: s}, dialResult{s: newFakeSession(ProtoFitPlus, 16)})
 		sup := NewSupervisor(d.dial, SupervisorOptions{})
 		sup.Connect(context.Background())
 		time.Sleep(3 * time.Minute)
@@ -302,7 +325,7 @@ func TestBackoffDoublesAndCaps(t *testing.T) {
 func TestTelemetryAcrossReconnect(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		s1, s2 := newFakeSession(ProtoFitPlus, 16, 1), newFakeSession(ProtoFitPlus, 16, 1)
+		s1, s2 := newFakeSession(ProtoFitPlus, 16), newFakeSession(ProtoFitPlus, 16)
 		d := &fakeDial{}
 		d.push(dialResult{s: s1}, dialResult{s: s2})
 		sup := NewSupervisor(d.dial, SupervisorOptions{})
@@ -334,7 +357,7 @@ func TestTelemetryAcrossReconnect(t *testing.T) {
 func TestCloseSendsFloorAndClosesChannels(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		s := newFakeSession(ProtoFitPlus, 16, 2)
+		s := newFakeSession(ProtoFitPlus, 16)
 		d := &fakeDial{}
 		d.push(dialResult{s: s})
 		sup := NewSupervisor(d.dial, SupervisorOptions{MinLevel: 2})
@@ -348,8 +371,8 @@ func TestCloseSendsFloorAndClosesChannels(t *testing.T) {
 		if !s.Closed() {
 			t.Fatal("session not closed")
 		}
-		if w := s.Writes(); w[len(w)-1] != 2 {
-			t.Fatalf("last write %v, want floor 2", w)
+		if w := s.Writes(); !slices.Equal(w, []int{2, 9, 2}) {
+			t.Fatalf("writes %v, want [2 9 2] (floor written by supervisor before close)", w)
 		}
 		if _, ok := <-sup.Telemetry(); ok {
 			t.Fatal("telemetry open")
@@ -401,5 +424,110 @@ func TestCloseBeforeConnect(t *testing.T) {
 	}
 	if err := sup.Connect(context.Background()); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Connect after Close: %v", err)
+	}
+}
+
+func TestRejectedWritesDoNotCauseReconnectStorm(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFTMS, 16)
+		s.werr = ErrControlRejected
+		d := &fakeDial{}
+		d.push(dialResult{s: s})
+		sup := NewSupervisor(d.dial, SupervisorOptions{})
+		sup.Connect(context.Background())
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		if d.count() != 1 || s.Closed() || !sup.Caps().Connected {
+			t.Fatalf("dials %d closed %v connected %v", d.count(), s.Closed(), sup.Caps().Connected)
+		}
+		// Resend failed, so the retry is on the next target change.
+		sup.SetLevel(context.Background(), 5)
+		synctest.Wait()
+		if w := s.Writes(); !slices.Equal(w, []int{1, 5}) {
+			t.Fatalf("writes %v", w)
+		}
+		var kinds []EventKind
+		for _, e := range drainEventsFull(sup.Events()) {
+			kinds = append(kinds, e.Kind)
+			if e.Kind == EventLevelUnconfirmed && !errors.Is(e.Err, ErrControlRejected) {
+				t.Fatalf("event %+v", e)
+			}
+		}
+		want := []EventKind{EventLevelUnconfirmed, EventConnected, EventLevelUnconfirmed}
+		if !slices.Equal(kinds, want) {
+			t.Fatalf("events %v want %v", kinds, want)
+		}
+		sup.Close(context.Background())
+	})
+}
+
+func TestFirstWriteKillsLinkKeepsBackingOff(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := &fakeDial{}
+		for range 5 {
+			s := newFakeSession(ProtoFitPlus, 16)
+			s.werr, s.kill = errors.New("link died"), true
+			d.push(dialResult{s: s})
+		}
+		sup := NewSupervisor(d.dial, SupervisorOptions{})
+		sup.Connect(context.Background())
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		sec := time.Second
+		g := d.gaps()
+		if len(g) < 4 || !slices.Equal(g[:4], []time.Duration{sec, 2 * sec, 4 * sec, 8 * sec}) {
+			t.Fatalf("gaps %v", g)
+		}
+		sup.Close(context.Background())
+	})
+}
+
+func TestParentContextCancelStopsSupervisor(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		d := &fakeDial{}
+		d.push(dialResult{s: s})
+		ctx, cancel := context.WithCancel(context.Background())
+		sup := NewSupervisor(d.dial, SupervisorOptions{MinLevel: 2})
+		sup.Connect(ctx)
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		if !s.Closed() {
+			t.Fatal("session not closed")
+		}
+		if w := s.Writes(); w[len(w)-1] != 2 {
+			t.Fatalf("writes %v, want floor last", w)
+		}
+		if _, err := sup.SetLevel(context.Background(), 4); !errors.Is(err, ErrClosed) {
+			t.Fatalf("SetLevel: %v", err)
+		}
+		if err := sup.Connect(context.Background()); !errors.Is(err, ErrClosed) {
+			t.Fatalf("Connect: %v", err)
+		}
+		if _, ok := <-sup.Telemetry(); ok {
+			t.Fatal("telemetry open")
+		}
+		if err := sup.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func drainEventsFull(ch <-chan Event) []Event {
+	var out []Event
+	for {
+		select {
+		case e, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, e)
+		default:
+			return out
+		}
 	}
 }

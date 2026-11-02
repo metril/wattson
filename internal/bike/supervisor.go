@@ -2,8 +2,11 @@ package bike
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
+
+	"github.com/metril/wattson/internal/blue"
 )
 
 const (
@@ -152,6 +155,7 @@ func (s *Supervisor) Close(ctx context.Context) error {
 	sess := s.sess
 	s.sess = nil
 	s.caps.Connected = false
+	floor := s.caps.MinLevel
 	cancel := s.cancel
 	s.mu.Unlock()
 
@@ -163,7 +167,10 @@ func (s *Supervisor) Close(ctx context.Context) error {
 	cancel()
 	var err error
 	if sess != nil {
-		err = sess.Close(ctx)
+		// Write the floor explicitly rather than relying on the session's own
+		// minimum. A dead link fails here; Close still releases the session.
+		_, werr := sess.Resend(ctx, floor)
+		err = errors.Join(ignoreDown(werr), sess.Close(ctx))
 	}
 	<-s.exited
 	return err
@@ -195,12 +202,14 @@ func (s *Supervisor) run(ctx context.Context) {
 	defer func() {
 		// Parent-ctx cancellation: nobody else closed the session.
 		s.mu.Lock()
+		s.closed = true
 		sess := s.sess
 		s.sess = nil
 		s.caps.Connected = false
+		floor := s.caps.MinLevel
 		s.mu.Unlock()
 		if sess != nil {
-			closeBounded(sess)
+			closeWithFloor(sess, floor)
 		}
 		fwd.Wait()
 		close(s.tel)
@@ -214,6 +223,9 @@ func (s *Supervisor) run(ctx context.Context) {
 		backoff = min(backoff*2, s.o.BackoffMax)
 		return w
 	}
+	// Backoff resets only once a session accepted its first write, so a
+	// link that dies on the first write keeps backing off.
+	resetBackoff := func() { backoff = s.o.BackoffMin }
 	var wait time.Duration
 	for {
 		if wait > 0 {
@@ -228,7 +240,7 @@ func (s *Supervisor) run(ctx context.Context) {
 		sess, err := s.dial(ctx)
 		if ctx.Err() != nil {
 			if sess != nil {
-				closeBounded(sess)
+				closeWithFloor(sess, s.floor)
 			}
 			return
 		}
@@ -237,8 +249,7 @@ func (s *Supervisor) run(ctx context.Context) {
 			wait = nextWait()
 			continue
 		}
-		backoff = s.o.BackoffMin
-		if !s.serve(ctx, sess, &fwd) {
+		if !s.serve(ctx, sess, &fwd, resetBackoff) {
 			return
 		}
 		wait = nextWait()
@@ -252,13 +263,26 @@ func closeBounded(sess Session) {
 	_ = sess.Close(ctx)
 }
 
+// closeWithFloor writes the floor level explicitly (not relying on the
+// session's own minimum), then closes the session.
+func closeWithFloor(sess Session, floor int) {
+	ctx, cancel := context.WithTimeout(context.Background(), supCloseTimeout)
+	defer cancel()
+	_, _ = sess.Resend(ctx, floor)
+	_ = sess.Close(ctx)
+}
+
 // serve owns one connected session until it ends. It returns false when ctx
-// was cancelled (supervision is over).
-func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGroup) bool {
+// was cancelled (supervision is over). A write error on a session that is
+// still alive (e.g. the bike rejecting a level) keeps the session and is
+// reported as EventLevelUnconfirmed; only the session ending triggers a
+// reconnect.
+func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGroup, resetBackoff func()) bool {
 	s.mu.Lock()
 	if s.closed {
+		floor := s.floor
 		s.mu.Unlock()
-		closeBounded(sess)
+		closeWithFloor(sess, floor)
 		return false
 	}
 	s.sess = sess
@@ -291,40 +315,73 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 	// The first write on every (re)connect re-asserts the target, bypassing
 	// the session's dedup.
 	last, err := sess.Resend(ctx, target)
-	if err == nil {
-		s.mu.Lock()
-		if s.sess == sess { // not closed concurrently
-			s.caps.Connected = true
+	if err != nil {
+		if ctx.Err() != nil {
+			end(true)
+			return false
 		}
-		s.mu.Unlock()
-		s.emit(Event{Kind: EventConnected})
-		for {
-			select {
-			case <-ctx.Done():
+		if ended(sess) {
+			return s.drop(sess, err, end)
+		}
+		// Link still up but the write failed: stay, retry on the next kick.
+		last = -1
+		s.emit(Event{Kind: EventLevelUnconfirmed, Want: target, Err: err})
+	} else {
+		resetBackoff()
+	}
+	s.mu.Lock()
+	if s.sess == sess { // not closed concurrently
+		s.caps.Connected = true
+	}
+	s.mu.Unlock()
+	s.emit(Event{Kind: EventConnected})
+	for {
+		select {
+		case <-ctx.Done():
+			end(true)
+			return false
+		case <-sess.Done():
+			if ctx.Err() != nil {
 				end(true)
 				return false
-			case <-sess.Done():
-				err = sess.Err()
-			case <-s.kick:
-				s.mu.Lock()
-				target = s.target
-				s.mu.Unlock()
-				if target == last {
-					continue
-				}
-				if last, err = sess.SetLevel(ctx, target); err == nil {
-					continue
-				}
 			}
-			break
+			return s.drop(sess, sess.Err(), end)
+		case <-s.kick:
+			s.mu.Lock()
+			target = s.target
+			s.mu.Unlock()
+			if target == last {
+				continue
+			}
+			got, err := sess.SetLevel(ctx, target)
+			switch {
+			case err == nil:
+				last = got
+			case ctx.Err() != nil:
+				end(true)
+				return false
+			case ended(sess):
+				return s.drop(sess, err, end)
+			default:
+				last = -1
+				s.emit(Event{Kind: EventLevelUnconfirmed, Want: target, Err: err})
+			}
 		}
 	}
-	if ctx.Err() != nil {
-		end(true)
+}
+
+func ended(sess Session) bool {
+	select {
+	case <-sess.Done():
+		return true
+	default:
 		return false
 	}
+}
 
-	// The session failed or ended: release it and report.
+// drop releases a session that ended and reports it. It returns true: the
+// caller should redial.
+func (s *Supervisor) drop(sess Session, err error, end func(bool)) bool {
 	s.mu.Lock()
 	owned := s.sess == sess
 	if owned {
@@ -367,4 +424,12 @@ func (s *Supervisor) forward(ctx context.Context, sess Session) {
 			return
 		}
 	}
+}
+
+// ignoreDown drops write errors that only mean the link is already gone.
+func ignoreDown(err error) error {
+	if errors.Is(err, ErrClosed) || errors.Is(err, blue.ErrDisconnected) {
+		return nil
+	}
+	return err
 }

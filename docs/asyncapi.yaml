@@ -229,7 +229,7 @@
             "type": "number"
           },
           "heart_rate_bpm": {
-            "description": "Heart rate, bpm; 0 when no sensor",
+            "description": "Heart rate in beats per minute; 0 when there is no heart rate source or no reading in the last 5 s.",
             "format": "int64",
             "type": "integer"
           },

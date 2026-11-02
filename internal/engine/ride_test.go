@@ -875,3 +875,77 @@ func BenchmarkTickRoute(b *testing.B) {
 		e.tick(ctx, now)
 	}
 }
+
+type stubHR struct {
+	mu  sync.Mutex
+	bpm int
+	at  time.Time
+}
+
+func (h *stubHR) set(bpm int, at time.Time) { h.mu.Lock(); h.bpm, h.at = bpm, at; h.mu.Unlock() }
+func (h *stubHR) Latest() (int, time.Time)  { h.mu.Lock(); defer h.mu.Unlock(); return h.bpm, h.at }
+
+func TestTickCarriesHR(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		hr := &stubHR{}
+		hr.set(72, time.Now())
+		e := New(Config{Driver: f, HeartRate: hr})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		f.connect()
+		synctest.Wait()
+		if tk := lastTick(t, advance(time.Second, sub)); tk.State != StateReady || tk.HeartRateBpm != 72 {
+			t.Fatalf("ready tick %+v", tk)
+		}
+		if err := do(t, e, "start", 0); err != nil {
+			t.Fatal(err)
+		}
+		hr.set(80, time.Now())
+		if tk := lastTick(t, advance(time.Second, sub)); tk.State != StateRiding || tk.HeartRateBpm != 80 {
+			t.Fatalf("riding tick %+v", tk)
+		}
+	})
+}
+
+func TestStaleHRIsZero(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		hr := &stubHR{}
+		t0 := time.Now()
+		hr.set(72, t0)
+		e := New(Config{Driver: f, HeartRate: hr})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		if tk := lastTick(t, advance(5*time.Second-time.Since(t0), sub)); tk.HeartRateBpm != 72 {
+			t.Fatalf("at 5s %+v", tk)
+		}
+		tk := lastTick(t, advance(time.Second, sub))
+		if tk.HeartRateBpm != 0 || tk.State != StateRiding || tk.Alert != "" {
+			t.Fatalf("at 6s %+v", tk)
+		}
+	})
+}
+
+func TestNilHR(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := New(Config{Driver: f})
+		sub, cancelSub := e.Subscribe(64)
+		defer cancelSub()
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		if tk := lastTick(t, advance(time.Second, sub)); tk.HeartRateBpm != 0 {
+			t.Fatalf("tick %+v", tk)
+		}
+	})
+}

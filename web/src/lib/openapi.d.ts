@@ -2360,7 +2360,7 @@ export interface components {
             grade_pct: number;
             /**
              * Format: int64
-             * @description Heart rate, bpm; 0 when no sensor
+             * @description Heart rate in beats per minute; 0 when there is no heart rate source or no reading in the last 5 s.
              */
             heart_rate_bpm: number;
             /**

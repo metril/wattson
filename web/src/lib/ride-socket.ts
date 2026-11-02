@@ -17,6 +17,8 @@ interface Opts {
   WebSocketImpl?: typeof WebSocket;
 }
 
+export type StartOpts = { route_id?: number; workout_id?: number; target_power_w?: number };
+
 const BACKOFF_S = [1, 2, 4, 8, 10];
 const COMMAND_TIMEOUT_MS = 5000;
 const OPEN = 1;
@@ -83,7 +85,8 @@ export class RideSocket {
     return () => this.listeners.delete(fn);
   }
 
-  send(command: CommandName, value = 0, routeId?: number): Promise<void> {
+  /** `opts` carries what start should ride (a route, a workout or a free-ERG target); only the given keys are sent. */
+  send(command: CommandName, value = 0, opts?: StartOpts): Promise<void> {
     const ws = this.ws;
     if (!ws || ws.readyState !== OPEN) {
       return Promise.reject(new ApiError(0, 'disconnected', 'Not connected to the server.'));
@@ -96,7 +99,9 @@ export class RideSocket {
       }, COMMAND_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       const msg: CommandMsg = { type: 'command', id, command, value };
-      if (routeId !== undefined) msg.route_id = routeId;
+      if (opts?.route_id !== undefined) msg.route_id = opts.route_id;
+      if (opts?.workout_id !== undefined) msg.workout_id = opts.workout_id;
+      if (opts?.target_power_w !== undefined) msg.target_power_w = opts.target_power_w;
       ws.send(JSON.stringify(msg));
     });
   }

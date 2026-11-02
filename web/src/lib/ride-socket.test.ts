@@ -49,16 +49,30 @@ describe('RideSocket', () => {
     await expect(p).resolves.toBeUndefined();
   });
 
-  it('send includes route_id only when given', () => {
+  it('send includes start options only when given', () => {
     const { s } = mk();
     s.start();
     const ws = FakeWebSocket.last;
     ws.open();
     ws.receive(stateMsg());
-    void s.send('start', 0, 3).catch(() => {});
+    void s.send('start', 0, { route_id: 3 }).catch(() => {});
     void s.send('pause').catch(() => {});
     expect(ws.sent[0]).toBe('{"type":"command","id":"c1","command":"start","value":0,"route_id":3}');
     expect(JSON.parse(ws.sent[1])).not.toHaveProperty('route_id');
+  });
+
+  it('send writes workout_id and target_power_w after value, and nothing else', () => {
+    const { s } = mk();
+    s.start();
+    const ws = FakeWebSocket.last;
+    ws.open();
+    ws.receive(stateMsg());
+    void s.send('start', 0, { workout_id: 5 }).catch(() => {});
+    void s.send('start', 0, { target_power_w: 180 }).catch(() => {});
+    void s.send('set_target_power', 250).catch(() => {});
+    expect(ws.sent[0]).toBe('{"type":"command","id":"c1","command":"start","value":0,"workout_id":5}');
+    expect(ws.sent[1]).toBe('{"type":"command","id":"c2","command":"start","value":0,"target_power_w":180}');
+    expect(ws.sent[2]).toBe('{"type":"command","id":"c3","command":"set_target_power","value":250}');
   });
 
   it('error rejects with code', async () => {

@@ -65,7 +65,7 @@ export function RidePage() {
   const routeId = useRouteId(socket.ticks);
   const routeMode = routeId !== 0;
   const control = useCallback(
-    (command: CommandName) => (command === 'start' && picked !== null ? send('start', 0, picked) : send(command)),
+    (command: CommandName) => (command === 'start' && picked !== null ? send('start', 0, { route_id: picked }) : send(command)),
     [send, picked],
   );
 

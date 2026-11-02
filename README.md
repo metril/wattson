@@ -3,7 +3,7 @@
 Go CLI to probe and drive a Merach exercise bike (S29R2) over BLE, locally via BlueZ or through an ESPHome Bluetooth proxy.
 
 ```
-wattson scan | probe | drive | version
+wattson scan | probe | drive | ride | version
 ```
 
 ## Quick start
@@ -24,6 +24,15 @@ Scan for the bike, probe the protocol, then sweep resistance levels:
 ./wattson scan --via esphome://192.0.2.10 --key "$KEY" --name-prefix MRK-
 ./wattson drive --via esphome://192.0.2.10 --key "$KEY" --addr AA:BB:CC:DD:EE:FF --report docs/s29r2.md
 ```
+
+Ride headless in Free mode (1 Hz lines for time, level, cadence, power, speed, distance; Ctrl-C returns the bike to its minimum level):
+
+```
+./wattson ride --sim --duration 5m --level 8 --cadence 85
+./wattson ride --addr AA:BB:CC:DD:EE:FF --level 6 --duration 20m        # add --via esphome://... --key ... for a proxy
+```
+
+Flags: `--level` start level (5), `--min`/`--max` (1/16), `--mass` rider+bike kg (75), `--proto auto|fitplus|ftms`, `--duration` riding time (0 = until Ctrl-C), `--cadence` simulated rpm (80). Exit 0 on finish, 130 on Ctrl-C, 1 on error.
 
 Pass the ADDR column from `scan` to `--addr` exactly as shown (random addresses already include `/random`). Every command has `-h`.
 

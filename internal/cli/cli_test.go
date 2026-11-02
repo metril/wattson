@@ -28,6 +28,13 @@ func TestRunNoArgs(t *testing.T) {
 	}
 }
 
+func TestUsageMentionsRide(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(usage, "ride") {
+		t.Fatalf("usage = %q", usage)
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	t.Parallel()
 	var out, errb bytes.Buffer

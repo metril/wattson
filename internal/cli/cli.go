@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"github.com/metril/wattson/internal/bike"
+	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 )
 
 // Version is set at build time via -ldflags.
 var Version = "dev"
 
-const usage = "usage: wattson <scan|probe|drive|version> [flags]  (run a subcommand with -h for its flags)\n"
+const usage = "usage: wattson <scan|probe|drive|ride|version> [flags]  (run a subcommand with -h for its flags)\n"
 
 // newTransport opens the BLE transport; tests replace it (or use deps).
 var newTransport = openTransport
@@ -29,10 +30,11 @@ var newTransport = openTransport
 // deps are the seams tests use to run commands against a fake bike.
 type deps struct {
 	newTransport    func(ctx context.Context, via, key string) (blue.Transport, error)
-	tweakBike       func(*bike.Options) // optional: adjust bike options (keepalive etc.)
-	now             func() time.Time    // report timestamp
-	selftestTimeout time.Duration       // probe --selftest notification wait
-	connectTimeout  time.Duration       // bound on one BLE connect; 0 = 30s
+	tweakBike       func(*bike.Options)        // optional: adjust bike options (keepalive etc.)
+	now             func() time.Time           // report timestamp
+	selftestTimeout time.Duration              // probe --selftest notification wait
+	connectTimeout  time.Duration              // bound on one BLE connect; 0 = 30s
+	simDial         func(sim.Config) bike.Dial // ride --sim; nil = sim.Dial
 }
 
 // exitInterrupted is the conventional exit code after SIGINT.
@@ -43,7 +45,7 @@ const exitInterrupted = 130
 var lastLevel atomic.Int32
 
 func defaultDeps() deps {
-	return deps{newTransport: newTransport, now: time.Now, selftestTimeout: 3 * time.Second}
+	return deps{newTransport: newTransport, now: time.Now, selftestTimeout: 3 * time.Second, simDial: sim.Dial}
 }
 
 // Run dispatches args (without the program name) and returns the exit code.
@@ -97,6 +99,8 @@ func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) i
 		return cmdProbe(ctx, d, args[1:], stdout, stderr)
 	case "drive":
 		return cmdDrive(ctx, d, args[1:], stdout, stderr)
+	case "ride":
+		return cmdRide(ctx, d, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "wattson: unknown subcommand %q\n%s", args[0], usage)
 		return 2

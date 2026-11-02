@@ -24,7 +24,7 @@ Everything else is configured through the API and stored in SQLite. Stop it with
 ./wattson healthcheck                    # for Docker HEALTHCHECK
 ```
 
-Docs: [authentication and OIDC](docs/auth.md), [API quick start](docs/api.md), [openapi.json](docs/openapi.json), [asyncapi.yaml](docs/asyncapi.yaml).
+Docs: [authentication and OIDC](docs/auth.md), [Strava](docs/strava.md), [API quick start](docs/api.md), [openapi.json](docs/openapi.json), [asyncapi.yaml](docs/asyncapi.yaml).
 
 ## Docker
 
@@ -59,6 +59,13 @@ Routes turn the bike into a gradient trainer: Wattson raises the resistance a fe
 To use a BRouter running elsewhere, set **Settings, BRouter URL** and leave the segments directory empty; Wattson then skips the local missing-region check. On arm64 (Raspberry Pi) the pinned BRouter image is amd64 only, so it runs under emulation (see Docker above) or on another machine through that URL.
 
 Privacy: importing and riding use only your own server. The map background is loaded by your browser from `tiles.openfreemap.org`. With **OpenTopoData** on, the coordinates of a track are sent to `api.opentopodata.org` when more than 10 % of its points are missing elevation (an import without elevation, or a BRouter track that comes back without it) and for any track above 60 degrees latitude. With **public fallback** on, the waypoints of a drawn route are sent to `brouter.de` only when the route needs map regions you have not downloaded; it is never used when BRouter itself is down. Both are off by default.
+
+## History & Strava
+
+Finished rides are recorded automatically: one sample per second of riding, kept in the same database. Open **History** (also on a paired kiosk display) for the list, newest first, with a rider filter and "Load more". Open a ride for its stats (duration, distance, ascent, average and normalized power, energy, cadence, speed, heart rate when available), charts of power, cadence, speed and elevation over distance, and the map trace for route rides. Rides shorter than about 10 seconds are discarded. Delete removes the ride only after a second tap.
+
+- **FIT download**: every ride has a Download FIT button (a standard FIT activity with power, cadence, speed, distance and, for route rides, position and altitude). It works from a browser session and from a paired display.
+- **Strava**: connect each rider on the Riders page, then use Upload to Strava on a ride, or switch on automatic upload per rider. Wattson never uploads without a connected rider, and rides are uploaded once. Setup (your own Strava API app, callback domain, the one-athlete capacity of new apps, privacy and troubleshooting) is in [docs/strava.md](docs/strava.md).
 
 ## Quick start (CLI)
 

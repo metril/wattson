@@ -2,7 +2,7 @@ BINARY  := wattson
 VERSION ?= dev
 LDFLAGS := -s -w -X github.com/metril/wattson/internal/cli.Version=$(VERSION)
 
-.PHONY: all build go-build test go-test lint clean
+.PHONY: all build go-build test go-test lint clean openapi
 
 all: build
 
@@ -18,6 +18,10 @@ test: go-test
 go-test:
 	go vet ./...
 	go test ./... -race
+
+## openapi: regenerate docs/openapi.json from the Go API
+openapi:
+	go run ./cmd/wattson openapi > docs/openapi.json
 
 ## lint: gofmt check plus go vet
 lint:

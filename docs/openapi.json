@@ -1,0 +1,76 @@
+{
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Always \"ok\" while the process is serving.",
+            "type": "string"
+          },
+          "version": {
+            "description": "Server build version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "API token from Settings → Tokens",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "cookie": {
+        "description": "Session cookie set by the login flow.",
+        "in": "cookie",
+        "name": "wattson_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "REST API of the Wattson server, which controls a Merach exercise bike. Authenticate with an API token (`Authorization: Bearer \u003ctoken\u003e`) or the session cookie set by the login flow.",
+    "title": "Wattson API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/healthz": {
+      "get": {
+        "description": "Returns 200 while the server is running. No authentication required.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "Liveness probe",
+        "tags": [
+          "system"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    }
+  ]
+}

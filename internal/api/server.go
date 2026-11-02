@@ -1,0 +1,124 @@
+// Package api serves the Wattson HTTP API: typed huma operations under
+// /api, raw routes, the OpenAPI document and the embedded web UI.
+package api
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/secretbox"
+	"github.com/metril/wattson/internal/settings"
+	"github.com/metril/wattson/internal/store"
+	"github.com/metril/wattson/internal/web"
+)
+
+// Deps are the server's collaborators. Later tasks add their own fields
+// (OIDC, Bike, WSRecheck) so every commit compiles.
+type Deps struct {
+	Store      *store.Store
+	Settings   *settings.Service
+	Box        *secretbox.Box
+	Auth       *auth.Authenticator
+	HTTPClient *http.Client // outbound calls (HA ping, OIDC); tests inject
+	Logger     *slog.Logger
+	Now        func() time.Time
+	Version    string
+}
+
+// NewServer builds the full HTTP handler: Recoverer, security headers and
+// the auth middleware around /healthz, the huma API (/api/*, /docs,
+// /openapi.json) and, for everything else, the embedded web UI.
+func NewServer(d Deps) http.Handler { return newRouter(d) }
+
+// newRouter is NewServer plus extra huma registrations (tests only).
+func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
+	if d.Now == nil {
+		d.Now = time.Now
+	}
+	r := chi.NewRouter()
+	r.Use(d.recoverer, securityHeaders)
+	if d.Auth != nil {
+		r.Use(d.Auth.Middleware)
+	}
+	api := newHumaAPI(r)
+	d.registerAPI(api)
+	for _, f := range extra {
+		f(api)
+	}
+	addDocsOnly(api)
+	finalizeSpec(api)
+	r.Get("/healthz", d.healthz)
+
+	spa := web.Handler()
+	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/api/") {
+			writeEnvelope(w, http.StatusNotFound, "not_found", "no such endpoint")
+			return
+		}
+		spa.ServeHTTP(w, req)
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+		writeEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+	})
+	return r
+}
+
+const csp = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+
+// docsCSP additionally lets the interactive API docs page load its viewer
+// from unpkg.com; it applies to /docs only.
+const docsCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; " +
+	"style-src 'self' 'unsafe-inline' https://unpkg.com; script-src 'self' 'unsafe-inline' https://unpkg.com; " +
+	"font-src 'self' data: https://unpkg.com"
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("X-Frame-Options", "DENY")
+		if r.URL.Path == "/docs" {
+			h.Set("Content-Security-Policy", docsCSP)
+		} else {
+			h.Set("Content-Security-Policy", csp)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// recoverer turns a handler panic into a logged 500 error envelope.
+func (d Deps) recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler {
+				panic(rec)
+			}
+			d.Logger.Error("panic serving request", "method", r.Method, "path", r.URL.Path,
+				"panic", rec, "stack", string(debug.Stack()))
+			writeEnvelope(w, http.StatusInternalServerError, "internal_error", "internal error")
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// writeEnvelope writes the standard JSON error body.
+func writeEnvelope(w http.ResponseWriter, status int, code, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(ErrorResponse{Error: ErrorBody{Code: code, Message: msg}})
+}

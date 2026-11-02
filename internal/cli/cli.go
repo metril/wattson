@@ -22,7 +22,7 @@ import (
 // Version is set at build time via -ldflags.
 var Version = "dev"
 
-const usage = "usage: wattson <scan|probe|drive|ride|version> [flags]  (run a subcommand with -h for its flags)\n"
+const usage = "usage: wattson <scan|probe|drive|ride|openapi|version> [flags]  (run a subcommand with -h for its flags)\n"
 
 // newTransport opens the BLE transport; tests replace it (or use deps).
 var newTransport = openTransport
@@ -101,6 +101,8 @@ func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) i
 		return cmdDrive(ctx, d, args[1:], stdout, stderr)
 	case "ride":
 		return cmdRide(ctx, d, args[1:], stdout, stderr)
+	case "openapi":
+		return cmdOpenAPI(stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "wattson: unknown subcommand %q\n%s", args[0], usage)
 		return 2

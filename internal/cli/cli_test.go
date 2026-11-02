@@ -45,3 +45,14 @@ func TestRunVersion(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", out.String(), "wattson dev")
 	}
 }
+
+func TestOpenAPICommand(t *testing.T) {
+	t.Parallel()
+	var out, errb bytes.Buffer
+	if code := Run([]string{"openapi"}, &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), `"openapi"`) || !strings.HasSuffix(out.String(), "}\n") {
+		t.Errorf("unexpected output: %.80q", out.String())
+	}
+}

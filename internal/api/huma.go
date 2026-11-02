@@ -1,0 +1,142 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"mime"
+	"net/http"
+	"reflect"
+	"sort"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/metril/wattson/internal/auth"
+)
+
+// newHumaAPI builds the huma API on r. The docs and spec routes it adds
+// inherit whatever middleware r carries.
+func newHumaAPI(r chi.Router) huma.API {
+	cfg := huma.DefaultConfig("Wattson API", "1.0.0")
+	cfg.Info.Description = "REST API of the Wattson server, which controls a Merach exercise bike. " +
+		"Authenticate with an API token (`Authorization: Bearer <token>`) or the session cookie " +
+		"set by the login flow."
+	cfg.CreateHooks = nil // no "$schema" property on responses
+	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"bearer": {Type: "http", Scheme: "bearer", Description: "API token from Settings → Tokens"},
+		"cookie": {Type: "apiKey", In: "cookie", Name: auth.SessionCookie, Description: "Session cookie set by the login flow."},
+	}
+	cfg.Security = []map[string][]string{{"bearer": {}}, {"cookie": {}}}
+	// APIError is the wire envelope; document it under the public name.
+	cfg.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", func(t reflect.Type, hint string) string {
+		if t == reflect.TypeFor[APIError]() {
+			return "ErrorResponse"
+		}
+		return huma.DefaultSchemaNamer(t, hint)
+	})
+	cfg.OpenAPIPath = "/openapi"
+	cfg.DocsPath = "/docs"
+	return humachi.New(r, cfg)
+}
+
+// route describes one typed operation.
+type route struct {
+	Method, Path, ID, Tag, Summary, Description string
+	Scope                                       auth.Scope // "" = public
+	Status                                      int        // success status; 0 means 200 (204 without a body)
+	Errors                                      []int      // statuses beyond the defaults
+}
+
+var jsonBodyMethods = map[string]bool{http.MethodPost: true, http.MethodPut: true, http.MethodPatch: true}
+
+// jsonContentType refuses a non-JSON Content-Type on a request that carries
+// a body; an absent one is tolerated.
+func jsonContentType(ctx huma.Context) bool {
+	ct := ctx.Header("Content-Type")
+	if ct == "" || ctx.Header("Content-Length") == "0" {
+		return true
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	return err == nil && mt == "application/json"
+}
+
+// writeRaw writes an error envelope from middleware.
+func writeRaw(ctx huma.Context, status int, code, msg string) {
+	ctx.SetHeader("Content-Type", "application/json")
+	ctx.SetStatus(status)
+	_ = json.NewEncoder(ctx.BodyWriter()).Encode(
+		ErrorResponse{Error: ErrorBody{Code: code, Message: msg}})
+}
+
+// register adds a typed operation to api. Huma validation stays on; the
+// auth middleware maps a missing identity to 401 and a missing scope to 403.
+func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O, error)) {
+	desc := rt.Description
+	if rt.Scope != "" {
+		desc += " Requires the `" + string(rt.Scope) + "` scope."
+	}
+	op := huma.Operation{
+		OperationID:   rt.ID,
+		Method:        rt.Method,
+		Path:          rt.Path,
+		Summary:       rt.Summary,
+		Description:   desc,
+		Tags:          []string{rt.Tag},
+		DefaultStatus: rt.Status,
+		MaxBodyBytes:  1 << 20,
+		Security:      []map[string][]string{},
+		Errors:        routeErrors(rt),
+	}
+	if rt.Scope != "" {
+		op.Security = []map[string][]string{{"bearer": {}}, {"cookie": {}}}
+	}
+	scope, jsonBody := rt.Scope, jsonBodyMethods[rt.Method]
+	op.Middlewares = huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		if scope != "" {
+			id, ok := auth.FromContext(ctx.Context())
+			if !ok {
+				writeRaw(ctx, http.StatusUnauthorized, "unauthorized", "authentication required")
+				return
+			}
+			if !id.Has(scope) {
+				writeRaw(ctx, http.StatusForbidden, "forbidden", "missing required scope: "+string(scope))
+				return
+			}
+		}
+		if jsonBody && !jsonContentType(ctx) {
+			writeRaw(ctx, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json")
+			return
+		}
+		next(ctx)
+	}}
+	huma.Register(api, op, h)
+}
+
+// routeErrors lists the error statuses an operation documents.
+func routeErrors(rt route) []int {
+	errs := map[int]bool{}
+	if rt.Scope != "" {
+		errs[http.StatusUnauthorized] = true
+		errs[http.StatusForbidden] = true
+	}
+	if strings.Contains(rt.Path, "{") || jsonBodyMethods[rt.Method] {
+		errs[http.StatusBadRequest] = true
+	}
+	if strings.Contains(rt.Path, "{") {
+		errs[http.StatusNotFound] = true
+	}
+	if jsonBodyMethods[rt.Method] {
+		errs[http.StatusUnsupportedMediaType] = true
+	}
+	for _, e := range rt.Errors {
+		errs[e] = true
+	}
+	out := make([]int, 0, len(errs))
+	for c := range errs {
+		out = append(out, c)
+	}
+	sort.Ints(out)
+	return out
+}

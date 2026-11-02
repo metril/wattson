@@ -198,3 +198,18 @@ func TestSupervisorOverSim(t *testing.T) {
 		}
 	})
 }
+
+func TestCloseAppliesMinLevel(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		for _, tc := range []struct{ min, want int }{{0, 1}, {3, 3}, {99, 16}} {
+			s := sim.New(sim.Config{MinLevel: tc.min})
+			if err := s.Close(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if l := s.Levels(); l[len(l)-1] != tc.want {
+				t.Fatalf("min %d: levels %v want last %d", tc.min, l, tc.want)
+			}
+		}
+	})
+}

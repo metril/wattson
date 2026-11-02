@@ -434,6 +434,9 @@ func TestFanOutNonBlocking(t *testing.T) {
 		if len(a) != 1 {
 			t.Fatalf("A holds %d, want 1", len(a))
 		}
+		if last := <-a; !last.At.Equal(got[len(got)-1].At) {
+			t.Fatalf("A holds %v, want newest %v", last.At, got[len(got)-1].At)
+		}
 	})
 }
 
@@ -567,6 +570,29 @@ func TestCloseErrSurfacesDriverClose(t *testing.T) {
 		stop()
 		if err := e.CloseErr(); !errors.Is(err, bike.ErrNoSession) {
 			t.Fatalf("CloseErr = %v", err)
+		}
+	})
+}
+
+func TestFinalTickOnCancel(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := New(Config{Driver: f})
+		sub, _ := e.Subscribe(64)
+		_, stop := start(t, e)
+		riding(t, f, e)
+		advance(2*time.Second, sub)
+		stop()
+		var last Tick
+		for tk := range sub {
+			last = tk
+		}
+		if last.State != StateFinished || last.Connected {
+			t.Fatalf("last tick %+v", last)
+		}
+		if snap := e.Snapshot(); snap.State != StateFinished || snap.Connected {
+			t.Fatalf("snapshot %+v", snap)
 		}
 	})
 }

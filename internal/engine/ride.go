@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	staleAfter   = 3 * time.Second
-	closeTimeout = 3 * time.Second
+	staleAfter = 3 * time.Second
+	// closeTimeout covers the supervisor's and bike's floor write (each
+	// may take a while on slow FTMS or ESPHome links).
+	closeTimeout = 6 * time.Second
 	// maxTickDT caps the time integrated in one tick so a stalled process
 	// (laptop suspend, long GC or SIGSTOP) cannot teleport the rider forward.
 	maxTickDT = 5 * time.Second
@@ -144,7 +146,8 @@ func (e *Engine) Snapshot() Tick {
 }
 
 // Subscribe returns a channel that first carries the current snapshot, then
-// every tick. A subscriber whose buffer is full misses ticks. The cancel func
+// every tick. When a subscriber's buffer is full its oldest tick is dropped so
+// the newest is always kept. The cancel func
 // unsubscribes and closes the channel; the channel is also closed when Run
 // returns.
 func (e *Engine) Subscribe(buf int) (<-chan Tick, func()) {
@@ -202,14 +205,20 @@ func (e *Engine) Do(ctx context.Context, c Command) error {
 }
 
 // Run drives the ride until a stop command (nil) or ctx cancellation
-// (ctx.Err()). It closes the driver and all subscriber channels on exit.
+// (ctx.Err()). It closes the driver and all subscriber channels on exit, after
+// publishing a final finished, disconnected tick. Run is single-use: one
+// Engine per ride, and a second call is not supported (the Driver is closed).
 func (e *Engine) Run(ctx context.Context) (err error) {
 	defer func() {
 		cctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 		cerr := e.drv.Close(cctx)
 		cancel()
+		e.state, e.speed, e.grade = StateFinished, 0, 0
+		e.connected, e.alert = false, ""
+		e.refresh(time.Now())
 		e.mu.Lock()
 		e.closeErr = cerr
+		e.publishLocked()
 		e.closed = true
 		for ch := range e.subs {
 			close(ch)
@@ -429,10 +438,24 @@ func (e *Engine) refresh(now time.Time) {
 func (e *Engine) publish() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.publishLocked()
+}
+
+// publishLocked sends the snapshot to every subscriber, dropping a full
+// subscriber's oldest tick to make room. Callers hold e.mu.
+func (e *Engine) publishLocked() {
 	for ch := range e.subs {
-		select {
-		case ch <- e.snap:
-		default:
+		for {
+			select {
+			case ch <- e.snap:
+			default:
+				select {
+				case <-ch:
+				default:
+				}
+				continue
+			}
+			break
 		}
 	}
 }

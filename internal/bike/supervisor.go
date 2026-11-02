@@ -222,8 +222,9 @@ func floorOutcome(werr, cerr error) error {
 	return errors.Join(werr, cerr)
 }
 
-// push sends v, dropping the oldest buffered value when ch is full. Each
-// channel has a single producer at a time.
+// push sends v, dropping the oldest buffered value when ch is full. A channel
+// may have more than one producer (s.ev does); the loop retries until v is
+// buffered, so a racing producer can at worst cost another oldest value.
 func push[T any](ch chan T, v T) {
 	for {
 		select {

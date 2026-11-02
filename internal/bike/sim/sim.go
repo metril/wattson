@@ -22,6 +22,7 @@ const (
 // Config configures a simulated session. Zero values select defaults.
 type Config struct {
 	MaxLevel int                                 // default 16
+	MinLevel int                                 // level Close applies; default 1 (clamped to >= 1)
 	Cadence  func(elapsed time.Duration) float64 // rpm; default Const(80)
 	Period   time.Duration                       // telemetry interval; default 1s
 }
@@ -43,6 +44,7 @@ func Const(rpm float64) func(time.Duration) float64 {
 // Session is a simulated bike link; it implements bike.Session.
 type Session struct {
 	max     int
+	min     int
 	cadence func(time.Duration) float64
 	period  time.Duration
 	start   time.Time
@@ -67,6 +69,7 @@ func New(c Config) *Session {
 	if c.MaxLevel < 1 {
 		c.MaxLevel = defaultMax
 	}
+	c.MinLevel = min(max(c.MinLevel, 1), c.MaxLevel)
 	if c.Cadence == nil {
 		c.Cadence = Const(defaultCadRPM)
 	}
@@ -75,13 +78,14 @@ func New(c Config) *Session {
 	}
 	s := &Session{
 		max:     c.MaxLevel,
+		min:     c.MinLevel,
 		cadence: c.Cadence,
 		period:  c.Period,
 		start:   time.Now(),
 		tel:     make(chan bike.Telemetry, telemetryBuf),
 		done:    make(chan struct{}),
 		exited:  make(chan struct{}),
-		cur:     1,
+		cur:     c.MinLevel,
 	}
 	go s.run()
 	return s
@@ -166,7 +170,7 @@ func (s *Session) Close(context.Context) error {
 	if !s.closed {
 		s.closed = true
 		if !s.isDoneLocked() {
-			s.applyLocked(1)
+			s.applyLocked(s.min)
 			close(s.done)
 		}
 	}

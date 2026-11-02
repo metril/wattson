@@ -81,7 +81,7 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 		if mk == nil {
 			mk = sim.Dial
 		}
-		dial = mk(sim.Config{MaxLevel: *maxL, Cadence: sim.Const(*cadence)})
+		dial = mk(sim.Config{MaxLevel: *maxL, MinLevel: lo, Cadence: sim.Const(*cadence)})
 	} else {
 		addr, err := blue.ParseAddress(*addrS)
 		if err != nil {
@@ -110,15 +110,21 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 	go func() { runErr <- eng.Run(ctx) }()
 	fmt.Fprintf(stderr, "riding in free mode from level %d; Ctrl-C returns the bike to level %d.\n", startLevel, lo)
 
-	started, stopping, connected := false, false, false
+	started, stopping, connected, paused := false, false, false, false
 	for tk := range ticks {
-		if tk.Connected != connected {
+		if tk.State != engine.StateFinished && tk.Connected != connected {
 			connected = tk.Connected
 			if connected {
 				fmt.Fprintln(stderr, "bike connected")
 			} else {
 				fmt.Fprintln(stderr, "bike disconnected; reconnecting")
 			}
+		}
+		if tk.State == engine.StatePaused && !paused {
+			paused = true
+			fmt.Fprintln(stderr, "paused by watchdog (no pedalling); Ctrl-C to end")
+		} else if tk.State == engine.StateRiding {
+			paused = false
 		}
 		if tk.Alert != "" {
 			fmt.Fprintf(stderr, "alert: %s\n", tk.Alert)
@@ -158,9 +164,13 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 	summary := func(label string) {
 		fmt.Fprintf(stdout, "%s: %s %.3f km avg %.1f km/h\n", label, clock(end.ElapsedS), end.DistanceM/1000, avg)
 	}
+	failedReturn := started && eng.CloseErr() != nil
 	switch {
 	case err == nil:
 		summary("ride finished")
+		if failedReturn {
+			return 1
+		}
 		return 0
 	case interrupted(ctx):
 		summary("ride interrupted")

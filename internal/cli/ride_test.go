@@ -166,7 +166,7 @@ func TestRideReportsFailedReturn(t *testing.T) {
 			return func(context.Context) (bike.Session, error) { return failFloor{sim.New(cfg)}, nil }
 		}
 		code, _, errs := runCLI(t, d, "ride", "--sim", "--duration", "3s")
-		if code != 0 {
+		if code != 1 {
 			t.Fatalf("exit %d: %s", code, errs)
 		}
 		if strings.Contains(errs, "bike returned") || !strings.Contains(errs, "failed to return bike to level 1") || !strings.Contains(errs, "lower resistance at the console") {
@@ -222,6 +222,24 @@ func TestRideRealBikeOptions(t *testing.T) {
 		}
 		if w := levelWrites(f); len(w) == 0 || slices.Min(w) < 2 || slices.Max(w) > 12 {
 			t.Fatalf("level writes %v outside 2..12", w)
+		}
+	})
+}
+
+func TestRidePrintsWatchdogPauseOnce(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := testDeps(nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		time.AfterFunc(90*time.Second, cancel)
+		var out, errb bytes.Buffer
+		code := run(ctx, d, []string{"ride", "--sim", "--cadence", "0"}, &out, &errb)
+		if code != 130 {
+			t.Fatalf("exit %d: %s", code, errb.String())
+		}
+		if n := strings.Count(errb.String(), "paused by watchdog (no pedalling); Ctrl-C to end"); n != 1 {
+			t.Fatalf("watchdog message count %d: %s", n, errb.String())
 		}
 	})
 }

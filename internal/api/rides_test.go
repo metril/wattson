@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/muktihari/fit/decoder"
 	"github.com/muktihari/fit/profile/filedef"
 
+	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/store"
 )
 
@@ -319,5 +323,37 @@ func TestOpenAPIRides(t *testing.T) {
 	}
 	for _, p := range []string{"/api/rides", "/api/rides/{id}"} {
 		get(spec, "paths", p)
+	}
+}
+
+func TestAPICacheControlNoStore(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	r := ts.seedRide(t, ts.riderOf(t, admin), 30, false)
+	for _, path := range []string{"/api/rides", fmt.Sprintf("/api/rides/%d/fit", r.ID), "/api/nope"} {
+		resp, _ := ts.do(t, admin, "GET", path, nil)
+		if got := resp.Header.Get("Cache-Control"); got != "private, no-store" {
+			t.Errorf("%s: Cache-Control = %q", path, got)
+		}
+	}
+}
+
+func TestListRidesRefusesUserlessIdentity(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	ts.seedRide(t, ts.riderOf(t, ts.setupAdmin(t)), 12, false)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			id := auth.Identity{Scopes: []auth.Scope{auth.ScopeRead}} // User.ID == 0
+			next.ServeHTTP(w, req.WithContext(auth.NewContext(req.Context(), id)))
+		})
+	})
+	Deps{Store: ts.Store}.registerRides(newHumaAPI(r))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest("GET", "/api/rides", nil))
+	if rec.Code != 500 || strings.Contains(rec.Body.String(), `"rides":[{`) {
+		t.Errorf("userless list = %d %s, want 500 and no rides", rec.Code, rec.Body)
 	}
 }

@@ -91,7 +91,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	d.ws = &wsGate{}
 	d.oidcState = newStateCodec(d)
 	r := chi.NewRouter()
-	r.Use(d.recoverer, securityHeaders, middleware.Compress(5, "application/json"), withLogger(d.Logger))
+	r.Use(d.recoverer, securityHeaders, apiNoStore, middleware.Compress(5, "application/json"), withLogger(d.Logger))
 	if d.Auth != nil {
 		r.Use(d.Auth.Middleware)
 	}
@@ -137,6 +137,17 @@ func securityHeaders(next http.Handler) http.Handler {
 		// huma's /docs handler replaces this with its own CSP, which allows
 		// only the pinned Stoplight Elements files from unpkg.com.
 		h.Set("Content-Security-Policy", csp)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// apiNoStore marks every /api response as private and uncacheable: bodies
+// are per-user (rides, FIT files, links), so no shared cache may keep them.
+func apiNoStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "private, no-store")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

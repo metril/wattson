@@ -1956,7 +1956,7 @@ export interface components {
             elapsed_s: number[];
             /** @description Elevation of each point in metres. Present only when every point has one. */
             ele_m?: number[];
-            /** @description Road grade of each point in percent. */
+            /** @description Road grade of each point in percent; 0 on a free ride. */
             grade_pct: number[];
             /** @description Heart rate of each point in beats per minute; 0 where none was read. */
             hr_bpm: number[];

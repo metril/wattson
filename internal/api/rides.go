@@ -85,7 +85,7 @@ type Series struct {
 	PowerW     []float64 `json:"power_w" doc:"Power of each point in watts (the mean of its bucket)."`
 	CadenceRpm []float64 `json:"cadence_rpm" doc:"Cadence of each point in revolutions per minute."`
 	SpeedKmh   []float64 `json:"speed_kmh" doc:"Speed of each point in kilometres per hour."`
-	GradePct   []float64 `json:"grade_pct" doc:"Road grade of each point in percent."`
+	GradePct   []float64 `json:"grade_pct" doc:"Road grade of each point in percent; 0 on a free ride."`
 	Level      []int     `json:"level" doc:"Resistance level of each point, 1 to 32."`
 	HRBpm      []int     `json:"hr_bpm" doc:"Heart rate of each point in beats per minute; 0 where none was read."`
 	Lat        []float64 `json:"lat,omitempty" doc:"Latitude of each point in degrees. Present only when every point has a position."`
@@ -232,6 +232,9 @@ func (d Deps) registerRides(api huma.API) {
 				}
 				q.RiderID = rd.ID
 			} else {
+				if ident.User.ID == 0 { // never fall through to an unfiltered, all-users query
+					return nil, errors.New("rides: identity has no user")
+				}
 				q.UserID = ident.User.ID
 			}
 			rs, err := d.Store.ListRides(ctx, q)

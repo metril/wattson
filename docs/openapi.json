@@ -2086,7 +2086,7 @@
             "type": "array"
           },
           "grade_pct": {
-            "description": "Road grade of each point in percent.",
+            "description": "Road grade of each point in percent; 0 on a free ride.",
             "items": {
               "format": "double",
               "type": "number"

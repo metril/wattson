@@ -113,4 +113,22 @@ describe('IntegrationsForm', () => {
     expect(await screen.findByText('must not contain credentials')).toBeInTheDocument();
     expect(screen.getByLabelText('MQTT broker URL')).toHaveAttribute('aria-invalid', 'true');
   });
+
+  it('hints to clear the segments folder for a remote BRouter', async () => {
+    const hint = /clear 'map regions folder'/i;
+    const bundled = settingsFixture({ brouter: { url: 'http://brouter:17777' } });
+    stubApi({ 'GET /api/settings': [200, bundled] });
+    const a = renderWithClient(<IntegrationsForm />);
+    await screen.findByLabelText('BRouter URL');
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    a.unmount();
+    stubApi({ 'GET /api/settings': [200, settingsFixture({ brouter: { url: 'http://remote:17777', segments_dir: '/segments' } })] });
+    const b = renderWithClient(<IntegrationsForm />);
+    expect(await screen.findByText(hint)).toBeInTheDocument();
+    b.unmount();
+    stubApi({ 'GET /api/settings': [200, settingsFixture({ brouter: { url: 'http://remote:17777', segments_dir: '' } })] });
+    renderWithClient(<IntegrationsForm />);
+    await screen.findByLabelText('BRouter URL');
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+  });
 });

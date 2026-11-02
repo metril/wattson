@@ -7,6 +7,7 @@ import { TestButton } from '@/components/TestButton';
 import { Toggle } from '@/components/Toggle';
 import { FormCard, SaveBar, SettingsGate, useSettingsForm, type SettingsOut } from './form';
 
+const BUNDLED_BROUTER = 'http://brouter:17777';
 const NO_CREDS = 'Put credentials in the fields below, not in the URL (no user:pass@).';
 
 function Body({ s }: { s: SettingsOut }) {
@@ -46,6 +47,8 @@ function Body({ s }: { s: SettingsOut }) {
     'mapillary.token', 'strava.client_id', 'strava.client_secret',
   ];
   const brouterUrl = f.value<string>('brouter.url');
+  const segmentsDir = f.value<string>('brouter.segments_dir');
+  const remoteWithRegions = brouterUrl.trim() !== '' && brouterUrl.trim().replace(/\/+$/, '') !== BUNDLED_BROUTER && segmentsDir.trim() !== '';
   const haUrl = f.value<string>('ha.url');
   const haToken = f.value<string | undefined>('ha.token');
 
@@ -92,8 +95,10 @@ function Body({ s }: { s: SettingsOut }) {
       <FormCard title="BRouter">
         {text('brouter.url', 'BRouter URL', {
           type: 'url',
-          placeholder: 'http://brouter:17777',
-          hint: 'Used to plan routes drawn on the map.',
+          placeholder: BUNDLED_BROUTER,
+          hint: remoteWithRegions
+            ? "Used to plan routes drawn on the map. Using a remote BRouter? Clear 'Map regions folder' so drawing doesn't require local regions."
+            : 'Used to plan routes drawn on the map.',
         })}
         <Select
           label="Default routing profile"

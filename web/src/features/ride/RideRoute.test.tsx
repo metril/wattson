@@ -129,6 +129,24 @@ describe('Ride route mode', () => {
     expect(await screen.findByText('Route complete')).toBeInTheDocument();
   });
 
+  it('a manual Stop before the finish shows nothing route-specific', async () => {
+    const { ws } = await setup();
+    tick(ws, { distance_m: 400 });
+    tick(ws, { state: 'finished', distance_m: 400 });
+    await screen.findByRole('button', { name: 'Harder' });
+    expect(screen.queryByText('Route complete')).not.toBeInTheDocument();
+  });
+
+  it('keeps Route complete after the route clears, until the next Start', async () => {
+    const { ws } = await setup();
+    tick(ws, { state: 'finished', distance_m: 900 });
+    expect(await screen.findByText('Route complete')).toBeInTheDocument();
+    act(() => ws.receive({ type: 'tick', tick: tickFixture({ state: 'ready', route_id: 0 }) }));
+    expect(screen.getByText('Route complete')).toBeInTheDocument();
+    tick(ws, { distance_m: 0 });
+    await waitFor(() => expect(screen.queryByText('Route complete')).not.toBeInTheDocument());
+  });
+
   it('a deleted route degrades to the plain metrics', async () => {
     const { ws } = await setup('/?route=3', {
       'GET /api/routes/3': apiError(404, 'route_not_found'),

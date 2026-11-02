@@ -10,7 +10,7 @@ import { RouteView, useRouteId } from '@/features/ride/RouteView';
 import { notifyUnauthorized } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { createRideSocket } from '@/lib/ride-socket';
-import type { CommandName } from '@/lib/ws-types';
+import type { CommandName, Tick } from '@/lib/ws-types';
 
 const ALERT_MS = 10_000;
 
@@ -69,6 +69,20 @@ export function RidePage() {
     [send, picked],
   );
 
+  // "Route complete" only when the finish line was reached (a manual Stop is not), until the next Start.
+  const [complete, setComplete] = useState(false);
+  useEffect(() => {
+    const apply = (t: Tick) => {
+      if (t.state === 'finished') {
+        setComplete(t.route_id > 0 && t.route_length_m > 0 && t.distance_m >= t.route_length_m);
+      } else if (t.state === 'riding') {
+        setComplete(false);
+      }
+    };
+    if (socket.ticks.latest) apply(socket.ticks.latest);
+    return socket.ticks.subscribe(apply);
+  }, [socket]);
+
   const { connected, state, bike } = status;
   const active = state === 'ready' || state === 'riding' || state === 'paused';
 
@@ -83,7 +97,7 @@ export function RidePage() {
       )}
       {cmdError && <Banner tone="error">{cmdError}</Banner>}
       {state === 'ready' && <RoutePicker value={picked} onChange={setPicked} />}
-      {routeMode && state === 'finished' && (
+      {complete && (
         <Banner tone="ok">
           <p className="text-lg font-medium">Route complete</p>
         </Banner>

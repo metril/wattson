@@ -17,6 +17,7 @@ import (
 
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
+	"github.com/metril/wattson/internal/integrations/mqtttest"
 )
 
 const testPassword = "correct-horse-1"
@@ -338,5 +339,40 @@ func TestHealthcheck(t *testing.T) {
 	s.stop(t)
 	if code, _, _ := runCLI(t, d, "healthcheck"); code != 1 {
 		t.Errorf("closed port: exit %d, want 1", code)
+	}
+}
+
+func TestServeMQTTEndToEnd(t *testing.T) {
+	t.Parallel()
+	b := mqtttest.Start(t, nil)
+	s := startServer(t, t.TempDir(), nil, nil)
+	s.setup(t)
+	if code, raw := s.do(t, "PATCH", "/api/settings", map[string]any{"mqtt": map[string]any{"url": b.URL()}}); code != 200 {
+		t.Fatalf("patch settings: %d %s", code, raw)
+	}
+	waitUntil(t, "discovery", func() bool { return b.Retained("homeassistant/sensor/wattson_power/config") != nil })
+	waitUntil(t, "online", func() bool { return string(b.Retained("wattson/status")) == "online" })
+	var st struct{ Enabled, Connected bool }
+	waitUntil(t, "status connected", func() bool {
+		code, raw := s.do(t, "GET", "/api/mqtt/status", nil)
+		return code == 200 && json.Unmarshal(raw, &st) == nil && st.Enabled && st.Connected
+	})
+	// Pointing the bridge at nothing publishes offline and clears the configs.
+	if code, raw := s.do(t, "PATCH", "/api/settings", map[string]any{"mqtt": map[string]any{"url": ""}}); code != 200 {
+		t.Fatalf("clear url: %d %s", code, raw)
+	}
+	waitUntil(t, "configs cleared", func() bool { return b.Retained("homeassistant/sensor/wattson_power/config") == nil })
+	waitUntil(t, "offline after disabling", func() bool { return string(b.Retained("wattson/status")) == "offline" })
+	if code, raw := s.do(t, "PATCH", "/api/settings", map[string]any{"mqtt": map[string]any{"url": b.URL()}}); code != 200 {
+		t.Fatalf("re-enable: %d %s", code, raw)
+	}
+	waitUntil(t, "online again", func() bool { return string(b.Retained("wattson/status")) == "online" })
+
+	s.stop(t)
+	if got := string(b.Retained("wattson/status")); got != "offline" {
+		t.Errorf("status after shutdown = %q, want offline", got)
+	}
+	if b.Retained("homeassistant/sensor/wattson_power/config") == nil {
+		t.Error("discovery should stay retained across a restart")
 	}
 }

@@ -145,3 +145,12 @@ func Discovery(prefix, version string) []DiscoveryMsg {
 	}
 	return out
 }
+
+// CommandKeys are the keys accepted under wattson/command/, one per button.
+func CommandKeys() []string {
+	keys := make([]string, len(buttonDefs))
+	for i, b := range buttonDefs {
+		keys[i] = b.key
+	}
+	return keys
+}

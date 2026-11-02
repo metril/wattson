@@ -78,7 +78,11 @@ type tsConfig struct {
 	noBike     bool
 	drawLimit  time.Duration
 	strava     bool
+	mqtt       MQTTBridge
 }
+
+// withMQTT sets Deps.MQTT.
+func withMQTT(b MQTTBridge) tsOpt { return func(c *tsConfig) { c.mqtt = b } }
 
 // withStrava wires a strava.Service onto a fake Strava (ts.Strava, ts.Fake).
 func withStrava() tsOpt { return func(c *tsConfig) { c.strava = true } }
@@ -145,7 +149,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	tiles := maptiles.New(svc.Get, http.DefaultClient)
 	t.Cleanup(tiles.Close)
 	d := Deps{Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
-		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit}
+		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit, MQTT: cfg.mqtt}
 	if cfg.noBike {
 		d.Bike = nil
 	}

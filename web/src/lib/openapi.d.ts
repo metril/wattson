@@ -400,6 +400,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mqtt/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the MQTT bridge status
+         * @description Reports whether an MQTT broker URL is configured, whether the bridge is connected to the broker right now, and the latest connection problem (an unreachable broker or a refused login). The bridge keeps retrying by itself; saving the `mqtt` settings reconnects it at once. Requires the `admin` scope.
+         */
+        get: operations["getMQTTStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ride": {
         parameters: {
             query?: never;
@@ -791,7 +811,7 @@ export interface paths {
         head?: never;
         /**
          * Update settings
-         * @description Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `<section.field>: <problem>` and nothing is stored. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET. Requires the `admin` scope.
+         * @description Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `<section.field>: <problem>` and nothing is stored. Changing any `mqtt` field reconnects the MQTT bridge at once. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET. Requires the `admin` scope.
          */
         patch: operations["updateSettings"];
         trace?: never;
@@ -870,6 +890,26 @@ export interface paths {
          * @description Calls `GET {url}/api/` with the token as a bearer credential, timing out after 5 seconds. Empty body fields fall back to the stored settings. The result is always HTTP 200; check `ok`. A 401 from Home Assistant reports `token rejected (401)`. Requires the `admin` scope.
          */
         post: operations["testHomeAssistant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/test/mqtt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test the MQTT broker connection
+         * @description Makes one MQTT 5 connection with a random client id, timing out after 5 seconds, and disconnects. It publishes and subscribes to nothing. Empty body fields fall back to the stored settings, but the stored username and password are only used when the URL is the stored one. The result is always HTTP 200; check `ok`. A refused login reports the CONNACK reason, for example `not authorized`. Requires the `admin` scope.
+         */
+        post: operations["testMQTT"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1550,6 +1590,14 @@ export interface components {
             url?: string;
             /** @description MQTT username. */
             username?: string;
+        };
+        MQTTStatus: {
+            /** @description Whether the bridge is connected to the broker right now. */
+            connected: boolean;
+            /** @description Whether an MQTT broker URL is configured. */
+            enabled: boolean;
+            /** @description Most recent connection problem, such as a refused login or an unreachable broker; absent when connected or disabled. */
+            error?: string;
         };
         MapillaryOut: {
             /** @description Whether a Mapillary access token is stored. The token itself is never returned. */
@@ -2469,6 +2517,14 @@ export interface components {
             token?: string;
             /** @description Home Assistant base URL to test. Empty uses the stored URL. */
             url?: string;
+        };
+        TestMQTTInBody: {
+            /** @description Password to test. Empty uses the stored password, but only when the URL is the stored one. */
+            password?: string;
+            /** @description MQTT broker URL to test, mqtt:// or mqtts://. Empty uses the stored URL. */
+            url?: string;
+            /** @description Username to test. Empty uses the stored username, but only when the URL is the stored one. */
+            username?: string;
         };
         TestResult: {
             /**
@@ -4070,6 +4126,62 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMQTTStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MQTTStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6312,6 +6424,75 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TestHAInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    testMQTT: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestMQTTInBody"];
             };
         };
         responses: {

@@ -56,6 +56,9 @@ type Deps struct {
 	Bike *ridectl.Manager
 	// Strava manages riders' Strava links. Nil disables the Strava endpoints (503).
 	Strava *strava.Service
+	// MQTT is the Home Assistant MQTT bridge. Nil disables /api/mqtt/status
+	// (503) and the reload on settings changes.
+	MQTT MQTTBridge
 	// WSRecheck is how often an open WebSocket re-validates its credential;
 	// zero means 60 s.
 	WSRecheck time.Duration

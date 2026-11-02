@@ -104,7 +104,7 @@ func TestAsyncAPIDescribed(t *testing.T) {
 	for _, g := range gaps {
 		t.Errorf("undescribed: %s", g)
 	}
-	want := []string{"ack", "bike", "command", "error", "state", "tick"}
+	want := []string{"ack", "bike", "command", "error", "mqttPress", "mqttState", "mqttStatus", "state", "tick"}
 	if strings.Join(messages, ",") != strings.Join(want, ",") {
 		t.Errorf("messages = %v, want %v", messages, want)
 	}
@@ -131,13 +131,11 @@ func TestAsyncAPIShape(t *testing.T) {
 	if doc.Channels["ride"].Address != "/ws" {
 		t.Errorf("channels = %+v", doc.Channels)
 	}
-	if len(doc.Servers) != 1 {
+	if len(doc.Servers) != 2 {
 		t.Fatalf("servers = %+v", doc.Servers)
 	}
-	for _, s := range doc.Servers {
-		if s.Protocol != "ws" || s.Host != "localhost:8080" || s.Pathname != "/ws" {
-			t.Errorf("server = %+v", s)
-		}
+	if s := doc.Servers["local"]; s.Protocol != "ws" || s.Host != "localhost:8080" || s.Pathname != "/ws" {
+		t.Errorf("local server = %+v", s)
 	}
 	var send, recv int
 	for _, o := range doc.Operations {
@@ -148,10 +146,39 @@ func TestAsyncAPIShape(t *testing.T) {
 			recv++
 		}
 	}
-	if send == 0 || recv != 1 {
+	if send == 0 || recv != 2 { // the WebSocket command and the MQTT button
 		t.Errorf("operations send=%d receive=%d", send, recv)
 	}
 	if !bytes.Contains(raw, []byte("wattson_session")) || !bytes.Contains(raw, []byte("bearer.")) {
 		t.Error("security schemes do not describe the cookie and the bearer subprotocol")
+	}
+}
+
+func TestAsyncAPIHasMQTT(t *testing.T) {
+	t.Parallel()
+	raw, err := AsyncAPIDoc()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Channels map[string]struct {
+			Address    string
+			Parameters map[string]struct{ Enum []string }
+		}
+		Servers map[string]struct{ Protocol, Host string }
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if s := doc.Servers["mqtt"]; s.Protocol != "mqtt" || s.Host != "broker:1883" {
+		t.Errorf("mqtt server = %+v", s)
+	}
+	for _, topic := range []string{"wattson/status", "wattson/state", "wattson/command/{command}"} {
+		if doc.Channels[topic].Address != topic {
+			t.Errorf("channel %q = %+v", topic, doc.Channels[topic])
+		}
+	}
+	if got := doc.Channels["wattson/command/{command}"].Parameters["command"].Enum; len(got) != 7 {
+		t.Errorf("command enum = %v, want the 7 button keys", got)
 	}
 }

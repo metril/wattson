@@ -123,6 +123,7 @@ func TestSettingsAdminOnly(t *testing.T) {
 	for _, tc := range [][3]string{
 		{"GET", "/api/settings", ""}, {"PATCH", "/api/settings", "{}"},
 		{"POST", "/api/settings/test/ha", "{}"}, {"POST", "/api/settings/test/esphome", "{}"},
+		{"POST", "/api/settings/test/mqtt", "{}"}, {"GET", "/api/mqtt/status", ""},
 	} {
 		var body any
 		if tc[2] != "" {

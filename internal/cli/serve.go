@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/history"
+	"github.com/metril/wattson/internal/integrations"
 	"github.com/metril/wattson/internal/integrations/strava"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
@@ -183,6 +185,17 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 		logger.Info("recovered unfinished rides", "finished", fin, "deleted", del)
 	}
 	mgr := ridectl.New(rd)
+	// The MQTT bridge idles until mqtt.url is set and follows settings changes
+	// through api.Deps.MQTT. It is stopped, publishing "offline", before the
+	// manager closes (see releaseBike).
+	mqttBridge := integrations.NewMQTT(integrations.MQTTDeps{Settings: svc.Get, Ride: mgr, Version: Version,
+		ClientID: "wattson-" + hex.EncodeToString(box.Derive("mqtt-client-id")[:4]), Logger: logger})
+	mqttCtx, stopMQTTRun := context.WithCancel(context.Background())
+	mqttDone := make(chan struct{})
+	go func() {
+		defer close(mqttDone)
+		_ = mqttBridge.Run(mqttCtx)
+	}()
 	events, unsub := mgr.Subscribe(256)
 	recCtx, stopRec := context.WithCancel(context.Background())
 	recDone := make(chan struct{})
@@ -200,6 +213,8 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	var closeBike sync.Once
 	releaseBike := func() {
 		closeBike.Do(func() {
+			stopMQTTRun() // publishes offline; the bridge reads the manager until it returns
+			<-mqttDone
 			// Closing the manager ends the final ride and its event stream;
 			// the recorder finalizes the ride and returns by itself. Cancel
 			// only if it does not, so the store is never closed under it.
@@ -221,7 +236,7 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	defer tiles.Close()
 	h, err := api.NewServer(api.Deps{Store: st, Settings: svc, Box: box, Auth: au,
 		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr, Tiles: tiles,
-		Strava: stravaSvc})
+		Strava: stravaSvc, MQTT: mqttBridge})
 	if err != nil {
 		releaseBike()
 		return err

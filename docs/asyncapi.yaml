@@ -30,7 +30,71 @@
           "$ref": "#/components/messages/tick"
         }
       },
+      "servers": [
+        {
+          "$ref": "#/servers/local"
+        }
+      ],
       "title": "Ride"
+    },
+    "wattson/command/{command}": {
+      "address": "wattson/command/{command}",
+      "description": "Buttons: start a free ride, pause, resume, stop, change the resistance level by one (in a route ride this shifts the live bias), or release the bike.",
+      "messages": {
+        "mqttPress": {
+          "$ref": "#/components/messages/mqttPress"
+        }
+      },
+      "parameters": {
+        "command": {
+          "description": "Which button was pressed.",
+          "enum": [
+            "start",
+            "pause",
+            "resume",
+            "stop",
+            "level_up",
+            "level_down",
+            "release_bike"
+          ]
+        }
+      },
+      "servers": [
+        {
+          "$ref": "#/servers/mqtt"
+        }
+      ],
+      "title": "Button command"
+    },
+    "wattson/state": {
+      "address": "wattson/state",
+      "description": "Retained JSON ride state.",
+      "messages": {
+        "mqttState": {
+          "$ref": "#/components/messages/mqttState"
+        }
+      },
+      "servers": [
+        {
+          "$ref": "#/servers/mqtt"
+        }
+      ],
+      "title": "Ride state"
+    },
+    "wattson/status": {
+      "address": "wattson/status",
+      "description": "Retained availability of the bridge, with a retained last will of `offline`.",
+      "messages": {
+        "mqttStatus": {
+          "$ref": "#/components/messages/mqttStatus"
+        }
+      },
+      "servers": [
+        {
+          "$ref": "#/servers/mqtt"
+        }
+      ],
+      "title": "Availability"
     }
   },
   "components": {
@@ -74,6 +138,45 @@
         },
         "summary": "Command or message rejected",
         "title": "Error"
+      },
+      "mqttPress": {
+        "contentType": "text/plain",
+        "description": "Sent by a Home Assistant button. The payload is ignored. A retained command is never executed, and commands carry no user: the broker is trusted.",
+        "name": "mqttPress",
+        "payload": {
+          "description": "The fixed button payload, PRESS.",
+          "enum": [
+            "PRESS"
+          ],
+          "type": "string"
+        },
+        "summary": "Press a Wattson button",
+        "title": "Button press"
+      },
+      "mqttState": {
+        "contentType": "application/json",
+        "description": "Retained. Published when the ride state changes, at most once per second; every Home Assistant sensor reads one field of it.",
+        "name": "mqttState",
+        "payload": {
+          "$ref": "#/components/schemas/MQTTState"
+        },
+        "summary": "Ride state for Home Assistant sensors",
+        "title": "Ride state"
+      },
+      "mqttStatus": {
+        "contentType": "text/plain",
+        "description": "Retained. `online` while the bridge is connected, `offline` after a clean shutdown or, through the MQTT last will, when the connection drops.",
+        "name": "mqttStatus",
+        "payload": {
+          "description": "Bridge availability: online or offline.",
+          "enum": [
+            "online",
+            "offline"
+          ],
+          "type": "string"
+        },
+        "summary": "Bridge availability",
+        "title": "Availability"
       },
       "state": {
         "contentType": "application/json",
@@ -155,6 +258,77 @@
         "required": [
           "source",
           "target",
+          "connected"
+        ],
+        "type": "object"
+      },
+      "MQTTState": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence_rpm": {
+            "description": "Pedalling cadence in revolutions per minute, rounded to a whole rpm.",
+            "format": "double",
+            "type": "number"
+          },
+          "connected": {
+            "description": "Whether the link to the bike is up right now.",
+            "type": "boolean"
+          },
+          "distance_km": {
+            "description": "Simulated distance covered in kilometres, to 0.001.",
+            "format": "double",
+            "type": "number"
+          },
+          "grade_pct": {
+            "description": "Road grade in percent, to 0.1.",
+            "format": "double",
+            "type": "number"
+          },
+          "hr_bpm": {
+            "description": "Heart rate in beats per minute; 0 when there is no heart rate source or no reading in the last 5 s.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "level": {
+            "description": "Resistance level (1 to 32) the engine last asked the bike for; 0 when no ride is active.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "Ride mode name, for example free; empty when idle.",
+            "type": "string"
+          },
+          "power_w": {
+            "description": "Rider power in watts, rounded to a whole watt.",
+            "format": "double",
+            "type": "number"
+          },
+          "progress_pct": {
+            "description": "Share of the route ridden in percent, to 0.1; 0 when not riding a route.",
+            "format": "double",
+            "type": "number"
+          },
+          "speed_kmh": {
+            "description": "Simulated speed in kilometres per hour, to 0.1.",
+            "format": "double",
+            "type": "number"
+          },
+          "state": {
+            "description": "Ride state: idle, connecting, ready, riding, paused or finished.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "mode",
+          "power_w",
+          "cadence_rpm",
+          "hr_bpm",
+          "level",
+          "speed_kmh",
+          "grade_pct",
+          "distance_km",
+          "progress_pct",
           "connected"
         ],
         "type": "object"
@@ -507,11 +681,24 @@
     }
   },
   "info": {
-    "description": "Live ride feed and commands for the single bike a Wattson server controls. Open `/ws` offering the `wattson.v1` subprotocol. The server sends the full state first, then ride ticks and bike status changes. Commands need the `control` scope; the `read` scope only watches. The server pings every 30 seconds and re-checks the credential about once a minute, closing with status 4401 `unauthorized` when it is revoked or expired. Inbound messages are limited to 4096 bytes.",
-    "title": "Wattson ride WebSocket",
+    "description": "Live ride feed and commands for the single bike a Wattson server controls. Open `/ws` offering the `wattson.v1` subprotocol. The server sends the full state first, then ride ticks and bike status changes. Commands need the `control` scope; the `read` scope only watches. The server pings every 30 seconds and re-checks the credential about once a minute, closing with status 4401 `unauthorized` when it is revoked or expired. Inbound messages are limited to 4096 bytes. The same ride is also published to an MQTT broker (see the `mqtt` server) for Home Assistant: availability and state topics, and one command topic per button.",
+    "title": "Wattson ride feeds",
     "version": "1.0.0"
   },
   "operations": {
+    "handleButton": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/wattson~1command~1{command}"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/wattson~1command~1{command}/messages/mqttPress"
+        }
+      ],
+      "summary": "Home Assistant presses a button",
+      "title": "Receive a button press"
+    },
     "handleCommand": {
       "action": "receive",
       "channel": {
@@ -524,6 +711,19 @@
       ],
       "summary": "The client sends commands",
       "title": "Send a ride command"
+    },
+    "publishAvailability": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/wattson~1status"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/wattson~1status/messages/mqttStatus"
+        }
+      ],
+      "summary": "Wattson publishes online and offline",
+      "title": "Publish availability"
     },
     "publishRideEvents": {
       "action": "send",
@@ -549,6 +749,19 @@
       ],
       "summary": "The server sends state, ticks, bike changes, acks and errors",
       "title": "Receive ride events"
+    },
+    "publishRideState": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/wattson~1state"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/wattson~1state/messages/mqttState"
+        }
+      ],
+      "summary": "Wattson publishes the ride state",
+      "title": "Publish ride state"
     }
   },
   "servers": {
@@ -565,6 +778,12 @@
           "$ref": "#/components/securitySchemes/cookie"
         }
       ]
+    },
+    "mqtt": {
+      "description": "The MQTT broker configured in the settings (mqtt:// or mqtts://). Wattson is a client; the base topic is fixed to `wattson` and Home Assistant discovery goes under the configurable prefix (default `homeassistant`).",
+      "host": "broker:1883",
+      "protocol": "mqtt",
+      "protocolVersion": "5.0"
     }
   }
 }

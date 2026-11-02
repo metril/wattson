@@ -5,6 +5,10 @@ import { Layout } from '@/components/Layout';
 import { Card } from '@/components/Card';
 import { RequireAuth, ME_KEY } from '@/lib/auth';
 import { setUnauthorizedHandler } from '@/lib/api';
+import { SettingsLayout } from '@/pages/settings/SettingsLayout';
+import { GeneralForm } from '@/pages/settings/General';
+import { BikeForm } from '@/pages/settings/Bike';
+import { IntegrationsForm } from '@/pages/settings/Integrations';
 
 // Screens arrive in later tasks; each route renders a titled placeholder.
 function Page({ title }: { title: string }) {
@@ -54,13 +58,21 @@ export function AppRoutes() {
         <Route path="riders" element={<Page title="Riders" />} />
         <Route path="settings/tokens" element={<Page title="API tokens" />} />
         <Route
-          path="settings/*"
+          path="settings"
           element={
             <RequireAuth admin>
-              <Page title="Settings" />
+              <SettingsLayout />
             </RequireAuth>
           }
-        />
+        >
+          <Route index element={<Navigate to="general" replace />} />
+          <Route path="general" element={<GeneralForm />} />
+          <Route path="bike" element={<BikeForm />} />
+          <Route path="integrations" element={<IntegrationsForm />} />
+          <Route path="auth" element={<Page title="Authentication" />} />
+          <Route path="users" element={<Page title="Users" />} />
+          <Route path="*" element={<Navigate to="general" replace />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

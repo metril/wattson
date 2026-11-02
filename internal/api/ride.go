@@ -48,22 +48,30 @@ func (d Deps) registerRide(api huma.API) {
 	register(api, route{Method: http.MethodGet, Path: "/api/ride", ID: "getRide", Tag: "ride",
 		Summary:     "Get the current ride",
 		Description: "Returns the latest ride snapshot: state, speed, power, cadence, distance and resistance level. In state `idle` when no bike is connected.",
-		Scope:       auth.ScopeRead},
+		Scope:       auth.ScopeRead, Errors: []int{http.StatusServiceUnavailable}},
 		func(_ context.Context, _ *noIn) (*rideOut, error) {
-			return &rideOut{Body: d.Bike.Snapshot()}, nil
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			return &rideOut{Body: m.Snapshot()}, nil
 		})
 
 	register(api, route{Method: http.MethodPost, Path: "/api/ride/command", ID: "rideCommand", Tag: "ride",
 		Summary: "Send a ride command",
 		Description: "Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. " +
 			"Returns 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused).",
-		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusConflict}},
+		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *commandIn) (*noContent, error) {
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
 			kind, known := rideKinds[in.Body.Command]
 			if !known {
 				return nil, apiErr(http.StatusBadRequest, "invalid_request", "command: unknown command")
 			}
-			if err := d.Bike.Do(ctx, engine.Command{Kind: kind, Value: in.Body.Value}); err != nil {
+			if err := m.Do(ctx, engine.Command{Kind: kind, Value: in.Body.Value}); err != nil {
 				if status, code, msg, ok := commandFailure(err); ok {
 					return nil, apiErr(status, code, msg)
 				}

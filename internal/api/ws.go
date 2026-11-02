@@ -18,18 +18,51 @@ import (
 
 const (
 	maxWSConns     = 32
+	maxWSPerUser   = 8
 	wsReadLimit    = 4096
 	wsWriteTimeout = 5 * time.Second
-	wsPingEvery    = 30 * time.Second
-	wsDefaultCheck = time.Minute
-	wsEventBuf     = 64
+	// wsCommandTimeout bounds one command's Manager.Do.
+	wsCommandTimeout = 5 * time.Second
+	wsPingEvery      = 30 * time.Second
+	wsDefaultCheck   = time.Minute
+	wsEventBuf       = 64
 
 	// wsUnauthorized closes a connection whose credential stopped being valid.
 	wsUnauthorized = websocket.StatusCode(4401)
 )
 
-// wsGate counts open WebSocket connections across the server.
-type wsGate struct{ n atomic.Int32 }
+// wsGate counts open WebSocket connections across the server and per user.
+type wsGate struct {
+	mu    sync.Mutex
+	total int
+	users map[int64]int
+}
+
+// acquire reserves a slot for user uid; ok is false (with a reason for the
+// client) when the server or the user is at its limit. Call release once.
+func (g *wsGate) acquire(uid int64) (release func(), reason string, ok bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.total >= maxWSConns {
+		return nil, "too many open WebSocket connections", false
+	}
+	if g.users[uid] >= maxWSPerUser {
+		return nil, "too many open WebSocket connections for this user", false
+	}
+	if g.users == nil {
+		g.users = map[int64]int{}
+	}
+	g.total++
+	g.users[uid]++
+	return func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		g.total--
+		if g.users[uid]--; g.users[uid] <= 0 {
+			delete(g.users, uid)
+		}
+	}, "", true
+}
 
 func init() {
 	registerSpec(func() []opSpec {
@@ -39,7 +72,7 @@ func init() {
 			Description: "Upgrades to a WebSocket that streams the bike status and ride ticks and accepts ride commands. " +
 				"Offer the `wattson.v1` subprotocol (400 without it); authenticate with the session cookie (the Origin header must name " +
 				"this server or the public URL, else 403) or by also offering the subprotocol `bearer.<token>`. At most 32 connections " +
-				"are open at once (503 beyond that). The message formats are in the AsyncAPI document, docs/asyncapi.yaml.",
+				"are open at once, 8 per user (503 beyond that). The message formats are in the AsyncAPI document, docs/asyncapi.yaml.",
 			Scope: auth.ScopeRead, Status: http.StatusSwitchingProtocols,
 			Errors: []int{http.StatusBadRequest, http.StatusServiceUnavailable},
 		}}
@@ -89,16 +122,16 @@ func (d Deps) serveWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.Bike == nil || d.ws == nil {
-		writeEnvelope(w, http.StatusServiceUnavailable, "unavailable", "the ride socket is not available")
+		writeEnvelope(w, http.StatusServiceUnavailable, "no_bike_manager", noBikeMsg)
 		return
 	}
-	if d.ws.n.Add(1) > maxWSConns {
-		d.ws.n.Add(-1)
+	release, reason, ok := d.ws.acquire(id.User.ID)
+	if !ok {
 		w.Header().Set("Retry-After", "5")
-		writeEnvelope(w, http.StatusServiceUnavailable, "too_many_connections", "too many open WebSocket connections")
+		writeEnvelope(w, http.StatusServiceUnavailable, "too_many_connections", reason)
 		return
 	}
-	defer d.ws.n.Add(-1)
+	defer release()
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols:   []string{auth.WSProtocol},
@@ -275,7 +308,7 @@ func (s *wsSession) handle(data []byte) {
 		s.send(wsErr(m.ID, "unknown_command", "unknown command: "+m.Command))
 		return
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, wsWriteTimeout)
+	ctx, cancel := context.WithTimeout(s.ctx, wsCommandTimeout)
 	defer cancel()
 	if err := s.d.Bike.Do(ctx, engine.Command{Kind: kind, Value: m.Value}); err != nil {
 		if _, code, msg, ok := commandFailure(err); ok {

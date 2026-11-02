@@ -37,7 +37,7 @@ type WSAck struct {
 type WSError struct {
 	Type  string    `json:"type" enum:"error" doc:"Message kind: always error."`
 	ID    string    `json:"id,omitempty" doc:"The id of the failed command; absent when the message could not be parsed."`
-	Error ErrorBody `json:"error" doc:"What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state."`
+	Error ErrorBody `json:"error" doc:"What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, internal_error."`
 }
 
 // WSCommand is the one message a client sends.

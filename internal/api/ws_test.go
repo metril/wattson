@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/ridectl"
 )
 
 // wsDial opens /ws on ts offering the Wattson subprotocol plus extra, with
@@ -342,34 +344,114 @@ func TestWSSlowClientDoesNotStall(t *testing.T) {
 	ts := newTS(t)
 	admin := ts.setupAdmin(t)
 	ts.connectSim(t, admin)
+	// A subscriber that never reads: with a buffer of 2 it must lose its
+	// oldest events while the publisher (and everyone else) carries on.
+	blocked, unsub := ts.Bike.Subscribe(2)
+	defer unsub()
+	slow := ts.mustWS(t, admin, nil) // a WebSocket client that never reads
+	_ = slow
+	fast := ts.mustWS(t, admin, nil)
 	if resp, b := ts.command(t, admin, "start", 0); resp.StatusCode != 204 {
 		t.Fatalf("start: %d %s", resp.StatusCode, b)
 	}
-	slow := ts.mustWS(t, admin, nil) // never reads
-	_ = slow
-	fast := ts.mustWS(t, admin, nil)
 	ticks := 0
-	for end := time.Now().Add(time.Second); ticks < 10 && time.Now().Before(end); {
-		if wsRead(t, fast).str("type") == "tick" {
+	var lastElapsed float64
+	for end := time.Now().Add(2 * time.Second); ticks < 15 && time.Now().Before(end); {
+		if m := wsRead(t, fast); m.str("type") == "tick" {
 			ticks++
+			lastElapsed, _ = m.sub("tick")["elapsed_s"].(float64)
 		}
 	}
-	if ticks < 10 {
-		t.Errorf("fast client saw %d ticks in 1 s, want >= 10", ticks)
+	if ticks < 15 {
+		t.Fatalf("fast client saw %d ticks in 2 s, want >= 15", ticks)
 	}
+	// Drain the blocked subscriber: it holds at most its buffer, the newest
+	// events, not the first ones it was sent.
+	var got []ridectl.Event
+	for drained := false; !drained; {
+		select {
+		case ev, ok := <-blocked:
+			if !ok {
+				drained = true
+				break
+			}
+			got = append(got, ev)
+		default:
+			drained = true
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("blocked subscriber holds %d events, want its buffer of 2", len(got))
+	}
+	last := got[1]
+	if last.Type != "tick" || last.Tick == nil || last.Tick.ElapsedS < lastElapsed-0.5 {
+		t.Errorf("blocked subscriber's newest event = %+v, want a recent tick (fast client reached %.2f s)", last, lastElapsed)
+	}
+}
+
+// wsMany opens n WebSockets with the bearer token and returns how many the
+// server accepted and the status of the first refusal (0 if none).
+func (ts *testServer) wsMany(t testing.TB, token string, n int) (accepted, refusal int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		_, resp, err := ts.wsDial(t, nil, nil, "bearer."+token)
+		if err != nil {
+			if resp == nil {
+				t.Fatalf("dial %d: %v", i, err)
+			}
+			return accepted, resp.StatusCode
+		}
+		accepted++
+	}
+	return accepted, 0
 }
 
 func TestWSConnectionLimit(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)
-	admin := ts.setupAdmin(t)
-	for i := 0; i < maxWSConns; i++ {
-		ts.mustWS(t, admin, nil)
+	// 4 users x 8 connections fill the global limit of 32 without any one
+	// user hitting the per-user cap.
+	for u := 0; u < maxWSConns/maxWSPerUser; u++ {
+		tok := ts.mintToken(t, "user"+strconv.Itoa(u), false, "read")
+		if n, ref := ts.wsMany(t, tok, maxWSPerUser); n != maxWSPerUser || ref != 0 {
+			t.Fatalf("user %d: accepted %d, refusal %d", u, n, ref)
+		}
 	}
-	_, resp, err := ts.wsDial(t, admin, nil)
+	extra := ts.mintToken(t, "extra", false, "read")
+	_, resp, err := ts.wsDial(t, nil, nil, "bearer."+extra)
 	if err == nil || resp == nil || resp.StatusCode != 503 {
 		t.Errorf("33rd connection: err=%v resp=%v, want HTTP 503", err, resp)
 	}
+}
+
+func TestWSPerUserLimit(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	tok := ts.mintToken(t, "greedy", false, "read")
+	n, ref := ts.wsMany(t, tok, maxWSPerUser+1)
+	if n != maxWSPerUser || ref != 503 {
+		t.Fatalf("accepted %d, refusal %d; want %d then 503", n, ref, maxWSPerUser)
+	}
+	// Another user is unaffected.
+	other := ts.mintToken(t, "polite", false, "read")
+	if n, ref := ts.wsMany(t, other, 1); n != 1 || ref != 0 {
+		t.Errorf("other user: accepted %d, refusal %d", n, ref)
+	}
+}
+
+func TestWSLimitSlotFreedOnClose(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	tok := ts.mintToken(t, "cycler", false, "read")
+	conns := make([]*websocket.Conn, 0, maxWSPerUser)
+	for i := 0; i < maxWSPerUser; i++ {
+		conns = append(conns, ts.mustWS(t, nil, nil, "bearer."+tok))
+	}
+	_ = conns[0].Close(websocket.StatusNormalClosure, "bye")
+	poll(t, "slot freed", func() bool {
+		c, _, err := ts.wsDial(t, nil, nil, "bearer."+tok)
+		return err == nil && c != nil
+	})
 }
 
 func BenchmarkWSCommandAck(b *testing.B) {

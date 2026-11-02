@@ -328,7 +328,7 @@
         "properties": {
           "error": {
             "$ref": "#/components/schemas/ErrorBody",
-            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state."
+            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, internal_error."
           },
           "id": {
             "description": "The id of the failed command; absent when the message could not be parsed.",

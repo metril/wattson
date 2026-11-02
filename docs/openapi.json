@@ -2645,6 +2645,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -2745,6 +2755,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -2818,6 +2838,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -2881,6 +2911,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -2991,6 +3031,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -3051,6 +3101,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -3144,6 +3204,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -3853,6 +3923,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -4601,7 +4681,7 @@
     },
     "/ws": {
       "get": {
-        "description": "Upgrades to a WebSocket that streams the bike status and ride ticks and accepts ride commands. Offer the `wattson.v1` subprotocol (400 without it); authenticate with the session cookie (the Origin header must name this server or the public URL, else 403) or by also offering the subprotocol `bearer.\u003ctoken\u003e`. At most 32 connections are open at once (503 beyond that). The message formats are in the AsyncAPI document, docs/asyncapi.yaml. Requires the `read` scope.",
+        "description": "Upgrades to a WebSocket that streams the bike status and ride ticks and accepts ride commands. Offer the `wattson.v1` subprotocol (400 without it); authenticate with the session cookie (the Origin header must name this server or the public URL, else 403) or by also offering the subprotocol `bearer.\u003ctoken\u003e`. At most 32 connections are open at once, 8 per user (503 beyond that). The message formats are in the AsyncAPI document, docs/asyncapi.yaml. Requires the `read` scope.",
         "operationId": "connectRideSocket",
         "responses": {
           "101": {

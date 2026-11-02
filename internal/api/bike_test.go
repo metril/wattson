@@ -5,10 +5,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/metril/wattson/internal/bike"
+	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/engine"
 	"github.com/metril/wattson/internal/ridectl"
@@ -356,5 +359,117 @@ func TestScanRequiresAdmin(t *testing.T) {
 	resp, b := ts.do(t, nil, "POST", "/api/bike/scan", map[string]any{}, bearer(ctl)...)
 	if resp.StatusCode != 403 {
 		t.Errorf("got %d %s, want 403", resp.StatusCode, b)
+	}
+}
+
+func TestNoBikeManager503(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withoutBike())
+	admin := ts.setupAdmin(t)
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"GET", "/api/bike", nil},
+		{"POST", "/api/bike/connect", map[string]any{"rider_id": 1}},
+		{"POST", "/api/bike/disconnect", nil},
+		{"POST", "/api/bike/release", nil},
+		{"POST", "/api/bike/scan", map[string]any{}},
+		{"POST", "/api/settings/test/ble", map[string]any{}},
+		{"GET", "/api/ride", nil},
+		{"POST", "/api/ride/command", map[string]any{"command": "start"}},
+	} {
+		resp, b := ts.do(t, admin, c.method, c.path, c.body)
+		if resp.StatusCode != 503 || errCode(t, b) != "no_bike_manager" {
+			t.Errorf("%s %s: %d %s, want 503 no_bike_manager", c.method, c.path, resp.StatusCode, b)
+		}
+	}
+}
+
+// dropRec is a simulator dial that records sessions and can make the bike
+// unreachable, so a release cannot confirm the floor level.
+type dropRec struct {
+	mu   sync.Mutex
+	sess []*sim.Session
+	fail atomic.Bool
+}
+
+func (r *dropRec) dial(c sim.Config) bike.Dial {
+	inner := sim.Dial(c)
+	return func(ctx context.Context) (bike.Session, error) {
+		if r.fail.Load() {
+			return nil, blue.ErrNotFound
+		}
+		s, err := inner(ctx)
+		if err == nil {
+			r.mu.Lock()
+			r.sess = append(r.sess, s.(*sim.Session))
+			r.mu.Unlock()
+		}
+		return s, err
+	}
+}
+
+func (r *dropRec) first() *sim.Session {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.sess) == 0 {
+		return nil
+	}
+	return r.sess[0]
+}
+
+// loseBikeMidRide rides, then drops the link with the bike unreachable.
+func loseBikeMidRide(t *testing.T, ts *testServer, admin *http.Client, rec *dropRec) {
+	t.Helper()
+	ts.connectSim(t, admin)
+	if resp, b := ts.command(t, admin, "start", 0); resp.StatusCode != 204 {
+		t.Fatalf("start: %d %s", resp.StatusCode, b)
+	}
+	rec.fail.Store(true)
+	rec.first().Drop()
+	poll(t, "link down", func() bool { return !ts.bikeStatus(t, admin).Connected })
+}
+
+func TestReleaseFloorUnconfirmed424(t *testing.T) {
+	t.Parallel()
+	rec := &dropRec{}
+	ts := newTS(t, withSimDial(rec.dial))
+	admin := ts.setupAdmin(t)
+	loseBikeMidRide(t, ts, admin, rec)
+	resp, b := ts.do(t, admin, "POST", "/api/bike/release", nil)
+	if resp.StatusCode != 424 || errCode(t, b) != "floor_unconfirmed" {
+		t.Fatalf("release: %d %s, want 424 floor_unconfirmed", resp.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "lower the resistance at the console") {
+		t.Errorf("message lacks advice: %s", b)
+	}
+	if st := ts.bikeStatus(t, admin); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") {
+		t.Errorf("status after release = %+v", st)
+	}
+}
+
+func TestDisconnectFloorUnconfirmed424(t *testing.T) {
+	t.Parallel()
+	rec := &dropRec{}
+	ts := newTS(t, withSimDial(rec.dial))
+	admin := ts.setupAdmin(t)
+	loseBikeMidRide(t, ts, admin, rec)
+	if resp, b := ts.command(t, admin, "stop", 0); resp.StatusCode != 204 {
+		t.Fatalf("stop: %d %s", resp.StatusCode, b)
+	}
+	resp, b := ts.do(t, admin, "POST", "/api/bike/disconnect", nil)
+	if resp.StatusCode != 424 || errCode(t, b) != "floor_unconfirmed" {
+		t.Errorf("disconnect: %d %s, want 424 floor_unconfirmed", resp.StatusCode, b)
+	}
+}
+
+func TestScanFailed424(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withOpenLocal(func() (blue.Transport, error) { return nil, blue.ErrNotFound }))
+	admin := ts.setupAdmin(t)
+	resp, b := ts.do(t, admin, "POST", "/api/bike/scan", map[string]any{"duration_s": 1})
+	if resp.StatusCode != 424 || errCode(t, b) != "scan_failed" {
+		t.Errorf("scan: %d %s, want 424 scan_failed", resp.StatusCode, b)
 	}
 }

@@ -117,7 +117,7 @@ func loggerFrom(ctx context.Context) *slog.Logger {
 // an undocumented operation cannot be registered.
 //
 // Handlers return errors built with apiErr. Any other error, or any status
-// of 500 or above, is logged with the operation ID and replaced by a generic
+// of 500 or above (unless built with apiErrPublic), is logged with the operation ID and replaced by a generic
 // 500 internal_error, so internals never reach the client.
 func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O, error)) {
 	if rt.ID == "" || rt.Summary == "" || rt.Description == "" || rt.Tag == "" {
@@ -170,6 +170,9 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 		}
 		var se huma.StatusError
 		if errors.As(err, &se) && se.GetStatus() < 500 {
+			return nil, err
+		}
+		if ae := (*APIError)(nil); errors.As(err, &ae) && ae.expose {
 			return nil, err
 		}
 		loggerFrom(ctx).Error("handler failed", "op", rt.ID, "err", err)

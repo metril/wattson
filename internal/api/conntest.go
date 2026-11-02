@@ -188,9 +188,13 @@ func (d Deps) registerConnTests(api huma.API) {
 		Description: "Scans for 5 seconds with the local adapter or the ESPHome proxy and looks for the bike's address. " +
 			"Without an address it only reports how many devices were seen. Empty body fields fall back to the stored settings. " +
 			"The result is always HTTP 200; check `ok`. Refused with 409 `bike_busy` while a bike is connected, because one adapter cannot scan while holding a bike.",
-		Scope: auth.ScopeAdmin, Errors: []int{http.StatusConflict}},
+		Scope: auth.ScopeAdmin, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *testBLEIn) (*testOut, error) {
 			start := time.Now()
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
 			s, err := d.Settings.Get(ctx)
 			if err != nil {
 				return nil, err
@@ -204,7 +208,7 @@ func (d Deps) registerConnTests(api huma.API) {
 			}
 			ctx, cancel := context.WithTimeout(ctx, 3*connTestTimeout)
 			defer cancel()
-			devs, err := d.Bike.Scan(ctx, ridectl.ScanRequest{Transport: in.Body.Transport, Host: in.Body.Host,
+			devs, err := m.Scan(ctx, ridectl.ScanRequest{Transport: in.Body.Transport, Host: in.Body.Host,
 				Key: in.Body.Key, DurationS: int(connTestTimeout / time.Second)})
 			if err != nil {
 				if errors.Is(err, ridectl.ErrBusy) || errors.Is(err, ridectl.ErrClosed) {

@@ -75,13 +75,28 @@ func releaseFailure(err error) error {
 		"the bike was released but could not be confirmed back at its minimum level; lower the resistance at the console ("+err.Error()+")")
 }
 
+const noBikeMsg = "this server has no bike manager"
+
+// bikeMgr returns the bike manager, or a 503 no_bike_manager when the server
+// was built without one.
+func (d Deps) bikeMgr() (*ridectl.Manager, error) {
+	if d.Bike == nil {
+		return nil, apiErrPublic(http.StatusServiceUnavailable, "no_bike_manager", noBikeMsg)
+	}
+	return d.Bike, nil
+}
+
 func (d Deps) registerBike(api huma.API) {
 	register(api, route{Method: http.MethodGet, Path: "/api/bike", ID: "getBike", Tag: "bike",
 		Summary:     "Get the bike connection",
 		Description: "Returns the state of the single bike this server controls: idle, connecting, ready, riding, paused or finished, the bound rider, the live protocol and any connection problem with advice to fix it.",
-		Scope:       auth.ScopeRead},
+		Scope:       auth.ScopeRead, Errors: []int{http.StatusServiceUnavailable}},
 		func(_ context.Context, _ *noIn) (*bikeOut, error) {
-			return &bikeOut{Body: d.Bike.Status()}, nil
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			return &bikeOut{Body: m.Status()}, nil
 		})
 
 	register(api, route{Method: http.MethodPost, Path: "/api/bike/connect", ID: "connectBike", Tag: "bike",
@@ -90,8 +105,12 @@ func (d Deps) registerBike(api huma.API) {
 			"watch `GET /api/bike` or the WebSocket for `ready` or a connection problem. Any user with control may drive the single bike. " +
 			"Returns 409 `bike_busy` unless the bike is idle, 400 `no_bike_address` when the settings name no bike, " +
 			"and 404 for a rider that is not the caller's.",
-		Scope: auth.ScopeControl, Status: http.StatusAccepted, Errors: []int{http.StatusConflict}},
+		Scope: auth.ScopeControl, Status: http.StatusAccepted, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *connectIn) (*bikeOut, error) {
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
 			id, _ := auth.FromContext(ctx)
 			r, err := d.Store.Rider(ctx, id.User.ID, in.Body.RiderID)
 			if errors.Is(err, store.ErrNotFound) {
@@ -100,7 +119,7 @@ func (d Deps) registerBike(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			st, err := d.Bike.Connect(ctx, r)
+			st, err := m.Connect(ctx, r)
 			if err != nil {
 				return nil, bikeFailure(err)
 			}
@@ -112,9 +131,13 @@ func (d Deps) registerBike(api huma.API) {
 		Description: "Returns the bike to the rider's minimum level and closes the link. Does nothing when idle. " +
 			"Refused with 409 `ride_active` while a ride is riding or paused; use release to end the ride too. " +
 			"Returns 424 `floor_unconfirmed` when the bike was released but not confirmed back at its minimum level.",
-		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusConflict, http.StatusFailedDependency}},
+		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusConflict, http.StatusFailedDependency, http.StatusServiceUnavailable}},
 		func(ctx context.Context, _ *noIn) (*noContent, error) {
-			if err := d.Bike.Disconnect(ctx); err != nil {
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			if err := m.Disconnect(ctx); err != nil {
 				return nil, releaseFailure(err)
 			}
 			return &noContent{}, nil
@@ -125,9 +148,13 @@ func (d Deps) registerBike(api huma.API) {
 		Description: "Ends any ride, returns the bike to the rider's minimum level and closes the link. Idempotent: releasing an idle bike succeeds. " +
 			"Returns 424 `floor_unconfirmed` when the bike was released but could not be confirmed back at its minimum level; " +
 			"the rider must then lower the resistance at the console.",
-		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusFailedDependency}},
+		Scope: auth.ScopeControl, Status: http.StatusNoContent, Errors: []int{http.StatusFailedDependency, http.StatusServiceUnavailable}},
 		func(ctx context.Context, _ *noIn) (*noContent, error) {
-			if err := d.Bike.Release(ctx); err != nil {
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			if err := m.Release(ctx); err != nil {
 				return nil, releaseFailure(err)
 			}
 			return &noContent{}, nil
@@ -138,9 +165,13 @@ func (d Deps) registerBike(api huma.API) {
 		Description: "Scans for Bluetooth devices for `duration_s` seconds (default 5) and lists them, supported bikes first. " +
 			"Empty transport fields use the saved settings. Refused with 409 `bike_busy` while a bike is connected or another scan runs; " +
 			"424 `scan_failed` when the adapter or proxy cannot be used.",
-		Scope: auth.ScopeAdmin, Errors: []int{http.StatusConflict, http.StatusFailedDependency}},
+		Scope: auth.ScopeAdmin, Errors: []int{http.StatusConflict, http.StatusFailedDependency, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *scanIn) (*scanOut, error) {
-			devs, err := d.Bike.Scan(ctx, ridectl.ScanRequest{Transport: in.Body.Transport, Host: in.Body.Host,
+			m, err := d.bikeMgr()
+			if err != nil {
+				return nil, err
+			}
+			devs, err := m.Scan(ctx, ridectl.ScanRequest{Transport: in.Body.Transport, Host: in.Body.Host,
 				Key: in.Body.Key, DurationS: in.Body.DurationS})
 			if err != nil {
 				if e := bikeFailure(err); e != err {

@@ -18,6 +18,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/bike"
+	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/oidcauth/oidctest"
 	"github.com/metril/wattson/internal/ridectl"
@@ -63,7 +65,17 @@ type tsConfig struct {
 	riderInUse func(int64) bool
 	openLocal  func() (blue.Transport, error)
 	wsRecheck  time.Duration
+	simDial    func(sim.Config) bike.Dial
+	noBike     bool
 }
+
+// withSimDial injects the simulator dial the bike manager uses.
+func withSimDial(f func(sim.Config) bike.Dial) tsOpt {
+	return func(c *tsConfig) { c.simDial = f }
+}
+
+// withoutBike builds the server with no bike manager (Deps.Bike nil).
+func withoutBike() tsOpt { return func(c *tsConfig) { c.noBike = true } }
 
 // withOpenLocal injects the local BLE transport the bike manager opens.
 func withOpenLocal(f func() (blue.Transport, error)) tsOpt {
@@ -106,10 +118,13 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 		}
 		return s.General.PublicURL
 	}, logger)
-	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, OpenLocal: cfg.openLocal, Logger: logger,
+	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
 		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
 	d := Deps{Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
 		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, Bike: mgr, WSRecheck: cfg.wsRecheck}
+	if cfg.noBike {
+		d.Bike = nil
+	}
 	h, err := newRouter(d, cfg.extra...)
 	if err != nil {
 		t.Fatal(err)

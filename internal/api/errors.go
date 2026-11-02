@@ -27,6 +27,7 @@ type ErrorBody struct {
 type APIError struct {
 	ErrorResponse
 	status int
+	expose bool // a 5xx whose code and message are safe to show (see apiErrPublic)
 }
 
 // GetStatus implements huma.StatusError.
@@ -43,6 +44,14 @@ func (e *APIError) ContentType(string) string { return "application/json" }
 func apiErr(status int, code, msg string) error {
 	e := &APIError{status: status}
 	e.ErrorResponse.Error = ErrorBody{Code: code, Message: msg}
+	return e
+}
+
+// apiErrPublic is apiErr for a 5xx that is part of the contract (such as 503
+// no_bike_manager): register passes it through instead of the generic 500.
+func apiErrPublic(status int, code, msg string) error {
+	e := apiErr(status, code, msg).(*APIError)
+	e.expose = true
 	return e
 }
 

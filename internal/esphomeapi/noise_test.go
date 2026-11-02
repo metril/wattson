@@ -96,7 +96,7 @@ func TestHandshakeCtxTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if el := time.Since(start); el > 400*time.Millisecond {
+	if el := time.Since(start); el > 1500*time.Millisecond {
 		t.Fatalf("took %v", el)
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {

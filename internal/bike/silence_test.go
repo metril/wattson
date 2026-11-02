@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,20 +83,55 @@ func TestSilenceWatchdogTreatsLinkAsDown(t *testing.T) {
 	}
 }
 
-func TestSilenceFramesKeepWatchdogAlive(t *testing.T) {
+// fakeTimer is a manually driven silence timer.
+type fakeTimer struct {
+	ch      chan time.Time
+	created atomic.Int32
+	resets  atomic.Int32
+	d       atomic.Int64
+}
+
+func (f *fakeTimer) mk(d time.Duration) silenceTimer {
+	f.created.Add(1)
+	f.d.Store(int64(d))
+	return f
+}
+func (f *fakeTimer) C() <-chan time.Time { return f.ch }
+func (f *fakeTimer) Reset(d time.Duration) {
+	f.resets.Add(1)
+	f.d.Store(int64(d))
+}
+func (f *fakeTimer) Stop() {}
+
+func TestSilenceFramesRearmWatchdog(t *testing.T) {
 	t.Parallel()
 	f, c := connect(t, fitPlusDevice())
-	b, err := Open(context.Background(), c, Options{Keepalive: time.Hour, SilenceTimeout: 30 * time.Millisecond})
+	ft := &fakeTimer{ch: make(chan time.Time)}
+	b, err := Open(context.Background(), c, Options{Keepalive: time.Hour, SilenceTimeout: time.Minute, silenceTimer: ft.mk})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close(context.Background())
-	for i := 0; i < 12; i++ { // 60 ms total, twice the timeout
+	if ft.created.Load() != 0 || isDone(b) {
+		t.Fatal("armed before the first frame")
+	}
+	f.Notify(testAddr, FitPlusNotify, telFrame())
+	waitFor(t, "arming", func() bool { return ft.created.Load() == 1 })
+	if ft.d.Load() != int64(time.Minute) {
+		t.Fatalf("timer duration %v", time.Duration(ft.d.Load()))
+	}
+	for i := 0; i < 3; i++ { // every frame re-arms; none ends the session
 		f.Notify(testAddr, FitPlusNotify, telFrame())
-		time.Sleep(5 * time.Millisecond)
-		if isDone(b) {
-			t.Fatalf("watchdog fired with telemetry flowing (i=%d)", i)
-		}
+		want := int32(i + 1)
+		waitFor(t, "re-arm", func() bool { return ft.resets.Load() >= want })
+	}
+	if isDone(b) {
+		t.Fatal("watchdog fired with telemetry flowing")
+	}
+	ft.ch <- time.Now() // the timer expires: no frame for SilenceTimeout
+	waitDone(t, b)
+	if !errors.Is(b.Err(), ErrSilence) {
+		t.Fatalf("Err = %v", b.Err())
 	}
 }
 

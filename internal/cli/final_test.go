@@ -22,11 +22,11 @@ func TestDriveSilenceTreatsBikeAsDisconnected(t *testing.T) {
 	base := d.tweakBike
 	d.tweakBike = func(o *bike.Options) {
 		base(o)
-		o.SilenceTimeout = 30 * time.Millisecond
+		o.SilenceTimeout = 100 * time.Millisecond
 	}
 	start := time.Now()
 	code, _, errs := runCLI(t, d, "drive", "--addr", testAddr.String(), "--dwell", "5s", "--max", "3")
-	if code != 1 || !strings.Contains(errs, "no telemetry for 30ms — treating bike as disconnected at level 1") {
+	if code != 1 || !strings.Contains(errs, "no telemetry for 100ms — treating bike as disconnected at level 1") {
 		t.Fatalf("exit %d stderr %q", code, errs)
 	}
 	if time.Since(start) > 2*time.Second {

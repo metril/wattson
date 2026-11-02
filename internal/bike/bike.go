@@ -48,7 +48,22 @@ type Options struct {
 	// armed by the first telemetry frame, it treats the link as down when no
 	// telemetry arrives for this long (see Bike.Done). 0 disables it.
 	SilenceTimeout time.Duration
+
+	silenceTimer func(d time.Duration) silenceTimer // test hook; default: time.Timer
 }
+
+// silenceTimer is the watchdog's timer, replaceable in tests.
+type silenceTimer interface {
+	C() <-chan time.Time
+	Reset(d time.Duration)
+	Stop()
+}
+
+type realTimer struct{ t *time.Timer }
+
+func (r realTimer) C() <-chan time.Time   { return r.t.C }
+func (r realTimer) Reset(d time.Duration) { r.t.Reset(d) }
+func (r realTimer) Stop()                 { r.t.Stop() }
 
 // Bike is a live session with one bike. It is safe for concurrent use. It has
 // no way to send a reset or level 0.
@@ -81,6 +96,7 @@ type Bike struct {
 	telDone bool
 
 	silence time.Duration
+	newTmr  func(d time.Duration) silenceTimer
 	telSig  chan struct{} // a frame arrived (re-arms the watchdog)
 	done    chan struct{} // closed when the session ends: link drop, silence or Close
 	endOnce sync.Once
@@ -122,6 +138,7 @@ func Open(ctx context.Context, c blue.Conn, o Options) (*Bike, error) {
 		ctl: make(chan ControlResponse, 8),
 
 		silence: o.SilenceTimeout,
+		newTmr:  o.silenceTimer,
 		telSig:  make(chan struct{}, 1),
 		done:    make(chan struct{}),
 	}
@@ -137,6 +154,9 @@ func Open(ctx context.Context, c blue.Conn, o Options) (*Bike, error) {
 	b.wt = o.WriteTimeout
 	if b.wt <= 0 {
 		b.wt = defaultWriteTimeout
+	}
+	if b.newTmr == nil {
+		b.newTmr = func(d time.Duration) silenceTimer { return realTimer{time.NewTimer(d)} }
 	}
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 
@@ -300,15 +320,13 @@ func (b *Bike) run() {
 // delay detection.
 func (b *Bike) watch() {
 	defer b.watchWG.Done()
-	var timer *time.Timer
+	var timer silenceTimer
 	var fire <-chan time.Time
-	if b.silence > 0 {
-		defer func() {
-			if timer != nil {
-				timer.Stop()
-			}
-		}()
-	}
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-b.ctx.Done():
@@ -321,8 +339,8 @@ func (b *Bike) watch() {
 				continue
 			}
 			if timer == nil {
-				timer = time.NewTimer(b.silence)
-				fire = timer.C
+				timer = b.newTmr(b.silence)
+				fire = timer.C()
 			} else {
 				timer.Reset(b.silence)
 			}

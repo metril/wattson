@@ -1,0 +1,8 @@
+{
+  "runs": 3,
+  "pages": ["/login", "/"],
+  "scores": { "performance": 0.85, "accessibility": 0.95, "best-practices": 0.95 },
+  "lcpMs": 2500,
+  "cls": 0.05,
+  "scriptTransferKB": 400
+}

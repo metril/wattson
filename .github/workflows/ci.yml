@@ -159,6 +159,36 @@ jobs:
           path: web/playwright-report
           retention-days: 7
 
+  perf:
+    name: Lighthouse (mobile budgets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: build the binary with the embedded UI (also checks the chunk budgets)
+        run: make build
+      - name: install chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: lighthouse (performance, accessibility, best practices; median of 3)
+        working-directory: web
+        run: npm run perf
+      - name: upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-report
+          path: web/lighthouse-report
+          retention-days: 7
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest
@@ -191,7 +221,7 @@ jobs:
   ci:
     # Single required check for branch protection; aggregates every job.
     name: CI
-    needs: [lint, test, build, web, drift, e2e, docker]
+    needs: [lint, test, build, web, drift, e2e, perf, docker]
     if: always()
     runs-on: ubuntu-latest
     steps:

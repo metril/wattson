@@ -1,12 +1,16 @@
 // Fails when the main bundle (entry JS + CSS referenced by index.html)
-// exceeds 400 KB gzipped. Lazy chunks are not referenced from index.html
-// and so are not counted.
-import { readFileSync } from 'node:fs';
+// exceeds 400 KB gzipped, or a budgeted lazy chunk (maplibre, ride3d, photo)
+// exceeds its own limit. Lazy chunks are not referenced from index.html and
+// so are not part of the main total.
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 export const LIMIT_BYTES = 409600;
+
+/** Lazy chunk name (assets/<name>-<hash>.js) -> gzipped limit in KB. */
+export const CHUNK_LIMITS_KB = { maplibre: 300, ride3d: 25, photo: 30 };
 
 function attrs(tag) {
   const out = {};
@@ -36,14 +40,32 @@ export function mainBundleBytes(distDir) {
   return total;
 }
 
+/** Gzipped (level 9) bytes of assets/<name>-<hash>.js; 0 when the build has no such chunk. */
+export function chunkBytes(distDir, name) {
+  const re = new RegExp(`^${name}-[A-Za-z0-9_-]+\\.js$`);
+  let total = 0;
+  for (const f of readdirSync(join(distDir, 'assets'))) {
+    if (re.test(f)) total += gzipSync(readFileSync(join(distDir, 'assets', f)), { level: 9 }).length;
+  }
+  return total;
+}
+
 const self = fileURLToPath(import.meta.url);
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === pathToFileURL(self).href) {
   const dist = process.argv[2] ?? resolve(dirname(self), '../../internal/web/dist');
+  const failures = [];
   const bytes = mainBundleBytes(dist);
-  const kb = (bytes / 1024).toFixed(1);
-  if (bytes > LIMIT_BYTES) {
-    console.error(`main bundle ${kb} KB gz exceeds 400 KB`);
+  console.log(`main bundle ${(bytes / 1024).toFixed(1)} KB gz`);
+  if (bytes > LIMIT_BYTES) failures.push(`main bundle ${(bytes / 1024).toFixed(1)} KB gz exceeds 400 KB`);
+  for (const [name, limit] of Object.entries(CHUNK_LIMITS_KB)) {
+    const n = chunkBytes(dist, name);
+    if (n === 0) continue;
+    const kb = (n / 1024).toFixed(1);
+    console.log(`chunk ${name} ${kb} KB gz`);
+    if (n > limit * 1024) failures.push(`chunk ${name} ${kb} KB gz exceeds ${limit} KB`);
+  }
+  if (failures.length) {
+    for (const f of failures) console.error(f);
     process.exit(1);
   }
-  console.log(`main bundle ${kb} KB gz`);
 }

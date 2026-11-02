@@ -13,3 +13,4 @@
 !/internal/web/dist/.gitkeep
 /web/test-results/
 /web/playwright-report/
+/web/lighthouse-report/

@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit && tsc -p tsconfig.sw.json",
     "openapi": "openapi-typescript ../docs/openapi.json -o src/lib/openapi.d.ts",
     "size": "node scripts/check-size.mjs",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "perf": "node scripts/lighthouse.mjs"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",

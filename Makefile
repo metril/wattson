@@ -2,7 +2,7 @@ BINARY  := wattson
 VERSION ?= dev
 LDFLAGS := -s -w -X github.com/metril/wattson/internal/cli.Version=$(VERSION)
 
-.PHONY: all build web-build web-deps go-build test go-test web-test lint clean openapi serve e2e
+.PHONY: all build web-build web-deps go-build test go-test web-test lint clean openapi serve e2e perf
 
 all: build
 
@@ -43,6 +43,10 @@ openapi: web-deps
 ## e2e: Playwright smoke over the simulator (needs `npx playwright install chromium` once)
 e2e: build
 	cd web && npm run e2e
+
+## perf: Lighthouse budgets (mobile) against the built binary; reports in web/lighthouse-report
+perf: build
+	cd web && npm run perf
 
 ## lint: gofmt check, go vet, the street photo selection budget and the web lint
 lint: web-deps

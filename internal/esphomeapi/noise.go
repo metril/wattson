@@ -28,6 +28,10 @@ var (
 	noiseHello    = []byte{preambleNoise, 0x00, 0x00}
 )
 
+// errTooLarge marks a message rejected before anything was written, so the
+// stream is still intact.
+var errTooLarge = errors.New("esphomeapi: message too large")
+
 // ServerHello is the identity the device announces before the handshake.
 type ServerHello struct{ Name, MAC string }
 
@@ -186,7 +190,7 @@ func (s *secureConn) WriteMsg(typ uint16, payload []byte) error {
 // writeMsg is WriteMsg with an explicit write deadline (0 = none).
 func (s *secureConn) writeMsg(typ uint16, payload []byte, d time.Duration) error {
 	if len(payload)+4+16 > maxFrame {
-		return fmt.Errorf("message too large: %d bytes", len(payload))
+		return fmt.Errorf("%w: %d bytes", errTooLarge, len(payload))
 	}
 	pt := make([]byte, 4+len(payload))
 	pt[0], pt[1] = byte(typ>>8), byte(typ)

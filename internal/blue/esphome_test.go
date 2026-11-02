@@ -262,3 +262,42 @@ func TestESPHomeTransportCloseEndsConnAndScan(t *testing.T) {
 		t.Fatal("Scan did not exit")
 	}
 }
+
+// The link drops after the connect succeeded but before service discovery
+// completes: Connect must fail promptly with ErrDisconnected, not hang.
+func TestESPHomeDropBetweenConnectAndServices(t *testing.T) {
+	t.Parallel()
+	e := newESPEnv(t, espDev)
+	e.srv.OnGetServices(func() { e.srv.DropBLE(e.dev.Uint64()) })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	c, err := e.tr.Connect(ctx, e.dev)
+	if err == nil {
+		c.Close()
+		t.Fatal("Connect succeeded despite drop")
+	}
+	if !errors.Is(err, blue.ErrDisconnected) {
+		t.Fatalf("err = %v, want ErrDisconnected", err)
+	}
+	if el := time.Since(start); el > time.Second {
+		t.Fatalf("Connect took %v, want prompt failure", el)
+	}
+}
+
+func TestESPHomeCloseAfterRemoteDrop(t *testing.T) {
+	t.Parallel()
+	e := newESPEnv(t, espDev)
+	c, err := e.tr.Connect(ctx2s(t), e.dev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.srv.DropBLE(e.dev.Uint64())
+	<-c.Done()
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(c.Err(), blue.ErrDisconnected) {
+		t.Fatalf("Err = %v", c.Err())
+	}
+}

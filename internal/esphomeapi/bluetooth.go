@@ -16,6 +16,10 @@ var (
 	ErrBLEConnect = errors.New("esphomeapi: bluetooth connect failed")
 )
 
+// GATTErrNotConnected is the GATT error code (ESP_GATT_NOT_CONNECTED) the
+// proxy reports for an operation on a device it is not connected to.
+const GATTErrNotConnected int32 = -1
+
 // GATTError is a GATT operation failure reported by the proxy.
 type GATTError struct {
 	Address uint64
@@ -303,7 +307,9 @@ func (c *Client) GATTServices(ctx context.Context, addr uint64) ([]GATTService, 
 		mu.Unlock()
 	})
 	defer cancelSvc()
-	ch, cancel := c.watch(addr, 0, watchSpec{typ: MsgGATTGetServicesDoneResponse}, watchSpec{typ: MsgBLEDeviceConnectionResponse})
+	// Not-connected is reported as a GATT error with handle 0.
+	ch, cancel := c.watch(addr, 0, watchSpec{typ: MsgGATTGetServicesDoneResponse},
+		watchSpec{MsgGATTErrorResponse, true}, watchSpec{typ: MsgBLEDeviceConnectionResponse})
 	defer cancel()
 	if err := c.Send(MsgGATTGetServicesRequest, GATTGetServicesRequest{Address: addr}); err != nil {
 		return nil, err

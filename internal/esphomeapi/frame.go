@@ -20,7 +20,7 @@ const maxFrame = 0xFFFF
 // writeFrame writes `01 LL LL <payload>` to w in a single Write.
 func writeFrame(w io.Writer, payload []byte) error {
 	if len(payload) > maxFrame {
-		return fmt.Errorf("frame too large: %d bytes", len(payload))
+		return fmt.Errorf("%w: frame of %d bytes", errTooLarge, len(payload))
 	}
 	buf := make([]byte, 3+len(payload))
 	buf[0] = preambleNoise

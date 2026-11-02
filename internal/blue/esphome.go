@@ -140,16 +140,23 @@ func (t *espTransport) Scan(ctx context.Context, fn func(Advertisement)) error {
 func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) {
 	op := "connect " + addr.String()
 	a := addr.Uint64()
+	c := &espConn{t: t, addr: addr, a: a, done: make(chan struct{})}
+	// Registered before the connect request so a drop at any later point
+	// (including during service discovery) is never missed.
+	c.cancelDisc = t.c.OnBLEDisconnect(a, func(err error) {
+		c.finish(fmt.Errorf("link to %s lost: %w (%v)", addr, ErrDisconnected, err))
+	})
 	if _, err := t.c.BLEConnect(ctx, a, uint32(addr.Type)); err != nil {
+		c.cancelDisc()
 		if errors.Is(err, esphomeapi.ErrNoSlots) {
 			return nil, fmt.Errorf("%s: %w", op, ErrNoSlots)
 		}
 		return nil, espErr(op, err)
 	}
-	c := &espConn{t: t, addr: addr, a: a, done: make(chan struct{})}
-	c.cancelDisc = t.c.OnBLEDisconnect(a, func(err error) {
-		c.finish(fmt.Errorf("link to %s lost: %w (%v)", addr, ErrDisconnected, err))
-	})
+	if c.isDone() { // dropped right after connecting; the link is already down
+		c.cancelDisc()
+		return nil, fmt.Errorf("%s: %w", op, c.Err())
+	}
 	svcs, err := t.c.GATTServices(ctx, a)
 	if err != nil {
 		c.cancelDisc()
@@ -157,6 +164,10 @@ func (t *espTransport) Connect(ctx context.Context, addr Address) (Conn, error) 
 		defer cancel()
 		_ = t.c.BLEDisconnect(dctx, a)
 		return nil, espErr(op+": discover services", err)
+	}
+	if c.isDone() {
+		c.cancelDisc()
+		return nil, fmt.Errorf("%s: %w", op, c.Err())
 	}
 	c.chars = map[UUID]Characteristic{}
 	for _, s := range svcs {
@@ -186,7 +197,9 @@ func (t *espTransport) Close() error { return t.c.Close() }
 
 // espErr annotates err with op, mapping loss of the BLE or proxy link to ErrDisconnected.
 func espErr(op string, err error) error {
-	if errors.Is(err, esphomeapi.ErrBLEDisconnected) || errors.Is(err, esphomeapi.ErrClosed) {
+	var ge *esphomeapi.GATTError
+	if errors.Is(err, esphomeapi.ErrBLEDisconnected) || errors.Is(err, esphomeapi.ErrClosed) ||
+		(errors.As(err, &ge) && ge.Code == esphomeapi.GATTErrNotConnected) {
 		return fmt.Errorf("%s: %w (%v)", op, ErrDisconnected, err)
 	}
 	return fmt.Errorf("%s: %w", op, err)
@@ -219,6 +232,15 @@ type espConn struct {
 func (c *espConn) Services() []Service   { return c.services }
 func (c *espConn) Done() <-chan struct{} { return c.done }
 
+func (c *espConn) isDone() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *espConn) Err() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -238,8 +260,9 @@ func (c *espConn) finish(err error) (first bool) {
 }
 
 func (c *espConn) Close() error {
-	if c.finish(nil) {
-		c.cancelDisc()
+	first := c.finish(nil)
+	c.cancelDisc() // idempotent; also needed after a remote drop
+	if first {
 		ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 		_ = c.t.c.BLEDisconnect(ctx, c.a)
 		cancel()

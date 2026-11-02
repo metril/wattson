@@ -205,17 +205,60 @@ func TestOnBLEDisconnectLinkLoss(t *testing.T) {
 	}
 }
 
-func TestPendingOpFailsOnLinkLoss(t *testing.T) {
+func TestOpsOnNotConnectedDeviceReportGATTNotConnected(t *testing.T) {
+	t.Parallel()
+	srv := bleServer(t)
+	c := dialOpts(t, srv, DialOptions{})
+	ctx := tctx(t)
+	// Real bluetooth_proxy replies GATT error -1: handle 0 for get-services,
+	// the request handle for read/write/notify.
+	check := func(name string, err error, handle uint32) {
+		t.Helper()
+		var ge *GATTError
+		if !errors.As(err, &ge) || ge.Code != GATTErrNotConnected || ge.Handle != handle || ge.Address != devA {
+			t.Errorf("%s: err = %v, want GATTError{-1, handle %d}", name, err, handle)
+		}
+	}
+	_, err := c.GATTServices(ctx, devA)
+	check("services", err, 0)
+	_, err = c.GATTRead(ctx, devA, 8)
+	check("read", err, 8)
+	check("write", c.GATTWrite(ctx, devA, 6, []byte{1}, true), 6)
+	check("notify", c.GATTNotify(ctx, devA, 3, func([]byte) {}), 3)
+}
+
+func TestOpAfterDropFailsPromptly(t *testing.T) {
 	t.Parallel()
 	srv := bleServer(t)
 	c := dialOpts(t, srv, DialOptions{})
 	connected(t, c, devA)
 	srv.DropBLE(devA)
-	// Server-side the device is no longer connected, so the proxy answers with
-	// connected=false rather than a read response.
+	start := time.Now()
 	_, err := c.GATTRead(tctx(t), devA, 8)
-	if !errors.Is(err, ErrBLEDisconnected) {
-		t.Fatalf("err = %v, want ErrBLEDisconnected", err)
+	var ge *GATTError
+	if !errors.Is(err, ErrBLEDisconnected) && !errors.As(err, &ge) {
+		t.Fatalf("err = %v, want a disconnect error", err)
+	}
+	if el := time.Since(start); el > time.Second {
+		t.Fatalf("took %v", el)
+	}
+}
+
+func TestOversizeMessageDoesNotCloseClient(t *testing.T) {
+	t.Parallel()
+	srv := bleServer(t)
+	c := dialOpts(t, srv, DialOptions{})
+	connected(t, c, devA)
+	if err := c.GATTWrite(tctx(t), devA, 6, make([]byte, 70000), false); !errors.Is(err, errTooLarge) {
+		t.Fatalf("err = %v, want errTooLarge", err)
+	}
+	select {
+	case <-c.Done():
+		t.Fatalf("client closed by a pre-write rejection: %v", c.Err())
+	default:
+	}
+	if err := c.GATTWrite(tctx(t), devA, 6, []byte{1}, true); err != nil {
+		t.Fatalf("write after oversize: %v", err)
 	}
 }
 

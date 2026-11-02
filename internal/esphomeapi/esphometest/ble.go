@@ -35,8 +35,11 @@ const (
 	tRawAdvs           = 93
 )
 
-// ErrCodeGATT is the error code the simulated proxy reports for GATT failures.
-const ErrCodeGATT = 133
+// Error codes the simulated proxy reports in GATT error responses.
+const (
+	ErrCodeGATT         = 133 // generic GATT failure
+	ErrCodeNotConnected = -1  // ESP_GATT_NOT_CONNECTED
+)
 
 // RawAdv is one raw advertisement report.
 type RawAdv struct {
@@ -77,17 +80,18 @@ type bleDev struct {
 }
 
 type bleState struct {
-	mu       sync.Mutex
-	devs     map[uint64]*bleDev
-	free     uint32
-	limit    uint32
-	installd bool
-	requests []ConnRequest
-	writes   map[uint64][][]byte
-	unsubs   int
-	subs     int
-	freeSubs int
-	advFlags []uint32
+	mu            sync.Mutex
+	devs          map[uint64]*bleDev
+	free          uint32
+	limit         uint32
+	installd      bool
+	requests      []ConnRequest
+	writes        map[uint64][][]byte
+	unsubs        int
+	subs          int
+	freeSubs      int
+	advFlags      []uint32
+	onGetServices func()
 }
 
 func (s *Server) ble() *bleState {
@@ -190,6 +194,15 @@ func (s *Server) BLEUnsubscribes() int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.unsubs
+}
+
+// OnGetServices registers fn to run when a GetServices request arrives, before
+// the proxy processes it (e.g. to drop the link mid-connect).
+func (s *Server) OnGetServices(fn func()) {
+	st := s.ble()
+	st.mu.Lock()
+	st.onGetServices = fn
+	st.mu.Unlock()
 }
 
 // BLEAdvFlags returns the flags of every SubscribeBluetoothLEAdvertisements received.
@@ -330,10 +343,17 @@ func (s *Server) installBLE(st *bleState) {
 			}
 		})
 		st.mu.Lock()
+		hook := st.onGetServices
+		st.mu.Unlock()
+		if hook != nil {
+			hook() // runs before the request is processed, without locks held
+		}
+		st.mu.Lock()
 		defer st.mu.Unlock()
 		d := st.devs[addr]
 		if d == nil || !d.connected {
-			return []Reply{{Type: tDeviceConnection, Payload: encConn(addr, false, 0, 0)}}
+			// Real bluetooth_proxy.cpp: GATT error ESP_GATT_NOT_CONNECTED, handle 0.
+			return []Reply{{Type: tErrorResp, Payload: encErr(addr, 0, ErrCodeNotConnected)}}
 		}
 		var out []Reply
 		for _, sv := range d.svcs {
@@ -353,7 +373,7 @@ func (s *Server) installBLE(st *bleState) {
 	gatt := func(addr uint64, handle uint32) (*bleDev, []Reply) {
 		d := st.devs[addr]
 		if d == nil || !d.connected {
-			return nil, []Reply{{Type: tDeviceConnection, Payload: encConn(addr, false, 0, 0)}}
+			return nil, []Reply{{Type: tErrorResp, Payload: encErr(addr, handle, ErrCodeNotConnected)}}
 		}
 		for _, sv := range d.svcs {
 			for _, c := range sv.Chars {

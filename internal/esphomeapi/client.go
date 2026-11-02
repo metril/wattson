@@ -196,6 +196,9 @@ func (c *Client) Send(typ uint16, m interface{ Marshal() []byte }) error {
 			return ErrClosed
 		default:
 		}
+		if errors.Is(err, errTooLarge) { // rejected before any byte was written
+			return err
+		}
 		c.closeWith(err)
 		return err
 	}

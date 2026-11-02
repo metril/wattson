@@ -17,8 +17,8 @@ type Registry struct {
 }
 
 type cached struct {
-	version string
-	p       *Provider
+	version, issuer string
+	p               *Provider
 }
 
 // NewRegistry returns an empty Registry whose providers use client for
@@ -28,12 +28,16 @@ func NewRegistry(client *http.Client) *Registry {
 }
 
 // Get returns the Provider for cfg.Slug, discovering it when none is cached
-// for that version. Failures are not cached.
+// for that version and cfg.Issuer (the issuer is resolved from the live
+// discovery document, so a changed issuer must not reuse the old Provider).
+// Failures are not cached. Discovery runs outside the lock so a slow
+// provider never blocks other slugs; concurrent misses for one slug may each
+// discover, and the last to finish wins, which is harmless.
 func (r *Registry) Get(ctx context.Context, cfg Config, version string) (*Provider, error) {
 	r.mu.Lock()
 	c, ok := r.cache[cfg.Slug]
 	r.mu.Unlock()
-	if ok && c.version == version {
+	if ok && c.version == version && c.issuer == cfg.Issuer {
 		return c.p, nil
 	}
 	p, err := New(ctx, cfg, r.client)
@@ -41,7 +45,7 @@ func (r *Registry) Get(ctx context.Context, cfg Config, version string) (*Provid
 		return nil, err
 	}
 	r.mu.Lock()
-	r.cache[cfg.Slug] = cached{version: version, p: p}
+	r.cache[cfg.Slug] = cached{version: version, issuer: cfg.Issuer, p: p}
 	r.mu.Unlock()
 	return p, nil
 }

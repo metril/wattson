@@ -39,14 +39,14 @@ func TestProviderCRUD(t *testing.T) {
 		t.Fatalf("create: %d %s", resp.StatusCode, b)
 	}
 	p := decode[ProviderOut](t, b)
-	if !p.HasClientSecret || !p.ClientSecretSet || p.RedirectURI != ts.URL+"/api/auth/oidc/authentik/callback" {
+	if !p.ClientSecretSet || p.RedirectURI != ts.URL+"/api/auth/oidc/authentik/callback" {
 		t.Fatalf("created: %+v", p)
 	}
 	if p.Scopes != "openid profile email groups" || p.GroupsClaim != "groups" || !p.AutoCreateUsers || p.LinkByEmail || !p.Enabled ||
 		p.AllowedGroups == nil || p.AllowedEmails == nil {
 		t.Fatalf("defaults: %+v", p)
 	}
-	if strings.Contains(string(b), secret) || !strings.Contains(string(b), `"has_client_secret":true`) {
+	if strings.Contains(string(b), secret) || !strings.Contains(string(b), `"client_secret_set":true`) {
 		t.Errorf("create body leaks the secret or lacks the flag: %s", b)
 	}
 
@@ -92,7 +92,7 @@ func TestProviderCRUD(t *testing.T) {
 	}
 	up := decode[ProviderOut](t, b)
 	if up.DisplayName != "Wattson SSO" || len(up.AllowedGroups) != 1 || up.AllowedGroups[0] != "riders" || up.Slug != "authentik" ||
-		!up.HasClientSecret || !up.UpdatedAt.After(p.UpdatedAt) {
+		!up.ClientSecretSet || !up.UpdatedAt.After(p.UpdatedAt) {
 		t.Errorf("patched: %+v", up)
 	}
 	// An empty secret is rejected and does not clear the stored one; omitting keeps it.

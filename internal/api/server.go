@@ -5,6 +5,7 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -39,13 +40,16 @@ type Deps struct {
 	oidcState *oidcauth.StateCodec // signs the OIDC state cookie; derived from Box
 }
 
-// NewServer builds the full HTTP handler: Recoverer, security headers and
+// NewServer builds the full HTTP handler (an error if Deps.Box is nil): Recoverer, security headers and
 // the auth middleware around /healthz, the huma API (/api/*, /docs,
 // /openapi.json) and, for everything else, the embedded web UI.
-func NewServer(d Deps) http.Handler { return newRouter(d) }
+func NewServer(d Deps) (http.Handler, error) { return newRouter(d) }
 
 // newRouter is NewServer plus extra huma registrations (tests only).
-func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
+func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
+	if d.Box == nil {
+		return nil, errors.New("api: Deps.Box is required (it signs the OIDC state and seals secrets)")
+	}
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
@@ -55,9 +59,7 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 	if d.OIDC == nil {
 		d.OIDC = oidcauth.NewRegistry(d.HTTPClient)
 	}
-	if d.Box != nil {
-		d.oidcState = newStateCodec(d)
-	}
+	d.oidcState = newStateCodec(d)
 	r := chi.NewRouter()
 	r.Use(d.recoverer, securityHeaders, withLogger(d.Logger))
 	if d.Auth != nil {
@@ -89,7 +91,7 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 	r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	})
-	return r
+	return r, nil
 }
 
 const csp = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"

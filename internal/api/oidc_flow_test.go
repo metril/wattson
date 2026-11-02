@@ -137,6 +137,15 @@ func TestOIDCReturnTo(t *testing.T) {
 		"relative/path":          "/",
 		"/ok\r\nSet-Cookie: x=1": "/",
 		"":                       "/",
+		`/./\evil.example`:       "/",
+		`/../\evil.example`:      "/",
+		"/.//evil.example":       "/",
+		"/%2F%2Fevil.example":    "/",
+		"/%5Cevil.example":       "/",
+		"/./%5Cevil.example":     "/",
+		"/a/../b":                "/",
+		"/a/%2e%2e/b":            "/",
+		"/a/b.c/d?x=../y":        "/a/b.c/d?x=../y",
 	} {
 		c := e.ts.client(t)
 		resp := e.ts.oidcLogin(t, c, e.idp, "authentik", in, riderClaims())
@@ -507,5 +516,79 @@ func TestOIDCNoSecretsInLogs(t *testing.T) {
 	logs := e.ts.Log.String()
 	if strings.Contains(logs, e.idp.ClientSecret) || strings.Contains(logs, "id_token") || strings.Contains(logs, "test-access-token") {
 		t.Errorf("secret or token in logs: %s", logs)
+	}
+}
+
+func TestOIDCAdminSyncSkippedWhenGroupsUnavailable(t *testing.T) {
+	t.Parallel()
+	e := newFlow(t, map[string]any{"admin_group": "wattson-admins"})
+	claims := riderClaims()
+	claims["groups"] = []any{"wattson-admins"}
+	c, _ := e.login(t, claims)
+	if _, me := e.me(t, c); !me.User.IsAdmin {
+		t.Fatal("admin group member is not admin")
+	}
+	// No groups claim in the ID token and the userinfo fallback fails (the
+	// fake answers 404): the admin flag must survive the glitch.
+	delete(claims, "groups")
+	c, resp := e.login(t, claims)
+	wantRedirect(t, resp, "/")
+	if _, me := e.me(t, c); !me.User.IsAdmin {
+		t.Fatal("admin demoted on a userinfo failure")
+	}
+	if !strings.Contains(e.ts.Log.String(), "groups unavailable") {
+		t.Error("skipped sync not logged")
+	}
+	// An explicit empty groups claim is a real answer and demotes.
+	claims["groups"] = []any{}
+	c, _ = e.login(t, claims)
+	if _, me := e.me(t, c); me.User.IsAdmin {
+		t.Fatal("admin kept after an explicit empty groups claim")
+	}
+}
+
+func TestOIDCLinkByEmailRefusesAdmins(t *testing.T) {
+	t.Parallel()
+	e := newFlow(t, map[string]any{"link_by_email": true})
+	ctx := context.Background()
+	boot, _ := e.ts.Store.UserByUsername(ctx, "admin")
+	if _, err := e.ts.Store.Write.ExecContext(ctx, `UPDATE users SET email = 'boot@x.test' WHERE id = ?`, boot.ID); err != nil {
+		t.Fatal(err)
+	}
+	adm, err := e.ts.Store.CreateUser(ctx, store.User{Username: "root2", Email: "r2@x.test", IsAdmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id    int64
+		email string
+	}{{boot.ID, "boot@x.test"}, {adm.ID, "r2@x.test"}} {
+		c, resp := e.login(t, map[string]any{"sub": fmt.Sprintf("sub-%d", tc.id), "email": tc.email, "email_verified": true})
+		wantRedirect(t, resp, "/login?error=not_provisioned")
+		if hasSession(resp) {
+			t.Error("session on a refused admin link")
+		}
+		if code, _ := e.me(t, c); code != 401 {
+			t.Errorf("me = %d, want 401", code)
+		}
+		if got, _ := e.ts.Store.UserByID(ctx, tc.id); got.Iss != "" {
+			t.Errorf("admin %d was linked", tc.id)
+		}
+	}
+	if n, _ := e.ts.Store.CountUsers(ctx); n != 2 {
+		t.Errorf("users = %d, a refused link created one", n)
+	}
+	if !strings.Contains(e.ts.Log.String(), "link by email refused") {
+		t.Error("refusal not logged")
+	}
+}
+
+func TestNewRouterRequiresBox(t *testing.T) {
+	t.Parallel()
+	if _, err := newRouter(Deps{}); err == nil {
+		t.Fatal("newRouter without a Box succeeded")
+	}
+	if _, err := NewServer(Deps{}); err == nil {
+		t.Fatal("NewServer without a Box succeeded")
 	}
 }

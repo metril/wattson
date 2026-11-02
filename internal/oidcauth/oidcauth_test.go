@@ -371,14 +371,19 @@ func TestRegistryCaches(t *testing.T) {
 	if p3.Config().ClientID != "changed" {
 		t.Fatalf("client id = %q", p3.Config().ClientID)
 	}
+	// The same version with a different resolved issuer is not reused.
+	moved := Config{Slug: "a", Issuer: idp.URL + "/", ClientID: idp.ClientID}
+	if _, err := r.Get(ctx, moved, "v2"); err == nil {
+		t.Fatal("a different issuer reused the cached provider")
+	}
 	// Another slug is cached independently.
 	other := cfg
 	other.Slug = "b"
-	if _, err := r.Get(ctx, other, "v1"); err != nil || idp.Requests(wk) != 3 {
+	if _, err := r.Get(ctx, other, "v1"); err != nil || idp.Requests(wk) != 4 {
 		t.Fatalf("other slug: err=%v discoveries=%d", err, idp.Requests(wk))
 	}
 	r.Forget("b")
-	if _, err := r.Get(ctx, other, "v1"); err != nil || idp.Requests(wk) != 4 {
+	if _, err := r.Get(ctx, other, "v1"); err != nil || idp.Requests(wk) != 5 {
 		t.Fatalf("after Forget: err=%v discoveries=%d", err, idp.Requests(wk))
 	}
 }

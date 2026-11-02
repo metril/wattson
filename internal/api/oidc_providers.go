@@ -29,15 +29,14 @@ type ProviderOut struct {
 	DisplayName     string    `json:"display_name" doc:"Text for the sign-in button."`
 	DiscoveryURL    string    `json:"discovery_url" doc:"OIDC discovery URL as entered: the issuer URL or the full .well-known/openid-configuration URL. The issuer itself is read from the discovery document at login."`
 	ClientID        string    `json:"client_id" doc:"OAuth client ID registered at the provider."`
-	HasClientSecret bool      `json:"has_client_secret" doc:"Whether a client secret is stored. The secret itself is never returned."`
-	ClientSecretSet bool      `json:"client_secret_set" doc:"Same as has_client_secret."`
+	ClientSecretSet bool      `json:"client_secret_set" doc:"Whether a client secret is stored. The secret itself is never returned."`
 	Scopes          string    `json:"scopes" doc:"Space-separated scopes requested in addition to the always-requested openid, profile and email."`
 	GroupsClaim     string    `json:"groups_claim" doc:"Name of the ID token or userinfo claim that lists the user's groups; empty disables group handling."`
 	AllowedGroups   []string  `json:"allowed_groups" doc:"When not empty, only users in at least one of these groups may sign in (case-insensitive)."`
 	AllowedEmails   []string  `json:"allowed_emails" doc:"When not empty, only these verified email addresses may sign in (case-insensitive)."`
 	AdminGroup      string    `json:"admin_group" doc:"Members of this group are admins, and others lose admin on their next sign-in. Empty leaves admin status to the local user list. The bootstrap admin and the last admin are never demoted."`
 	AutoCreateUsers bool      `json:"auto_create_users" doc:"Whether a first sign-in creates a local user."`
-	LinkByEmail     bool      `json:"link_by_email" doc:"Whether a first sign-in links to an existing local user with the same email, when the provider asserts the email is verified and exactly one local user has it."`
+	LinkByEmail     bool      `json:"link_by_email" doc:"Whether a first sign-in links to an existing local user with the same email, when the provider asserts the email is verified and exactly one local user has it. Admin accounts (the bootstrap admin included) are never linked this way; that sign-in is refused with not_provisioned."`
 	Enabled         bool      `json:"enabled" doc:"Whether users can sign in with this provider."`
 	RedirectURI     string    `json:"redirect_uri" doc:"Redirect (callback) URL to register at the provider. Built from the public URL setting, or from the request when that is empty."`
 	CreatedAt       time.Time `json:"created_at" doc:"Creation time, UTC."`
@@ -47,7 +46,7 @@ type ProviderOut struct {
 func (d Deps) providerOut(ctx context.Context, r *http.Request, p store.OIDCProvider) ProviderOut {
 	set := p.ClientSecretEnc != ""
 	return ProviderOut{ID: p.ID, Slug: p.Slug, DisplayName: p.DisplayName, DiscoveryURL: p.IssuerURL,
-		ClientID: p.ClientID, HasClientSecret: set, ClientSecretSet: set, Scopes: p.Scopes,
+		ClientID: p.ClientID, ClientSecretSet: set, Scopes: p.Scopes,
 		GroupsClaim: p.GroupsClaim, AllowedGroups: nonNil(p.AllowedGroups), AllowedEmails: nonNil(p.AllowedEmails),
 		AdminGroup: p.AdminGroup, AutoCreateUsers: p.AutoCreateUsers, LinkByEmail: p.LinkByEmail,
 		Enabled: p.Enabled, RedirectURI: d.redirectURI(ctx, r, p.Slug), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
@@ -114,7 +113,7 @@ type ProviderParams struct {
 	AllowedEmails   []string `json:"allowed_emails,omitempty" maxItems:"100" doc:"Only these verified email addresses may sign in; empty allows everyone. Default empty."`
 	AdminGroup      *string  `json:"admin_group,omitempty" maxLength:"128" doc:"Group whose members are admins; empty leaves admin status unmanaged. Default empty."`
 	AutoCreateUsers *bool    `json:"auto_create_users,omitempty" doc:"Create a local user on first sign-in. Default true."`
-	LinkByEmail     *bool    `json:"link_by_email,omitempty" doc:"Link a first sign-in to the local user with the same verified email. Default false."`
+	LinkByEmail     *bool    `json:"link_by_email,omitempty" doc:"Link a first sign-in to the local user with the same verified email, unless that user is an admin (then the sign-in is refused). Default false."`
 	Enabled         *bool    `json:"enabled,omitempty" doc:"Allow sign-in with this provider. Default true."`
 }
 
@@ -231,7 +230,7 @@ func (d Deps) registerOIDCProviders(api huma.API) {
 
 	register(api, route{Method: http.MethodGet, Path: "/api/admin/oidc-providers/{id}", ID: "getOIDCProvider", Tag: "oidc",
 		Summary:     "Get an OIDC provider",
-		Description: "Returns one provider. The client secret is never returned; `has_client_secret` says whether one is stored.",
+		Description: "Returns one provider. The client secret is never returned; `client_secret_set` says whether one is stored.",
 		Scope:       auth.ScopeAdmin},
 		func(ctx context.Context, in *providerIDIn) (*providerBody, error) {
 			p, err := d.Store.OIDCProvider(ctx, in.ID)

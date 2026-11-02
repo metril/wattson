@@ -201,7 +201,7 @@
             "type": "string"
           },
           "link_by_email": {
-            "description": "Link a first sign-in to the local user with the same verified email. Default false.",
+            "description": "Link a first sign-in to the local user with the same verified email, unless that user is an admin (then the sign-in is refused). Default false.",
             "type": "boolean"
           },
           "scopes": {
@@ -703,7 +703,7 @@
             "type": "string"
           },
           "link_by_email": {
-            "description": "Link a first sign-in to the local user with the same verified email. Default false.",
+            "description": "Link a first sign-in to the local user with the same verified email, unless that user is an admin (then the sign-in is refused). Default false.",
             "type": "boolean"
           },
           "scopes": {
@@ -870,7 +870,7 @@
             "type": "string"
           },
           "client_secret_set": {
-            "description": "Same as has_client_secret.",
+            "description": "Whether a client secret is stored. The secret itself is never returned.",
             "type": "boolean"
           },
           "created_at": {
@@ -894,17 +894,13 @@
             "description": "Name of the ID token or userinfo claim that lists the user's groups; empty disables group handling.",
             "type": "string"
           },
-          "has_client_secret": {
-            "description": "Whether a client secret is stored. The secret itself is never returned.",
-            "type": "boolean"
-          },
           "id": {
             "description": "Provider ID.",
             "format": "int64",
             "type": "integer"
           },
           "link_by_email": {
-            "description": "Whether a first sign-in links to an existing local user with the same email, when the provider asserts the email is verified and exactly one local user has it.",
+            "description": "Whether a first sign-in links to an existing local user with the same email, when the provider asserts the email is verified and exactly one local user has it. Admin accounts (the bootstrap admin included) are never linked this way; that sign-in is refused with not_provisioned.",
             "type": "boolean"
           },
           "redirect_uri": {
@@ -931,7 +927,6 @@
           "display_name",
           "discovery_url",
           "client_id",
-          "has_client_secret",
           "client_secret_set",
           "scopes",
           "groups_claim",
@@ -1748,7 +1743,7 @@
         ]
       },
       "get": {
-        "description": "Returns one provider. The client secret is never returned; `has_client_secret` says whether one is stored. Requires the `admin` scope.",
+        "description": "Returns one provider. The client secret is never returned; `client_secret_set` says whether one is stored. Requires the `admin` scope.",
         "operationId": "getOIDCProvider",
         "parameters": [
           {

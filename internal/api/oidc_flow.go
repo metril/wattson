@@ -31,6 +31,7 @@ const (
 var (
 	errNotProvisioned = errors.New("no local user for this identity")
 	errInactive       = errors.New("user is disabled")
+	errLinkRefused    = errors.New("link by email refused: the local user is an admin")
 )
 
 func init() {
@@ -87,22 +88,40 @@ func randomToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// sanitizeReturnTo restricts a post-login target to a same-origin path:
-// one leading slash, no scheme or host, and no "//" or "/\" prefix, which
-// browsers read as a protocol-relative URL. Anything else becomes "/".
+// sanitizeReturnTo restricts a post-login target to a same-origin path. It
+// must start with a single "/", carry no scheme, host or userinfo, contain
+// no backslash (raw or percent-decoded, which browsers read as "/"), no
+// empty-leading "//" after decoding, and no "." or ".." segment (which
+// path cleaning would collapse into something else). Anything else becomes
+// "/". The result is written to Location verbatim, see redirectTo.
 func sanitizeReturnTo(s string) string {
 	u, err := url.Parse(s)
-	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || !strings.HasPrefix(s, "/") {
 		return "/"
 	}
-	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.HasPrefix(s, `/\`) {
+	dec, err := url.PathUnescape(s)
+	if err != nil || strings.Contains(s, `\`) || strings.Contains(dec, `\`) ||
+		strings.HasPrefix(s, "//") || strings.HasPrefix(u.Path, "//") {
 		return "/"
+	}
+	for _, seg := range strings.Split(u.Path, "/") {
+		if seg == "." || seg == ".." {
+			return "/"
+		}
 	}
 	return s
 }
 
+// redirectTo answers 302 with Location set verbatim. http.Redirect would
+// run path.Clean over a relative target, which can turn a sanitised value
+// into a different one.
+func redirectTo(w http.ResponseWriter, loc string) {
+	w.Header().Set("Location", loc)
+	w.WriteHeader(http.StatusFound)
+}
+
 func loginError(w http.ResponseWriter, r *http.Request, code string) {
-	http.Redirect(w, r, "/login?error="+code, http.StatusFound)
+	redirectTo(w, "/login?error="+code)
 }
 
 func (d Deps) oidcCookie(r *http.Request, value string, maxAge int) *http.Cookie {
@@ -223,7 +242,7 @@ func (d Deps) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := d.resolveUser(ctx, row, cl)
 	switch {
-	case errors.Is(err, errNotProvisioned):
+	case errors.Is(err, errNotProvisioned), errors.Is(err, errLinkRefused):
 		d.oidcFail(w, r, "not_provisioned", slug, err, summary...)
 		return
 	case errors.Is(err, errInactive):
@@ -246,7 +265,7 @@ func (d Deps) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, d.oidcCookie(r, "", -1))
 	http.SetCookie(w, &cookie)
-	http.Redirect(w, r, sanitizeReturnTo(st.ReturnTo), http.StatusFound)
+	redirectTo(w, sanitizeReturnTo(st.ReturnTo))
 }
 
 func truncate(s string, n int) string {
@@ -261,6 +280,13 @@ func truncate(s string, n int) string {
 func (d Deps) syncAdmin(ctx context.Context, cfg oidcauth.Config, cl oidcauth.Claims, u store.User) store.User {
 	admin, managed := cfg.AdminDecision(cl)
 	if !managed || admin == u.IsAdmin {
+		return u
+	}
+	if cl.UserInfoErr != nil {
+		// The groups may be missing only because userinfo failed; never
+		// change admin status on an IdP glitch.
+		d.Logger.Warn("oidc admin sync skipped", "user", u.Username, "want_admin", admin,
+			"reason", "groups unavailable: "+cl.UserInfoErr.Error())
 		return u
 	}
 	nu, err := d.Store.UpdateUserFlags(ctx, u.ID, &admin, nil)
@@ -303,6 +329,11 @@ func (d Deps) resolveUser(ctx context.Context, prov store.OIDCProvider, cl oidca
 		case err == nil:
 			if lu.Disabled {
 				return store.User{}, errInactive
+			}
+			// An IdP-asserted email must never hand an admin account to
+			// whoever controls that address at the IdP.
+			if lu.IsAdmin {
+				return store.User{}, errLinkRefused
 			}
 			err := d.Store.LinkOIDC(ctx, lu.ID, cl.Issuer, cl.Subject)
 			if err == nil {

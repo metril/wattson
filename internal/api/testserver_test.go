@@ -86,7 +86,11 @@ func newTS(t *testing.T, opts ...tsOpt) *testServer {
 	}, logger)
 	d := Deps{Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
 		Logger: logger, Version: "test"}
-	srv := httptest.NewServer(newRouter(d, cfg.extra...))
+	h, err := newRouter(d, cfg.extra...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs}
 }

@@ -92,7 +92,7 @@ func FuzzSmootherBounds(f *testing.F) {
 				if d := got - prev; d > 2 || d < -2 {
 					t.Fatalf("i=%d step %d", i, d)
 				}
-				if i > 1 && now-lastChange < 2*time.Second {
+				if now-lastChange < 2*time.Second {
 					t.Fatalf("i=%d changed after %v", i, now-lastChange)
 				}
 			}

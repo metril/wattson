@@ -51,8 +51,10 @@ func (s *Smoother) Step(target float64, now time.Duration) int {
 	if s.MaxStep > 0 {
 		delta = clampInt(delta, -s.MaxStep, s.MaxStep)
 	}
-	s.cur = clampInt(s.cur+delta, lo, hi)
-	s.last = now
+	if next := clampInt(s.cur+delta, lo, hi); next != s.cur {
+		s.cur = next
+		s.last = now
+	}
 	return s.cur
 }
 

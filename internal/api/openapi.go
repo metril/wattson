@@ -38,6 +38,7 @@ type opSpec struct {
 	Out                                         any        // response body type, nil for no body
 	OutType                                     string     // response media type override
 	Errors                                      []int      // extra error statuses
+	NoStdErrors                                 bool       // skip the 400/404 implied by Params (redirect-only routes)
 }
 
 // specGroups collects docs-only operations; each file adds its own.
@@ -102,11 +103,11 @@ func (s opSpec) operation(reg huma.Registry) *huma.Operation {
 		errs[http.StatusUnauthorized] = true
 		errs[http.StatusForbidden] = true
 	}
-	if s.Body != nil || len(s.Params) > 0 {
+	if !s.NoStdErrors && (s.Body != nil || len(s.Params) > 0) {
 		errs[http.StatusBadRequest] = true
 	}
 	for _, q := range s.Params {
-		if !q.Query {
+		if !q.Query && !s.NoStdErrors {
 			errs[http.StatusNotFound] = true
 		}
 	}
@@ -154,6 +155,7 @@ func (d Deps) registerAPI(api huma.API) {
 	d.registerTokens(api)
 	d.registerSettings(api)
 	d.registerRiders(api)
+	d.registerOIDCProviders(api)
 }
 
 // finalizeSpec removes the responses huma adds on its own that this API

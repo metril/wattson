@@ -139,6 +139,91 @@
         },
         "type": "object"
       },
+      "CreateProviderInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_group": {
+            "description": "Group whose members are admins; empty leaves admin status unmanaged. Default empty.",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "allowed_emails": {
+            "description": "Only these verified email addresses may sign in; empty allows everyone. Default empty.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "allowed_groups": {
+            "description": "Only members of one of these groups may sign in; empty allows everyone. Default empty.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "auto_create_users": {
+            "description": "Create a local user on first sign-in. Default true.",
+            "type": "boolean"
+          },
+          "client_id": {
+            "description": "OAuth client ID registered at the provider.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "client_secret": {
+            "description": "OAuth client secret. Stored sealed and never returned.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "discovery_url": {
+            "description": "OIDC discovery URL: the issuer URL or the full .well-known/openid-configuration URL.",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Text for the sign-in button, 1 to 64 characters.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Allow sign-in with this provider. Default true.",
+            "type": "boolean"
+          },
+          "groups_claim": {
+            "description": "Claim that lists the user's groups. Default \"groups\"; empty disables group handling.",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "link_by_email": {
+            "description": "Link a first sign-in to the local user with the same verified email. Default false.",
+            "type": "boolean"
+          },
+          "scopes": {
+            "description": "Space-separated scopes requested in addition to openid, profile and email. Default \"openid profile email groups\".",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-safe identifier: 1 to 32 lowercase letters, digits or hyphens, not starting with a hyphen. Cannot be changed later.",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "display_name",
+          "discovery_url",
+          "client_id",
+          "client_secret"
+        ],
+        "type": "object"
+      },
       "CreateRiderInBody": {
         "additionalProperties": false,
         "properties": {
@@ -303,6 +388,21 @@
           "scopes",
           "created_at",
           "last_used_at"
+        ],
+        "type": "object"
+      },
+      "DiscoverInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "discovery_url": {
+            "description": "OIDC discovery URL: the issuer URL or the full .well-known/openid-configuration URL.",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "discovery_url"
         ],
         "type": "object"
       },
@@ -541,6 +641,79 @@
         ],
         "type": "object"
       },
+      "PatchProviderInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_group": {
+            "description": "Group whose members are admins; empty leaves admin status unmanaged. Default empty.",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "allowed_emails": {
+            "description": "Only these verified email addresses may sign in; empty allows everyone. Default empty.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "allowed_groups": {
+            "description": "Only members of one of these groups may sign in; empty allows everyone. Default empty.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "auto_create_users": {
+            "description": "Create a local user on first sign-in. Default true.",
+            "type": "boolean"
+          },
+          "client_id": {
+            "description": "OAuth client ID.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "client_secret": {
+            "description": "New OAuth client secret. Omit to keep the stored one; an empty string is rejected.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "discovery_url": {
+            "description": "OIDC discovery URL.",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Text for the sign-in button, 1 to 64 characters.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Allow sign-in with this provider. Default true.",
+            "type": "boolean"
+          },
+          "groups_claim": {
+            "description": "Claim that lists the user's groups. Default \"groups\"; empty disables group handling.",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "link_by_email": {
+            "description": "Link a first sign-in to the local user with the same verified email. Default false.",
+            "type": "boolean"
+          },
+          "scopes": {
+            "description": "Space-separated scopes requested in addition to openid, profile and email. Default \"openid profile email groups\".",
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PatchRiderInBody": {
         "additionalProperties": false,
         "properties": {
@@ -664,6 +837,113 @@
           "slug",
           "display_name",
           "login_url"
+        ],
+        "type": "object"
+      },
+      "ProviderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_group": {
+            "description": "Members of this group are admins, and others lose admin on their next sign-in. Empty leaves admin status to the local user list. The bootstrap admin and the last admin are never demoted.",
+            "type": "string"
+          },
+          "allowed_emails": {
+            "description": "When not empty, only these verified email addresses may sign in (case-insensitive).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_groups": {
+            "description": "When not empty, only users in at least one of these groups may sign in (case-insensitive).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "auto_create_users": {
+            "description": "Whether a first sign-in creates a local user.",
+            "type": "boolean"
+          },
+          "client_id": {
+            "description": "OAuth client ID registered at the provider.",
+            "type": "string"
+          },
+          "client_secret_set": {
+            "description": "Same as has_client_secret.",
+            "type": "boolean"
+          },
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "discovery_url": {
+            "description": "OIDC discovery URL as entered: the issuer URL or the full .well-known/openid-configuration URL. The issuer itself is read from the discovery document at login.",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Text for the sign-in button.",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether users can sign in with this provider.",
+            "type": "boolean"
+          },
+          "groups_claim": {
+            "description": "Name of the ID token or userinfo claim that lists the user's groups; empty disables group handling.",
+            "type": "string"
+          },
+          "has_client_secret": {
+            "description": "Whether a client secret is stored. The secret itself is never returned.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Provider ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "link_by_email": {
+            "description": "Whether a first sign-in links to an existing local user with the same email, when the provider asserts the email is verified and exactly one local user has it.",
+            "type": "boolean"
+          },
+          "redirect_uri": {
+            "description": "Redirect (callback) URL to register at the provider. Built from the public URL setting, or from the request when that is empty.",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "Space-separated scopes requested in addition to the always-requested openid, profile and email.",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-safe identifier, unique and immutable. Part of the login and callback URLs.",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "Last change time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "display_name",
+          "discovery_url",
+          "client_id",
+          "has_client_secret",
+          "client_secret_set",
+          "scopes",
+          "groups_claim",
+          "allowed_groups",
+          "allowed_emails",
+          "admin_group",
+          "auto_create_users",
+          "link_by_email",
+          "enabled",
+          "redirect_uri",
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -1131,6 +1411,545 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/oidc-providers": {
+      "get": {
+        "description": "Returns every configured OIDC provider ordered by display name, enabled or not. Client secrets are never returned. Requires the `admin` scope.",
+        "operationId": "listOIDCProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderOut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List OIDC providers",
+        "tags": [
+          "oidc"
+        ]
+      },
+      "post": {
+        "description": "Adds a provider such as Authentik, Keycloak or any other OpenID Connect server. The slug becomes part of the login and callback URLs and cannot be changed. Register the returned `redirect_uri` at the provider. A duplicate slug returns 409 `slug_taken`. The client secret is sealed at rest and never returned. Requires the `admin` scope.",
+        "operationId": "createOIDCProvider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProviderInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add an OIDC provider",
+        "tags": [
+          "oidc"
+        ]
+      }
+    },
+    "/api/admin/oidc-providers/discover": {
+      "post": {
+        "description": "Fetches the discovery document at the URL (the `.well-known/openid-configuration` suffix is added when missing), timing out after 5 seconds, and reports the issuer it publishes. The result is always HTTP 200; check `ok`. Requires the `admin` scope.",
+        "operationId": "discoverOIDCProvider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Test an OIDC discovery URL",
+        "tags": [
+          "oidc"
+        ]
+      }
+    },
+    "/api/admin/oidc-providers/{id}": {
+      "delete": {
+        "description": "Removes the provider. Users who signed in through it keep their accounts and sessions, but can no longer sign in with it. Requires the `admin` scope.",
+        "operationId": "deleteOIDCProvider",
+        "parameters": [
+          {
+            "description": "Provider ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Provider ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete an OIDC provider",
+        "tags": [
+          "oidc"
+        ]
+      },
+      "get": {
+        "description": "Returns one provider. The client secret is never returned; `has_client_secret` says whether one is stored. Requires the `admin` scope.",
+        "operationId": "getOIDCProvider",
+        "parameters": [
+          {
+            "description": "Provider ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Provider ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get an OIDC provider",
+        "tags": [
+          "oidc"
+        ]
+      },
+      "patch": {
+        "description": "Changes the fields present in the body. The slug cannot be changed. `client_secret` replaces the stored secret when present; an empty string is rejected with 400, so omit it to keep the current one. A change takes effect on the next sign-in; sessions already open are unaffected. Requires the `admin` scope.",
+        "operationId": "updateOIDCProvider",
+        "parameters": [
+          {
+            "description": "Provider ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Provider ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchProviderInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update an OIDC provider",
+        "tags": [
+          "oidc"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "description": "Verifies a local username and password and sets the session cookie. Attempts are rate limited per remote IP address (the connection's address; X-Forwarded-For is ignored): after 10 failures in 10 minutes every attempt from that address, whatever the username, returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 `local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. No authentication required.",
@@ -1309,6 +2128,92 @@
         ]
       }
     },
+    "/api/auth/oidc/{slug}/callback": {
+      "get": {
+        "description": "The redirect URI registered at the provider. Checks the provider's `error` parameter, the signed state cookie (same provider, same `state`), exchanges the code with the PKCE verifier, verifies the ID token and its nonce, applies the allowed groups and emails, finds, links or creates the local user, syncs admin status from the admin group, and starts a session. Always answers 302: to the `return_to` path on success, otherwise to `/login?error=\u003ccode\u003e` where code is one of `unknown_provider`, `provider_unavailable`, `provider_error`, `state`, `exchange_failed`, `forbidden`, `not_provisioned` or `inactive`. No authentication required.",
+        "operationId": "oidcCallback",
+        "parameters": [
+          {
+            "description": "Provider slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Authorization code from the provider.",
+            "in": "query",
+            "name": "code",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "State echoed by the provider; must match the state cookie.",
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Error code from the provider, when it refused the sign-in.",
+            "in": "query",
+            "name": "error",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found"
+          }
+        },
+        "security": [],
+        "summary": "Finish an OIDC sign-in",
+        "tags": [
+          "oidc"
+        ]
+      }
+    },
+    "/api/auth/oidc/{slug}/login": {
+      "get": {
+        "description": "Redirects (302) the browser to the provider's authorization endpoint using the authorization code flow with S256 PKCE and a nonce, and sets the short-lived `wattson_oidc` cookie that binds the attempt to this provider. `return_to` must be a same-origin path (it must start with a single `/`); anything else is replaced by `/`. An unknown or disabled provider redirects to `/login?error=unknown_provider`, and one whose discovery fails to `/login?error=provider_unavailable`. No authentication required.",
+        "operationId": "oidcLogin",
+        "parameters": [
+          {
+            "description": "Provider slug.",
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Same-origin path to open after signing in, for example `/settings?tab=bike`. Default `/`.",
+            "in": "query",
+            "name": "return_to",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found"
+          }
+        },
+        "security": [],
+        "summary": "Start an OIDC sign-in",
+        "tags": [
+          "oidc"
+        ]
+      }
+    },
     "/api/auth/password": {
       "post": {
         "description": "Changes the signed-in user's password. Session only: an API token gets 403 `session_required`. A wrong current password returns 400 `invalid_current_password`. All of the user's sessions are deleted and a fresh session cookie is set. Requires the `read` scope.",
@@ -1412,7 +2317,7 @@
     },
     "/api/auth/providers": {
       "get": {
-        "description": "Lists the ways to sign in: whether setup is pending, whether password sign-in is enabled, and the OIDC provider buttons. No authentication required.",
+        "description": "Lists the ways to sign in: whether setup is pending, whether password sign-in is enabled, and the enabled OIDC providers ordered by display name. No authentication required.",
         "operationId": "listAuthProviders",
         "responses": {
           "200": {

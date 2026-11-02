@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/secretbox"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -29,10 +30,13 @@ type Deps struct {
 	Settings   *settings.Service
 	Box        *secretbox.Box
 	Auth       *auth.Authenticator
-	HTTPClient *http.Client // outbound calls (HA ping, OIDC); tests inject
+	OIDC       *oidcauth.Registry // discovered OIDC providers; NewServer creates one when nil
+	HTTPClient *http.Client       // outbound calls (HA ping, OIDC); tests inject
 	Logger     *slog.Logger
 	Now        func() time.Time
 	Version    string
+
+	oidcState *oidcauth.StateCodec // signs the OIDC state cookie; derived from Box
 }
 
 // NewServer builds the full HTTP handler: Recoverer, security headers and
@@ -48,6 +52,12 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	if d.OIDC == nil {
+		d.OIDC = oidcauth.NewRegistry(d.HTTPClient)
+	}
+	if d.Box != nil {
+		d.oidcState = newStateCodec(d)
+	}
 	r := chi.NewRouter()
 	r.Use(d.recoverer, securityHeaders, withLogger(d.Logger))
 	if d.Auth != nil {
@@ -61,6 +71,7 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 	addDocsOnly(api)
 	finalizeSpec(api)
 	r.Get("/healthz", d.healthz)
+	d.registerOIDCFlow(r)
 
 	spa := web.Handler()
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {

@@ -322,3 +322,17 @@ func (s *Store) UpdateUserFlags(ctx context.Context, id int64, isAdmin, disabled
 	u.IsAdmin, u.Disabled = newAdmin, newDisabled
 	return u, nil
 }
+
+// EmailInUse reports whether any user, local or OIDC-linked, has email
+// (ASCII case-insensitive). An empty email is never in use.
+func (s *Store) EmailInUse(ctx context.Context, email string) (bool, error) {
+	if email == "" {
+		return false, nil
+	}
+	var n int
+	if err := s.Read.QueryRowContext(ctx,
+		`SELECT count(*) FROM users WHERE email = ? COLLATE NOCASE`, email).Scan(&n); err != nil {
+		return false, fmt.Errorf("check email: %w", err)
+	}
+	return n > 0, nil
+}

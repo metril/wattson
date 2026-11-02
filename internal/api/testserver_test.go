@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/oidcauth/oidctest"
 	"github.com/metril/wattson/internal/secretbox"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -151,4 +154,47 @@ func (ts *testServer) mintToken(t *testing.T, username string, admin bool, scope
 		t.Fatal(err)
 	}
 	return plain
+}
+
+// oidcStart begins a login at slug, queues claims at the fake IdP and walks
+// the redirects up to, not including, the callback. It returns the callback
+// URL (on the test server) the IdP redirected to.
+func (ts *testServer) oidcStart(t *testing.T, c *http.Client, idp *oidctest.IDP, slug, returnTo string, claims map[string]any) string {
+	t.Helper()
+	path := "/api/auth/oidc/" + slug + "/login"
+	if returnTo != "" {
+		path += "?return_to=" + url.QueryEscape(returnTo)
+	}
+	resp, b := ts.do(t, c, "GET", path, nil)
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("login: %d %s", resp.StatusCode, b)
+	}
+	authURL := resp.Header.Get("Location")
+	if !strings.HasPrefix(authURL, idp.URL+"/authorize") {
+		t.Fatalf("login redirected to %q, want the IdP", authURL)
+	}
+	idp.Next(claims)
+	resp, err := c.Get(authURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	cb := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusFound || !strings.HasPrefix(cb, ts.URL+"/api/auth/oidc/"+slug+"/callback") {
+		t.Fatalf("IdP redirected %d to %q", resp.StatusCode, cb)
+	}
+	return cb
+}
+
+// oidcLogin follows login → IdP /authorize → callback and returns the final
+// callback response (a redirect; its session cookie is in c's jar).
+func (ts *testServer) oidcLogin(t *testing.T, c *http.Client, idp *oidctest.IDP, slug, returnTo string, claims map[string]any) *http.Response {
+	t.Helper()
+	cb := ts.oidcStart(t, c, idp, slug, returnTo, claims)
+	resp, err := c.Get(cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp
 }

@@ -281,7 +281,7 @@ func (d Deps) registerAuthn(api huma.API) {
 
 	register(api, route{Method: http.MethodGet, Path: "/api/auth/providers", ID: "listAuthProviders", Tag: "auth",
 		Summary:     "Sign-in options",
-		Description: "Lists the ways to sign in: whether setup is pending, whether password sign-in is enabled, and the OIDC provider buttons. No authentication required."},
+		Description: "Lists the ways to sign in: whether setup is pending, whether password sign-in is enabled, and the enabled OIDC providers ordered by display name. No authentication required."},
 		func(ctx context.Context, _ *noIn) (*providersOut, error) {
 			n, err := d.Store.CountUsers(ctx)
 			if err != nil {
@@ -291,8 +291,19 @@ func (d Deps) registerAuthn(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			ps, err := d.Store.ListOIDCProviders(ctx) // ordered by display name
+			if err != nil {
+				return nil, err
+			}
+			buttons := []ProviderButton{}
+			for _, p := range ps {
+				if p.Enabled {
+					buttons = append(buttons, ProviderButton{Slug: p.Slug, DisplayName: p.DisplayName,
+						LoginURL: "/api/auth/oidc/" + p.Slug + "/login"})
+				}
+			}
 			return &providersOut{Body: ProvidersOut{NeedsSetup: n == 0, LocalLogin: s.Auth.AllowLocalLogin,
-				Providers: []ProviderButton{}}}, nil
+				Providers: buttons}}, nil
 		})
 }
 

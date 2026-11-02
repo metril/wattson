@@ -19,6 +19,8 @@ import (
 const (
 	Name = "wattson-proxy"
 	MAC  = "AA:BB:CC:DD:EE:FF"
+	// HelloMAC is the MAC as sent in the Noise server hello (12 lowercase hex, no separators).
+	HelloMAC = "aabbccddeeff"
 )
 
 // Reply is one message sent back by a Handle callback.
@@ -49,14 +51,16 @@ func (s *session) write(typ uint16, payload []byte) error {
 
 // Server is a fake ESPHome device. It serves one client at a time.
 type Server struct {
-	t   testing.TB
-	ln  net.Listener
-	key []byte
-	wg  sync.WaitGroup
+	t    testing.TB
+	ln   net.Listener
+	key  []byte
+	wg   sync.WaitGroup
+	once sync.Once
 
 	mu       sync.Mutex
 	handlers map[uint16]func([]byte) []Reply
 	cur      *session
+	active   net.Conn      // accepted conn, tracked from accept so shutdown can close it mid-handshake
 	ready    chan struct{} // closed once cur is set; replaced when cur clears
 	closed   bool
 }
@@ -75,7 +79,7 @@ func Start(t testing.TB, key []byte) *Server {
 	}
 	s.wg.Add(1)
 	go s.acceptLoop()
-	t.Cleanup(s.shutdown)
+	t.Cleanup(s.Close)
 	return s
 }
 
@@ -125,11 +129,19 @@ func (s *Server) CloseClient() {
 	}
 }
 
+// Close stops the server and drops any client; it is idempotent and also runs
+// automatically at test cleanup.
+func (s *Server) Close() { s.once.Do(s.shutdown) }
+
 func (s *Server) shutdown() {
 	s.mu.Lock()
 	s.closed = true
+	active := s.active
 	s.mu.Unlock()
 	_ = s.ln.Close()
+	if active != nil {
+		_ = active.Close()
+	}
 	s.CloseClient()
 	s.wg.Wait()
 }
@@ -142,13 +154,17 @@ func (s *Server) acceptLoop() {
 			return
 		}
 		s.mu.Lock()
-		closed := s.closed
-		s.mu.Unlock()
-		if closed {
+		if s.closed {
+			s.mu.Unlock()
 			_ = c.Close()
 			return
 		}
+		s.active = c
+		s.mu.Unlock()
 		s.serve(c)
+		s.mu.Lock()
+		s.active = nil
+		s.mu.Unlock()
 	}
 }
 
@@ -220,7 +236,7 @@ func (s *Server) handshake(c net.Conn) (*serverSession, error) {
 	// Server hello: 01 name\0 mac\0
 	hello := append([]byte{0x01}, Name...)
 	hello = append(hello, 0)
-	hello = append(hello, MAC...)
+	hello = append(hello, HelloMAC...)
 	hello = append(hello, 0)
 	if err := writeFrame(c, hello); err != nil {
 		return nil, err

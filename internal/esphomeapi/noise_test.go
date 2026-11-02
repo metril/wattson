@@ -71,7 +71,7 @@ func TestServerHelloParsed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.Name != "wattson-proxy" || h.MAC != "AA:BB:CC:DD:EE:FF" {
+	if h.Name != "wattson-proxy" || h.MAC != esphometest.HelloMAC {
 		t.Fatalf("hello = %+v", h)
 	}
 }
@@ -120,5 +120,44 @@ func TestCloseClientEndsRead(t *testing.T) {
 	srv.CloseClient()
 	if _, _, err := sc.ReadMsg(); err == nil {
 		t.Fatal("expected read error after CloseClient")
+	}
+}
+
+func TestSafeLabelCapsAndStrips(t *testing.T) {
+	t.Parallel()
+	if got := safeLabel([]byte("a\x1b[31mb\nc"), 32); got != "a[31mbc" {
+		t.Fatalf("strip: %q", got)
+	}
+	if got := safeLabel(bytes.Repeat([]byte("é"), 100), 32); len([]rune(got)) != 32 {
+		t.Fatalf("cap: %d runes", len([]rune(got)))
+	}
+}
+
+func TestParseServerHelloCaps(t *testing.T) {
+	t.Parallel()
+	f := append([]byte{0x01}, bytes.Repeat([]byte("n"), 100)...)
+	f = append(f, 0)
+	f = append(f, bytes.Repeat([]byte("m"), 100)...)
+	f = append(f, 0)
+	h, err := parseServerHello(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Name) != maxNameLen || len(h.MAC) != maxMACLen {
+		t.Fatalf("name=%d mac=%d", len(h.Name), len(h.MAC))
+	}
+}
+
+func TestServerShutdownMidHandshakeIsFast(t *testing.T) {
+	t.Parallel()
+	srv := esphometest.Start(t, key(1))
+	c := dial(t, srv.Addr())
+	_, _ = c.Write([]byte{0x01, 0x00}) // partial frame: server stuck mid-handshake
+	// Wait until the server accepted (it blocks reading the rest of the frame).
+	time.Sleep(20 * time.Millisecond)
+	start := time.Now()
+	srv.Close()
+	if el := time.Since(start); el > time.Second {
+		t.Fatalf("shutdown took %v", el)
 	}
 }

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/flynn/noise"
 )
@@ -108,7 +110,7 @@ func clientHandshake(ctx context.Context, c net.Conn, psk []byte) (*secureConn, 
 		if string(rf[1:]) == "Handshake MAC failure" {
 			return fail(ErrBadKey)
 		}
-		return fail(fmt.Errorf("%w: server: %s", ErrHandshake, rf[1:]))
+		return fail(fmt.Errorf("%w: server: %s", ErrHandshake, safeLabel(rf[1:], maxExplanationLen)))
 	}
 	_, cs0, cs1, err := hs.ReadMessage(nil, rf[1:])
 	if err != nil {
@@ -118,7 +120,38 @@ func clientHandshake(ctx context.Context, c net.Conn, psk []byte) (*secureConn, 
 	if cs0 == nil || cs1 == nil {
 		return fail(fmt.Errorf("%w: handshake incomplete", ErrHandshake))
 	}
+	if !stop() {
+		// ctx fired while we were finishing; the conn deadline may have been
+		// poisoned, so the connection is unusable.
+		return fail(ctx.Err())
+	}
 	return &secureConn{c: c, send: cs0, recv: cs1}, hello, nil
+}
+
+// Caps on peer-supplied labels, matching aioesphomeapi's _sanitize module.
+const (
+	maxNameLen        = 32
+	maxMACLen         = 16
+	maxExplanationLen = 64
+)
+
+// safeLabel strips non-printable characters and caps the length (in runes) of
+// a peer-supplied label so a hostile device cannot inject terminal escapes or
+// oversized values into logs.
+func safeLabel(raw []byte, limit int) string {
+	var b strings.Builder
+	n := 0
+	for _, r := range string(raw) { // invalid UTF-8 decodes to U+FFFD, which is printable
+		if !unicode.IsPrint(r) {
+			continue
+		}
+		if n == limit {
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String()
 }
 
 func parseServerHello(f []byte) (ServerHello, error) {
@@ -134,9 +167,9 @@ func parseServerHello(f []byte) (ServerHello, error) {
 	if !ok { // pre-2022.2 firmware: no name
 		return h, nil
 	}
-	h.Name = string(name)
+	h.Name = safeLabel(name, maxNameLen)
 	if mac, _, ok := bytes.Cut(rest, []byte{0}); ok { // mac added in 2025.4
-		h.MAC = string(mac)
+		h.MAC = safeLabel(mac, maxMACLen)
 	}
 	return h, nil
 }

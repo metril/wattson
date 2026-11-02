@@ -257,7 +257,7 @@ select {
  * Ride screen layouts. Plain CSS so the same markup serves three displays:
  *   phone portrait (< 600 w)      one column, 2 x 2 primary metrics
  *   tablet landscape (>= 900 w)   view and profile left, metric + control rail right
- *   TV (>= 1600 w)                view, profile strip, then a six-value HUD
+ *   TV (>= 1600 w)                route/workout: the tablet rail, wider; free ride: a seven-value HUD
  * Phone landscape (height < 500) uses the tablet layout with a 40 % rail.
  */
 .ride-screen {
@@ -431,18 +431,19 @@ html.ride-dark .ride-view .ride-viewbox {
   }
 }
 
-/* TV at 3 m: HUD under the view, values scale with the screen, 5 % overscan inset. */
+/* TV at 3 m: values scale with the screen, 5 % overscan inset; a free ride (no view) is a HUD across the screen. */
 @media (min-width: 1600px) {
   html.ride-dark .app-shell {
     padding-inline: max(5vw, env(safe-area-inset-left), env(safe-area-inset-right));
     padding-block: max(5vh, env(safe-area-inset-top), env(safe-area-inset-bottom));
   }
   .ride-screen {
-    --view-h: max(12rem, calc(90dvh - 46rem));
+    gap: 1rem;
+  }
+  .ride-flat {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
-    grid-template-areas: 'top' 'view' 'metrics' 'controls';
-    gap: 1rem;
+    grid-template-areas: 'top' 'metrics' 'controls';
   }
   .metric-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -516,5 +517,37 @@ html.ride-dark .ride-view .ride-viewbox {
   }
   .ride-flat .m-wide {
     grid-column: 1 / -1;
+  }
+}
+
+/*
+ * TV, route or workout ride: the tablet rail at TV scale. The view fills the left
+ * (about 700 px of a 1080 p screen, under the 5 % overscan), a 6 rem profile sits
+ * under it, and the numbers and controls stack in a 30 rem rail on the right.
+ */
+@media (min-width: 1600px) {
+  .ride-screen:not(.ride-flat) {
+    --rail: 30rem;
+    --view-h: calc(90dvh - 17rem);
+    --val: 4rem;
+    grid-template-columns: minmax(0, 1fr) var(--rail);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas: 'top top' 'view metrics' 'view controls';
+    padding-bottom: 0;
+  }
+  .ride-screen:not(.ride-flat) .ride-metrics,
+  .ride-screen:not(.ride-flat) .ride-controls {
+    align-self: start;
+  }
+  .ride-screen:not(.ride-flat) .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .ride-screen:not(.ride-flat) .m-minus,
+  .ride-screen:not(.ride-flat) .m-plus {
+    grid-column: span 1;
+  }
+  .ride-screen:not(.ride-flat) .metric-label {
+    font-size: 1.25rem;
   }
 }

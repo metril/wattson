@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
 import { api, unwrap } from '@/lib/api';
@@ -18,6 +19,7 @@ import type { MapApi } from '@/features/map/MapView';
 import { ProfileCanvas } from '@/features/routes/ProfileCanvas';
 import { photosKey, profileKey, routeKey } from '@/features/routes/queries';
 import type { components } from '@/lib/openapi';
+import { VIEW_SLOT_ID } from './BikeBar';
 import { ViewMenu } from './ViewMenu';
 
 type PhotosOut = components['schemas']['RoutePhotosOut'];
@@ -121,6 +123,9 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const tv = useMedia('(min-width: 1600px)');
   const rail = useMedia('(min-width: 900px) and (orientation: landscape)');
   const wide = useMedia('(min-width: 768px)'); // Tailwind md: the map panel is always shown
+  // On a TV the View menu sits in the top bar (BikeBar's slot), leaving the whole left column to the view.
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => setSlot(document.getElementById(VIEW_SLOT_ID)), []);
   const photoData = photoQuery.data;
   const photoList = photoData?.status === 'ready' ? photoData.photos : [];
   const caps: Caps = {
@@ -191,6 +196,10 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     };
   }, [map, prof, ticks]);
 
+  const viewMenu = (
+    <ViewMenu value={view} caps={caps} exaggeration={exaggeration} onChange={choose} onExaggeration={setExag} />
+  );
+
   if (route.isPending && profile.isPending) return null;
   if (profile.isError) {
     return <Banner tone="warn">This route is no longer available. Live metrics continue without the map.</Banner>;
@@ -199,7 +208,8 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   return (
     <section aria-label="Route" className="flex flex-col gap-3">
       {note && <Banner tone="info">{note}</Banner>}
-      {hasMap && (
+      {hasMap && tv && slot && createPortal(viewMenu, slot)}
+      {hasMap && !(tv && slot) && (
         <div className="flex flex-wrap items-start gap-3">
           <button
             type="button"
@@ -210,7 +220,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
           >
             {showMap ? 'Hide map' : 'Map'}
           </button>
-          <ViewMenu value={view} caps={caps} exaggeration={exaggeration} onChange={choose} onExaggeration={setExag} />
+          {viewMenu}
         </div>
       )}
       <div className="grid gap-3">
@@ -239,7 +249,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
             </Suspense>
           </div>
         )}
-        {prof && <ProfileCanvas profile={prof} cursor={ticks} height={tv ? 140 : rail ? 180 : hasMap ? 220 : 160} />}
+        {prof && <ProfileCanvas profile={prof} cursor={ticks} height={tv ? 96 : rail ? 180 : hasMap ? 220 : 160} />}
       </div>
     </section>
   );

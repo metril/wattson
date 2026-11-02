@@ -59,7 +59,10 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === pathToFi
   if (bytes > LIMIT_BYTES) failures.push(`main bundle ${(bytes / 1024).toFixed(1)} KB gz exceeds 400 KB`);
   for (const [name, limit] of Object.entries(CHUNK_LIMITS_KB)) {
     const n = chunkBytes(dist, name);
-    if (n === 0) continue;
+    if (n === 0) {
+      failures.push(`chunk ${name} not found in assets/ (renamed? update CHUNK_LIMITS_KB and vite.config.ts)`);
+      continue;
+    }
     const kb = (n / 1024).toFixed(1);
     console.log(`chunk ${name} ${kb} KB gz`);
     if (n > limit * 1024) failures.push(`chunk ${name} ${kb} KB gz exceeds ${limit} KB`);

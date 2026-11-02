@@ -1,8 +1,18 @@
 {
-  "runs": 3,
-  "pages": ["/login", "/"],
-  "scores": { "performance": 0.85, "accessibility": 0.95, "best-practices": 0.95 },
+  "runs": 5,
+  "pages": [
+    "/login",
+    "/"
+  ],
+  "scores": {
+    "performance": 0.85,
+    "accessibility": 0.95,
+    "best-practices": 0.95
+  },
   "lcpMs": 2500,
   "cls": 0.05,
-  "scriptTransferKB": 400
+  "scriptTransferKB": 400,
+  "referenceBenchmark": 2000,
+  "maxLcpScale": 1.5,
+  "_note": "lcpMs is the target on a machine with Lighthouse benchmarkIndex >= referenceBenchmark (the dev machine the budgets were measured on scores about 2000). A slower runner gets lcpMs x referenceBenchmark/benchmarkIndex, at most x maxLcpScale; scores, CLS and script transfer are not scaled. If a CI median sits within 10 % of a budget, record that instead of loosening it."
 }

@@ -19,6 +19,9 @@ const stateStyle: Record<RideState, string> = {
   finished: 'border-line text-chalk',
 };
 
+/** Where RouteView puts its View button on a TV. */
+export const VIEW_SLOT_ID = 'ride-view-slot';
+
 /** How long the link may be down before the page says so; a page load opens it within milliseconds. */
 const LINK_GRACE_MS = 600;
 
@@ -112,6 +115,8 @@ export function BikeBar({
           </div>
         </div>
         <div className="flex w-full items-end gap-3 md:ml-auto md:w-auto">
+          {/* On a TV the route view's View menu is shown here (see RouteView). */}
+          <div id={VIEW_SLOT_ID} className="contents" />
           <div className="min-w-0 flex-1 md:w-48 md:flex-none">
             <Select
               label="Rider"

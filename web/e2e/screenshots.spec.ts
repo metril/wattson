@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { apiAs, expect, importRamp, setupAdmin, test as base, useFakeMapillary, type Cookie } from './fixtures';
 
 // The user guide's pictures (docs/images). Not part of the suite: `npm run screenshots` after `make build`.
@@ -76,8 +76,8 @@ async function settle(page: Page) {
   await page.waitForTimeout(3_000);
 }
 
-async function shoot(page: Page, name: string) {
-  await page.screenshot({ path: resolve(OUT, `${name}.png`), animations: 'disabled' });
+async function shoot(page: Page, name: string, mask: Locator[] = []) {
+  await page.screenshot({ path: resolve(OUT, `${name}.png`), animations: 'disabled', mask, maskColor: '#9aa5a0' });
 }
 
 async function setView(page: Page, view: '2d' | '3d' | 'photo') {
@@ -159,5 +159,6 @@ test('kiosk-pair: pairing a TV with a QR code', async ({ page, routeId }) => {
   await page.getByRole('button', { name: 'Pair a display' }).click();
   await expect(page.getByAltText('Pairing QR code')).toBeVisible();
   await settle(page);
-  await shoot(page, 'kiosk-pair');
+  // The pairing token is a credential (this server is thrown away, but the picture is published): hide it and its QR code.
+  await shoot(page, 'kiosk-pair', [page.getByAltText('Pairing QR code'), page.getByText(/kiosk#token=/)]);
 });

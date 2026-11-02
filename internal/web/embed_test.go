@@ -135,6 +135,19 @@ func TestGzipAssets(t *testing.T) {
 	if rec := do("/sw.js", "gzip"); rec.Header().Get("Content-Encoding") != "gzip" || rec.Header().Get("Cache-Control") != "no-cache" {
 		t.Errorf("sw.js: %v", rec.Header())
 	}
+	// A Range request is answered from the uncompressed file (ranges of a gzip stream are meaningless).
+	rreq := httptest.NewRequest(http.MethodGet, "/assets/a.js", nil)
+	rreq.Header.Set("Accept-Encoding", "gzip")
+	rreq.Header.Set("Range", "bytes=0-9")
+	rrec := httptest.NewRecorder()
+	h.ServeHTTP(rrec, rreq)
+	if rrec.Code != http.StatusPartialContent || rrec.Header().Get("Content-Encoding") != "" || rrec.Body.String() != js[:10] {
+		t.Errorf("Range: %d %v %q", rrec.Code, rrec.Header(), rrec.Body.String())
+	}
+	// An explicit /index.html is the SPA entry: never cached, never a stale copy.
+	if rec := do("/index.html", "gzip"); rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-cache" || rec.Body.String() != "<html>app</html>" {
+		t.Errorf("/index.html: %d %v %q", rec.Code, rec.Header(), rec.Body.String())
+	}
 	head := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodHead, "/assets/a.js", nil)
 	req.Header.Set("Accept-Encoding", "gzip")

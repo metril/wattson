@@ -48,7 +48,7 @@ func handlerFor(fsys fs.FS) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upath := strings.TrimPrefix(r.URL.Path, "/")
-		if upath == "" {
+		if upath == "" || upath == "index.html" {
 			serveIndex(w, index)
 			return
 		}
@@ -83,7 +83,7 @@ func handlerFor(fsys fs.FS) http.Handler {
 
 // gzExt lists the text formats worth compressing (woff2, images and the like
 // are already compressed).
-var gzExt = map[string]bool{".js": true, ".css": true, ".html": true, ".svg": true, ".json": true, ".webmanifest": true}
+var gzExt = map[string]bool{".js": true, ".css": true, ".html": true, ".svg": true, ".json": true}
 
 // gzCache serves gzip-compressed copies of the embedded text files, built once
 // on first request. The binary is often the only server in front of the
@@ -91,24 +91,31 @@ var gzExt = map[string]bool{".js": true, ".css": true, ".html": true, ".svg": tr
 // compressed form.
 type gzCache struct {
 	fsys fs.FS
-	m    sync.Map // path -> []byte (nil: not compressible)
+	m    sync.Map // path -> *gzEntry
+}
+
+// gzEntry is compressed once even when the first requests arrive together.
+type gzEntry struct {
+	once sync.Once
+	body []byte // nil: not worth compressing
 }
 
 func (c *gzCache) bytes(upath string) []byte {
-	if v, ok := c.m.Load(upath); ok {
-		return v.([]byte)
-	}
-	var out []byte
-	if raw, err := fs.ReadFile(c.fsys, upath); err == nil {
+	v, _ := c.m.LoadOrStore(upath, &gzEntry{})
+	e := v.(*gzEntry)
+	e.once.Do(func() {
+		raw, err := fs.ReadFile(c.fsys, upath)
+		if err != nil {
+			return
+		}
 		var buf bytes.Buffer
 		zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
 		_, _ = zw.Write(raw)
 		if zw.Close() == nil && buf.Len() < len(raw) {
-			out = buf.Bytes()
+			e.body = buf.Bytes()
 		}
-	}
-	c.m.Store(upath, out)
-	return out
+	})
+	return e.body
 }
 
 // serve answers GET and HEAD for upath with the compressed copy and reports

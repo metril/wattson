@@ -178,7 +178,7 @@ jobs:
       - name: install chromium
         working-directory: web
         run: npx playwright install --with-deps chromium
-      - name: lighthouse (performance, accessibility, best practices; median of 3)
+      - name: lighthouse (performance, accessibility, best practices; median of 5, an over-budget page re-run once)
         working-directory: web
         run: npm run perf
       - name: upload report

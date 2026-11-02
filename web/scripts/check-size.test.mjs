@@ -10,12 +10,13 @@ import { chunkBytes, mainBundleBytes } from './check-size.mjs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'check-size.mjs');
 
-function fixture(jsBytes) {
+function fixture(jsBytes, chunks = { maplibre: 1024, ride3d: 1024, photo: 1024 }) {
   const dir = mkdtempSync(join(tmpdir(), 'size-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'assets/index-abc.js'), randomBytes(jsBytes));
   writeFileSync(join(dir, 'assets/index-abc.css'), 'body{margin:0}');
   writeFileSync(join(dir, 'assets/lazy-qr.js'), randomBytes(900_000));
+  for (const [name, bytes] of Object.entries(chunks)) writeFileSync(join(dir, `assets/${name}-abc123.js`), randomBytes(bytes));
   writeFileSync(
     join(dir, 'index.html'),
     '<!doctype html><html><head>' +
@@ -32,7 +33,7 @@ test('small bundle is under the limit and lazy chunks are ignored', () => {
     const n = mainBundleBytes(dir);
     assert.ok(n > 1024 && n < 2048, `got ${n}`);
     const out = execFileSync('node', [script, dir], { encoding: 'utf8' });
-    assert.match(out, /^main bundle \d+(\.\d)? KB gz\n$/);
+    assert.match(out, /^main bundle \d+(\.\d)? KB gz\n/);
   } finally {
     rmSync(dir, { recursive: true });
   }
@@ -52,9 +53,7 @@ test('600 KB of incompressible JS exceeds the limit', () => {
 
 // A dist whose only lazy chunk is `name` (plus the usual small entry).
 function chunkFixture(name, bytes) {
-  const dir = fixture(1024);
-  writeFileSync(join(dir, `assets/${name}-abc123.js`), randomBytes(bytes));
-  return dir;
+  return fixture(1024, { maplibre: 1024, ride3d: 1024, photo: 1024, [name]: bytes });
 }
 
 test('chunkBytes gzips assets/<name>-*.js and is 0 when the chunk is missing', () => {
@@ -62,7 +61,7 @@ test('chunkBytes gzips assets/<name>-*.js and is 0 when the chunk is missing', (
   try {
     const n = chunkBytes(dir, 'ride3d');
     assert.ok(n > 10 * 1024 && n < 11 * 1024, `got ${n}`);
-    assert.equal(chunkBytes(dir, 'photo'), 0);
+    assert.equal(chunkBytes(dir, 'nothing'), 0);
   } finally {
     rmSync(dir, { recursive: true });
   }
@@ -102,5 +101,16 @@ test('photo over 30 KB and maplibre over 300 KB fail', () => {
     } finally {
       rmSync(dir, { recursive: true });
     }
+  }
+});
+
+test('a missing budgeted chunk fails (a rename would otherwise skip its budget)', () => {
+  const dir = fixture(1024, { maplibre: 1024, photo: 1024 });
+  try {
+    const r = spawnSync('node', [script, dir], { encoding: 'utf8' });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /chunk ride3d not found/);
+  } finally {
+    rmSync(dir, { recursive: true });
   }
 });

@@ -54,7 +54,7 @@ export function ViewMenu(p: {
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="relative flex flex-col gap-2">
       <button
         ref={btn}
         type="button"
@@ -68,7 +68,10 @@ export function ViewMenu(p: {
         View
       </button>
       {open && (
-        <div id={id} className="flex flex-col gap-1 rounded-panel border border-line bg-panel p-2">
+        <div
+          id={id}
+          className="flex flex-col gap-1 rounded-panel border border-line bg-panel p-2 min-[1600px]:absolute min-[1600px]:right-0 min-[1600px]:top-full min-[1600px]:z-30 min-[1600px]:mt-2 min-[1600px]:w-96"
+        >
           <div ref={group} role="radiogroup" aria-label="Ride view" onKeyDown={onArrow} className="flex flex-col gap-1">
             {OPTIONS.map(({ v, label }) => {
               const why = unavailableReason(v, p.caps);

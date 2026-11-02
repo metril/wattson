@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { failures, median, metricsOf } from './lighthouse.mjs';
+import { failures, lcpScale, median, metricsOf } from './lighthouse.mjs';
 
 const budgets = {
   scores: { performance: 0.85, accessibility: 0.95, 'best-practices': 0.95 },
   lcpMs: 2500,
   cls: 0.05,
   scriptTransferKB: 400,
+  referenceBenchmark: 1000,
+  maxLcpScale: 1.5,
 };
-const good = { performance: 0.95, accessibility: 1, 'best-practices': 1, lcpMs: 1200, cls: 0, scriptKB: 150 };
+const good = { performance: 0.95, accessibility: 1, 'best-practices': 1, lcpMs: 1200, cls: 0, scriptKB: 150, benchmark: 1500 };
 
 test('median of odd and even lists', () => {
   assert.equal(median([3, 1, 2]), 2);
@@ -26,7 +28,7 @@ test('the median decides, so one bad run is tolerated and two are not', () => {
 });
 
 test('each failed assertion is listed as <page> <metric> <value> < <min>', () => {
-  const bad = { performance: 0.8, accessibility: 0.9, 'best-practices': 0.9, lcpMs: 3000, cls: 0.2, scriptKB: 500 };
+  const bad = { performance: 0.8, accessibility: 0.9, 'best-practices': 0.9, lcpMs: 3000, cls: 0.2, scriptKB: 500, benchmark: 1500 };
   assert.deepEqual(failures({ '/': [bad] }, budgets), [
     '/ performance 0.800 < 0.85',
     '/ accessibility 0.900 < 0.95',
@@ -44,11 +46,24 @@ test('script transfer is judged on / only', () => {
 test('metricsOf reads scores, LCP, CLS and script bytes from a result', () => {
   const m = metricsOf({
     categories: { performance: { score: 0.9 }, accessibility: { score: 1 }, 'best-practices': { score: 0.96 } },
+    environment: { benchmarkIndex: 800 },
     audits: {
       'largest-contentful-paint': { numericValue: 1500 },
       'cumulative-layout-shift': { numericValue: 0.01 },
       'resource-summary': { details: { items: [{ resourceType: 'font', transferSize: 1 }, { resourceType: 'script', transferSize: 2048 }] } },
     },
   });
-  assert.deepEqual(m, { performance: 0.9, accessibility: 1, 'best-practices': 0.96, lcpMs: 1500, cls: 0.01, scriptKB: 2 });
+  assert.deepEqual(m, { performance: 0.9, accessibility: 1, 'best-practices': 0.96, lcpMs: 1500, cls: 0.01, scriptKB: 2, benchmark: 800 });
+});
+
+test('a slow runner gets a larger LCP budget (up to 1.5x), a fast one the plan budget', () => {
+  assert.equal(lcpScale(2000, budgets), 1);
+  assert.equal(lcpScale(1000, budgets), 1);
+  assert.equal(lcpScale(800, budgets), 1.25);
+  assert.equal(lcpScale(300, budgets), 1.5);
+  assert.equal(lcpScale(0, budgets), 1);
+  const slow = { ...good, lcpMs: 3000, benchmark: 800 }; // 2500 x 1.25 = 3125 allowed
+  assert.deepEqual(failures({ '/': [slow] }, budgets), []);
+  assert.deepEqual(failures({ '/': [{ ...slow, lcpMs: 3200 }] }, budgets), ['/ LCP 3200 ms > 3125 ms']);
+  assert.deepEqual(failures({ '/': [{ ...good, lcpMs: 3000 }] }, budgets), ['/ LCP 3000 ms > 2500 ms']);
 });

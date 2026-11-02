@@ -60,6 +60,7 @@ function DeviceTable({ devices, onPick }: { devices: Device[]; onPick: (d: Devic
 
 function Body({ s, compact, onSaved }: { s: SettingsOut; compact?: boolean; onSaved?: () => void }) {
   const b = s.bike;
+  const qc = useQueryClient();
   const f = useSettingsForm(
     {
       'bike.driver': b.driver,
@@ -72,7 +73,11 @@ function Body({ s, compact, onSaved }: { s: SettingsOut; compact?: boolean; onSa
       'bike.idle_release_min': b.idle_release_min,
       'bike.sim_cadence_rpm': b.sim_cadence_rpm,
     },
-    onSaved,
+    () => {
+      // A changed driver or address names a different bike (and power model).
+      void qc.invalidateQueries({ queryKey: POWER_MODEL_KEY });
+      onSaved?.();
+    },
   );
   const driver = f.value<string>('bike.driver');
   const transport = f.value<Transport>('bike.transport');

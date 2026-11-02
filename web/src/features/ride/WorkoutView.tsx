@@ -27,7 +27,6 @@ export function describeTarget(type: WorkoutType, b: Block, value: number): stri
 export function WorkoutView({ workoutId, ticks, riderId }: { workoutId: number; ticks: TickStore; riderId?: number }) {
   const workout = useQuery({
     queryKey: workoutKey(workoutId),
-    staleTime: Infinity,
     retry: false,
     queryFn: async () => unwrap(await api.GET('/api/workouts/{id}', { params: { path: { id: workoutId } } })),
   });

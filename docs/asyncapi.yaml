@@ -39,7 +39,7 @@
     },
     "wattson/command/{command}": {
       "address": "wattson/command/{command}",
-      "description": "Buttons: start a free ride, pause, resume, stop, change the resistance level by one (in a route ride this shifts the live bias), or release the bike.",
+      "description": "Buttons: start a free ride, pause, resume, stop, change the resistance level by one (in route and interval rides this shifts the live bias), or release the bike.",
       "messages": {
         "mqttPress": {
           "$ref": "#/components/messages/mqttPress"
@@ -400,7 +400,7 @@
             "type": "string"
           },
           "bias": {
-            "description": "Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode.",
+            "description": "Live resistance bias in levels (-10 to 10) added to the route level (route mode) or shifting the interval level (interval mode); 0 in free ride and ERG modes.",
             "format": "int64",
             "type": "integer"
           },

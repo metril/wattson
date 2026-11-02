@@ -1,8 +1,8 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { components } from '@/lib/openapi';
-import { renderWithClient, stubApi } from '@/test-utils';
-import { PowerModelCard } from './Bike';
+import { renderWithClient, settingsFixture, stubApi } from '@/test-utils';
+import { BikeForm, PowerModelCard } from './Bike';
 
 const model = (over: Partial<components['schemas']['PowerModelInfo']> = {}): components['schemas']['PowerModelInfo'] => ({
   a: 0.375,
@@ -48,5 +48,33 @@ describe('PowerModelCard', () => {
     stubApi({ 'GET /api/bike/power-model': [200, model({ samples: 0, seeded: true })] });
     renderWithClient(<PowerModelCard />);
     expect(await screen.findByText(/built-in starting model/)).toBeInTheDocument();
+  });
+});
+
+describe('PowerModelCard and bike settings', () => {
+  it('refetches the power model once the bike settings are saved', async () => {
+    const st = settingsFixture({ bike: { driver: 'fitplus' } });
+    let current = model();
+    const stub = stubApi({
+      'GET /api/settings': [200, st],
+      'PATCH /api/settings': [200, st],
+      'GET /api/bike/power-model': () => [200, current],
+    });
+    renderWithClient(
+      <>
+        <BikeForm />
+        <PowerModelCard />
+      </>,
+    );
+    await screen.findByText('42');
+    const gets = () => stub.calls.filter((c) => c.key === 'GET /api/bike/power-model').length;
+    expect(gets()).toBe(1);
+    current = model({ samples: 7, bike_key: 'other' });
+    const idle = await screen.findByLabelText(/idle auto-release/i);
+    await userEvent.clear(idle);
+    await userEvent.type(idle, '30');
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(await screen.findByText('7')).toBeInTheDocument();
+    expect(gets()).toBe(2);
   });
 });

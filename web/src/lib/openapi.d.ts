@@ -1335,7 +1335,7 @@ export interface components {
             target_power_w?: number;
             /**
              * Format: int64
-             * @description Resistance level for set_level, the change in levels for level_delta (in ERG, steps of 10 W of target), or the target in watts (50 to 1000) for set_target_power; ignored by other commands.
+             * @description Resistance level for set_level, the change in levels for level_delta (in route and interval rides it shifts the live bias; in ERG, steps of 10 W of target), or the target in watts (50 to 1000) for set_target_power; ignored by other commands.
              */
             value?: number;
             /**
@@ -2693,7 +2693,7 @@ export interface components {
             at: string;
             /**
              * Format: int64
-             * @description Live resistance bias in levels (-10 to 10) added to the route level; 0 outside route mode.
+             * @description Live resistance bias in levels (-10 to 10) added to the route level (route mode) or shifting the interval level (interval mode); 0 in free ride and ERG modes.
              */
             bias: number;
             /**

@@ -7,4 +7,6 @@ CREATE TABLE route_photo_ids (
     PRIMARY KEY (image_id, route_id)
 ) WITHOUT ROWID;
 
+CREATE INDEX route_photo_ids_route ON route_photo_ids(route_id);
+
 DELETE FROM route_photos;

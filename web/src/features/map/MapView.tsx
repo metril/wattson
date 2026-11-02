@@ -11,6 +11,8 @@ export type MapApi = {
   setMarker(ll: [number, number] | null): void;
   setWaypoints(w: [number, number][]): void;
   setTiles(fc: GeoJSON.FeatureCollection | null, onTileClick?: (name: string) => void): void;
+  /** Current map centre as [lon, lat]. */
+  getCenter(): [number, number];
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -160,6 +162,10 @@ export default function MapView(p: {
         setWaypoints(w) {
           waypoints = w;
           if (ready) setData('waypoints', wpFC());
+        },
+        getCenter() {
+          const c = map.getCenter();
+          return [c.lng, c.lat];
         },
         setTiles(fc, onTileClick) {
           tiles = fc;

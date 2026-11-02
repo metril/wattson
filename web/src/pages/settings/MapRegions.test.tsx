@@ -143,6 +143,17 @@ describe('MapRegionsPage', () => {
     expect(feature('E0_N0').status).toBe('available');
   });
 
+  it('keeps the list and shows an error when a refresh fails', async () => {
+    let fail = false;
+    await render({ [LIST]: () => (fail ? apiError(500, 'internal', 'disk on fire') : [200, tiles()]) });
+    fail = true;
+    await settle(1000);
+    await settle(10);
+    await settle(10);
+    expect(screen.getByRole('alert')).toHaveTextContent('disk on fire');
+    expect(screen.getByRole('list', { name: 'Regions' })).toBeInTheDocument();
+  });
+
   it('says so when BRouter is remote', async () => {
     await render({ [LIST]: apiError(409, 'no_local_regions', 'No segments directory') });
     expect(screen.getByText(/Using a remote BRouter — local map regions disabled/)).toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, Trash2, Undo2 } from 'lucide-react';
+import { Crosshair, Eraser, Trash2, Undo2 } from 'lucide-react';
 import { api, ApiError, unwrap } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { errMessage } from '@/lib/errors';
@@ -15,7 +15,6 @@ import MapView, { type MapApi } from '@/features/map/MapView';
 import { ProfileCanvas } from '@/features/routes/ProfileCanvas';
 import { ROUTES_KEY, routeKey } from '@/features/routes/queries';
 import { RouteStats } from '@/features/routes/RouteStats';
-import { SETTINGS_KEY } from './settings/form';
 
 type Draw = components['schemas']['DrawOut'];
 type Profile = NonNullable<components['schemas']['DrawInBody']['profile']>;
@@ -29,7 +28,6 @@ const PROFILES: { value: Profile; label: string }[] = [
   { value: 'safety', label: 'Safety' },
   { value: 'shortest', label: 'Shortest' },
 ];
-const isProfile = (p: string | undefined): p is Profile => PROFILES.some((x) => x.value === p);
 
 type Failure = { message: string; missing: string[] };
 
@@ -50,9 +48,11 @@ function parseView(params: URLSearchParams): { center: LL; zoom: number; explici
 function MissingTiles({ tiles, admin }: { tiles: string[]; admin: boolean }) {
   const download = useMutation({
     mutationFn: async () => {
-      await Promise.all(
+      const res = await Promise.allSettled(
         tiles.map(async (name) => unwrap(await api.POST('/api/maps/tiles/{name}', { params: { path: { name } } }))),
       );
+      const failed = res.flatMap((r, i) => (r.status === 'rejected' ? [`${tiles[i]}: ${errMessage(r.reason)}`] : []));
+      if (failed.length) throw new Error(failed.join('; '));
     },
   });
   const list = tiles.join(', ');
@@ -96,12 +96,6 @@ export function RouteDrawPage() {
   const me = useMe();
   const isAdmin = !!me.data?.user.is_admin;
 
-  const settings = useQuery({
-    queryKey: SETTINGS_KEY,
-    enabled: isAdmin,
-    retry: false,
-    queryFn: async () => unwrap(await api.GET('/api/settings')),
-  });
   // Without an explicit view, open on the newest route.
   const routes = useQuery({
     queryKey: ROUTES_KEY,
@@ -121,12 +115,14 @@ export function RouteDrawPage() {
   const [waypoints, setWaypoints] = useState<LL[]>([]);
   const [profileChoice, setProfileChoice] = useState<Profile | null>(null);
   const [name, setName] = useState('');
-  const [preview, setPreview] = useState<Draw | null>(null);
+  // The inputs a preview was computed for, to tell when it has gone stale.
+  const [preview, setPreview] = useState<(Draw & { wps: LL[]; prof: Profile | null }) | null>(null);
   const [busy, setBusy] = useState(false);
   const [fail, setFail] = useState<Failure | null>(null);
   const [retry, setRetry] = useState(0);
 
-  const profile: Profile = profileChoice ?? (isProfile(settings.data?.brouter.profile) ? settings.data.brouter.profile : 'trekking');
+  // null leaves the choice to the server (Settings, Integrations).
+  const profile = profileChoice;
 
   const bbox = last.data?.bbox;
   useEffect(() => {
@@ -157,12 +153,12 @@ export function RouteDrawPage() {
       try {
         const d = unwrap(
           await api.POST('/api/routes/draw', {
-            body: { waypoints, profile, dry_run: true },
+            body: { waypoints, ...(profile ? { profile } : {}), dry_run: true },
             signal: ac.signal,
           }),
         );
         if (ac.signal.aborted) return;
-        setPreview(d);
+        setPreview({ ...d, wps: waypoints, prof: profile });
         setBusy(false);
       } catch (e) {
         if (ac.signal.aborted) return;
@@ -181,7 +177,7 @@ export function RouteDrawPage() {
     mutationFn: async () =>
       unwrap(
         await api.POST('/api/routes/draw', {
-          body: { waypoints, profile, dry_run: false, ...(name.trim() ? { name: name.trim() } : {}) },
+          body: { waypoints, ...(profile ? { profile } : {}), dry_run: false, ...(name.trim() ? { name: name.trim() } : {}) },
         }),
       ),
     onSuccess: (d) => {
@@ -194,6 +190,7 @@ export function RouteDrawPage() {
   const add = (ll: LL) => setWaypoints((w) => (w.length >= MAX_WAYPOINTS ? w : [...w, ll]));
   const change = setWaypoints;
   const full = waypoints.length >= MAX_WAYPOINTS;
+  const stale = !!preview && (preview.wps !== waypoints || preview.prof !== profile);
 
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
@@ -220,9 +217,10 @@ export function RouteDrawPage() {
         <Card className="flex flex-col gap-4">
           <Select
             label="Routing profile"
-            value={profile}
-            onChange={(e) => setProfileChoice(e.target.value as Profile)}
+            value={profile ?? ''}
+            onChange={(e) => setProfileChoice((e.target.value || null) as Profile | null)}
           >
+            <option value="">Server default</option>
             {PROFILES.map((p) => (
               <option key={p.value} value={p.value}>
                 {p.label}
@@ -231,6 +229,10 @@ export function RouteDrawPage() {
           </Select>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Button disabled={!map || full} onClick={() => map && add(map.getCenter())}>
+              <Crosshair aria-hidden className="size-5" />
+              Add waypoint at map centre
+            </Button>
             <Button disabled={waypoints.length === 0} onClick={() => change((w) => w.slice(0, -1))}>
               <Undo2 aria-hidden className="size-5" />
               Undo
@@ -264,7 +266,7 @@ export function RouteDrawPage() {
           {fail &&
             (fail.missing.length > 0 ? (
               <>
-                <MissingTiles tiles={fail.missing} admin={isAdmin} />
+                <MissingTiles key={fail.missing.join()} tiles={fail.missing} admin={isAdmin} />
                 <div>
                   <Button onClick={() => setRetry((n) => n + 1)}>Try again</Button>
                 </div>
@@ -304,7 +306,7 @@ export function RouteDrawPage() {
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-            <Button type="submit" variant="primary" disabled={save.isPending || busy}>
+            <Button type="submit" variant="primary" disabled={save.isPending || busy || stale}>
               {save.isPending ? 'Saving…' : 'Save route'}
             </Button>
           </form>

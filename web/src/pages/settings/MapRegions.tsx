@@ -323,8 +323,11 @@ export function MapRegionsPage() {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="numeral text-2xl">Map regions</h2>
-      {q.data ? (
-        <Manager data={q.data} />
+      {q.data && !noLocal ? (
+        <>
+          {q.isError && !noLocal && <Banner tone="error">{errMessage(q.error)}</Banner>}
+          <Manager data={q.data} />
+        </>
       ) : q.isPending ? (
         <p role="status" className="text-dim">
           Loading…

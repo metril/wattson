@@ -40,6 +40,9 @@ const h = vi.hoisted(() => {
     queryRenderedFeatures() {
       return [{ properties: { name: 'E5_N45' } }];
     }
+    getCenter() {
+      return { lng: 8.25, lat: 46.5 };
+    }
     fitBounds = vi.fn();
     setStyle = vi.fn();
     remove() {
@@ -94,6 +97,11 @@ describe('MapView', () => {
     const { map } = await mount({ onClick });
     map.emit('click', { lngLat: { lng: 7.5, lat: 45.5 }, point: { x: 1, y: 1 } });
     expect(onClick).toHaveBeenCalledWith([7.5, 45.5]);
+  });
+
+  it('reports the map centre as [lon, lat]', async () => {
+    const { api } = await mount();
+    expect(api.getCenter()).toEqual([8.25, 46.5]);
   });
 
   it('places and clears the marker', async () => {

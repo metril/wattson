@@ -1,11 +1,11 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router';
 import { RouteDrawPage } from './RouteDraw';
 import { apiError, profileFixture, renderWithClient, routeFixture, stubApi, userFixture } from '@/test-utils';
 
 const m = vi.hoisted(() => ({
   props: null as null | { onClick?(ll: [number, number]): void; center?: [number, number]; zoom?: number },
-  api: { setLine: vi.fn(), fit: vi.fn(), setMarker: vi.fn(), setWaypoints: vi.fn(), setTiles: vi.fn() },
+  api: { getCenter: vi.fn(() => [8.5, 46.25] as [number, number]), setLine: vi.fn(), fit: vi.fn(), setMarker: vi.fn(), setWaypoints: vi.fn(), setTiles: vi.fn() },
 }));
 
 vi.mock('@/features/map/MapView', async () => {
@@ -69,7 +69,7 @@ describe('RouteDrawPage', () => {
     await settle(399);
     expect(draws(s)).toHaveLength(0);
     await settle(1);
-    expect(draws(s)).toEqual([{ waypoints: [A, B], profile: 'trekking', dry_run: true }]);
+    expect(draws(s)).toEqual([{ waypoints: [A, B], dry_run: true }]);
     await settle(0);
     expect(screen.getByText('12.35')).toBeInTheDocument();
     expect(m.api.setLine).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'LineString' }));
@@ -151,15 +151,38 @@ describe('RouteDrawPage', () => {
     expect(draws(s)[0]).toMatchObject({ profile: 'safety' });
   });
 
-  it('defaults the profile from settings for admins', async () => {
-    const s = await render({
-      'GET /api/settings': [200, { brouter: { profile: 'fastbike' } }],
-    });
-    await settle(0);
+  it('leaves the profile to the server unless one is picked, for everyone', async () => {
+    for (const admin of [true, false]) {
+      const s = await render({}, '/routes/new/draw', admin);
+      expect(screen.getByLabelText('Routing profile')).toHaveValue('');
+      click(A);
+      click(B);
+      await settle();
+      expect(draws(s)[0]).not.toHaveProperty('profile');
+      cleanup();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('adds a waypoint at the map centre from a button', async () => {
+    const s = await render();
+    fireEvent.click(screen.getByRole('button', { name: 'Add waypoint at map centre' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add waypoint at map centre' }));
+    await settle();
+    expect(screen.getByText('2 / 30 waypoints')).toBeInTheDocument();
+    expect(draws(s)[0]).toMatchObject({ waypoints: [[8.5, 46.25], [8.5, 46.25]] });
+  });
+
+  it('disables Save while the preview is out of date', async () => {
+    await render();
     click(A);
     click(B);
     await settle();
-    expect(draws(s)[0]).toMatchObject({ profile: 'fastbike' });
+    expect(screen.getByRole('button', { name: 'Save route' })).toBeEnabled();
+    click([7.52, 45.52]);
+    expect(screen.getByRole('button', { name: 'Save route' })).toBeDisabled();
+    await settle();
+    expect(screen.getByRole('button', { name: 'Save route' })).toBeEnabled();
   });
 
   it('missing map regions: admins get a link and a download button', async () => {
@@ -217,7 +240,7 @@ describe('RouteDrawPage', () => {
     fireEvent.change(screen.getByLabelText('Route name'), { target: { value: 'Loop' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save route' }));
     await settle(0);
-    expect(draws(s)[1]).toEqual({ waypoints: [A, B], profile: 'trekking', dry_run: false, name: 'Loop' });
+    expect(draws(s)[1]).toEqual({ waypoints: [A, B], dry_run: false, name: 'Loop' });
     expect(screen.getByTestId('where')).toHaveTextContent('/routes/9');
   });
 

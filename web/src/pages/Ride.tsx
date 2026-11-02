@@ -102,6 +102,8 @@ export function RidePage() {
   }, [socket]);
 
   const { connected, state, bike } = status;
+  // Stays mounted from picking the route into the ride, so pressing Start does not cancel the save.
+  const pillRoute = routeMode ? routeId : state === 'ready' && choice.kind === 'route' ? choice.id : 0;
   const ergMode = mode === 'erg';
   const active = state === 'ready' || state === 'riding' || state === 'paused';
 
@@ -116,7 +118,7 @@ export function RidePage() {
       )}
       {cmdError && <Banner tone="error">{cmdError}</Banner>}
       {state === 'ready' && <StartPicker value={choice} onChange={setChoice} />}
-      {state === 'ready' && choice.kind === 'route' && <PrefetchPill routeId={choice.id} />}
+      {pillRoute !== 0 && <PrefetchPill routeId={pillRoute} />}
       {complete && (
         <Banner tone="ok">
           <p className="text-lg font-medium">{complete === 'workout' ? 'Workout complete' : 'Route complete'}</p>

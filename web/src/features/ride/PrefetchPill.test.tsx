@@ -5,8 +5,18 @@ import { PrefetchPill } from './PrefetchPill';
 const h = vi.hoisted(() => ({
   prefetchRoute: vi.fn(),
   hasController: vi.fn(() => true),
+  controllerChange: null as null | (() => void),
 }));
-vi.mock('@/sw/register', () => ({ prefetchRoute: h.prefetchRoute, hasController: h.hasController }));
+vi.mock('@/sw/register', () => ({
+  prefetchRoute: h.prefetchRoute,
+  hasController: h.hasController,
+  onControllerChange: (fn: () => void) => {
+    h.controllerChange = fn;
+    return () => {
+      h.controllerChange = null;
+    };
+  },
+}));
 vi.mock('@/sw/corridor', async (orig) => ({
   ...(await orig<typeof import('@/sw/corridor')>()),
   vectorTemplate: async () => 'https://tiles.openfreemap.org/planet/v/{z}/{x}/{y}.pbf',
@@ -33,7 +43,7 @@ afterEach(() => {
 describe('PrefetchPill', () => {
   it('shows progress then the saved message, and hides it after 5 s', async () => {
     let progress: (d: number, t: number) => void = () => {};
-    let done: (v: { cached: number; failed: number }) => void = () => {};
+    let done: (v: { cached: number; failed: number; total: number }) => void = () => {};
     h.prefetchRoute.mockImplementation((_u: string[], p: typeof progress) => {
       progress = p;
       return new Promise((r) => (done = r));
@@ -45,7 +55,7 @@ describe('PrefetchPill', () => {
     act(() => progress(42, 100));
     expect(await screen.findByRole('status')).toHaveTextContent('Saving map for offline… 42 %');
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    await act(async () => done({ cached: 100, failed: 0 }));
+    await act(async () => done({ cached: 100, failed: 0, total: 100 }));
     expect(screen.getByRole('status')).toHaveTextContent('Map saved for this route');
     expect(localStorage.getItem('wattson.prefetched.7')).toBeTruthy();
     await act(async () => void vi.advanceTimersByTime(5100));
@@ -104,5 +114,65 @@ describe('PrefetchPill', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
     await act(async () => {});
     expect(h.prefetchRoute).not.toHaveBeenCalled();
+  });
+
+  async function finish(res: { cached: number; failed: number; total: number }) {
+    h.prefetchRoute.mockResolvedValue(res);
+    api();
+    renderWithClient(<PrefetchPill routeId={7} />);
+    await waitFor(() => expect(h.prefetchRoute).toHaveBeenCalled());
+  }
+
+  it('all tiles failed: says internet is needed and does not retry for a day', async () => {
+    await finish({ cached: 0, failed: 50, total: 50 });
+    expect(await screen.findByRole('status')).toHaveTextContent("Couldn't save the map — you'll need internet");
+    expect(localStorage.getItem('wattson.prefetched.7')).toBeNull();
+    expect(localStorage.getItem('wattson.prefetch_retry.7')).toBeTruthy();
+  });
+
+  it('partly saved is reported honestly and remembered for retry, not as saved', async () => {
+    await finish({ cached: 80, failed: 20, total: 100 });
+    expect(await screen.findByRole('status')).toHaveTextContent('Map partly saved (80 of 100)');
+    expect(localStorage.getItem('wattson.prefetched.7')).toBeNull();
+    expect(localStorage.getItem('wattson.prefetch_retry.7')).toBeTruthy();
+  });
+
+  it('one bad tile in a few hundred still counts as saved', async () => {
+    await finish({ cached: 299, failed: 1, total: 300 });
+    expect(await screen.findByRole('status')).toHaveTextContent('Map saved for this route');
+    expect(localStorage.getItem('wattson.prefetched.7')).toBeTruthy();
+  });
+
+  it('a retry mark under a day old skips the job', async () => {
+    localStorage.setItem('wattson.prefetch_retry.7', new Date(Date.now() - 3600e3).toISOString());
+    api();
+    renderWithClient(<PrefetchPill routeId={7} />);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(h.prefetchRoute).not.toHaveBeenCalled();
+  });
+
+  it('aborts the job on unmount', async () => {
+    h.prefetchRoute.mockImplementation(() => new Promise(() => {}));
+    api();
+    const { unmount } = renderWithClient(<PrefetchPill routeId={7} />);
+    await waitFor(() => expect(h.prefetchRoute).toHaveBeenCalled());
+    const signal = h.prefetchRoute.mock.calls[0][2] as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('starts when the worker takes control after the first load', async () => {
+    h.hasController.mockReturnValue(false);
+    h.prefetchRoute.mockResolvedValue({ cached: 1, failed: 0, total: 1 });
+    api();
+    renderWithClient(<PrefetchPill routeId={7} />);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(h.prefetchRoute).not.toHaveBeenCalled();
+    h.hasController.mockReturnValue(true);
+    act(() => h.controllerChange?.());
+    await waitFor(() => expect(h.prefetchRoute).toHaveBeenCalled());
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getKioskToken } from '@/lib/api';
+import { getKioskToken, notifyUnauthorized } from '@/lib/api';
 import { photoAt, upcoming, type Photo } from '@/lib/photo-select';
 import type { TickStore } from '@/lib/tick-store';
 
@@ -22,6 +22,7 @@ function creatorOf(header: string | null): string {
 async function fetchPhoto(id: string): Promise<Loaded> {
   const tok = getKioskToken();
   const res = await fetch(`/api/mapillary/images/${encodeURIComponent(id)}`, tok ? { headers: { Authorization: `Bearer ${tok}` } } : undefined);
+  if (res.status === 401) notifyUnauthorized(location.pathname + location.search); // revoked kiosk token or expired session
   if (!res.ok) throw new Error(`photo ${res.status}`);
   const creator = creatorOf(res.headers.get('X-Photo-Creator'));
   const blob = await res.blob();
@@ -69,6 +70,7 @@ export default function PhotoView({
     const loads = new Map<string, Promise<Loaded>>();
     const ready = new Map<string, Loaded>(); // insertion order = age
     let front = -1;
+    let pending: string | null = null; // being decoded: its URL must outlive any trim
     let wanted = -2;
     let token = 0;
     let alive = true;
@@ -79,7 +81,7 @@ export default function PhotoView({
     const trim = () => {
       for (const [id, l] of ready) {
         if (ready.size <= MAX_URLS) break;
-        if (ids.includes(id)) continue;
+        if (ids.includes(id) || id === pending || id === photos[wanted]?.id) continue;
         URL.revokeObjectURL(l.url);
         ready.delete(id);
         loads.delete(id);
@@ -114,8 +116,13 @@ export default function PhotoView({
       }
       const back = front === 0 ? 1 : 0;
       const img = layers[back];
-      img.src = l.url;
-      if (typeof img.decode === 'function') await img.decode();
+      pending = p.id;
+      try {
+        img.src = l.url;
+        if (typeof img.decode === 'function') await img.decode();
+      } finally {
+        if (pending === p.id) pending = null;
+      }
       if (!alive || my !== token) return;
       ids[back] = p.id;
       img.style.zIndex = '2';

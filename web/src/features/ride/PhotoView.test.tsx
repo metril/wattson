@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { Profiler } from 'react';
-import { setKioskToken } from '@/lib/api';
+import { setKioskToken, setUnauthorizedHandler } from '@/lib/api';
 import type { Photo } from '@/lib/photo-select';
 import { TickStore } from '@/lib/tick-store';
 import { tickFixture } from '@/test-ws';
@@ -147,5 +147,28 @@ describe('PhotoView', () => {
     await at(store, 200);
     await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1200'));
     expect(updates).toBeLessThanOrEqual(2);
+  });
+
+  it('a 401 on the image goes through the app unauthorized handling', async () => {
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    respond = () => new Response('{}', { status: 401 });
+    const { store } = setup();
+    await at(store, 22);
+    await waitFor(() => expect(handler).toHaveBeenCalled());
+    setUnauthorizedHandler(() => {});
+  });
+
+  it('keeps the URL being decoded alive when other loads trim the cache', async () => {
+    let release: () => void = () => {};
+    HTMLImageElement.prototype.decode = () => new Promise<void>((r) => (release = r));
+    const { store } = setup();
+    await at(store, 22);
+    await waitFor(() => expect(fetches.some((f) => f.url.endsWith('/1030'))).toBe(true));
+    await waitFor(() => expect(fetches.length).toBeGreaterThanOrEqual(4)); // prefetch of the next three
+    const first = urls[fetches.findIndex((f) => f.url.endsWith('/1030'))];
+    expect(revoked).not.toContain(first);
+    release();
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1030'));
   });
 });

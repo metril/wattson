@@ -3,25 +3,31 @@ import { useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { profileKey, routeKey } from '@/features/routes/queries';
 import { routeUrls, vectorTemplate } from '@/sw/corridor';
-import { hasController, prefetchRoute } from '@/sw/register';
+import { hasController, onControllerChange, prefetchRoute } from '@/sw/register';
 
 const FRESH_MS = 7 * 864e5;
+const RETRY_MS = 864e5; // after a failed or partial save, try again after a day, not every visit
+const TOLERATED = 0.02; // share of tiles that may fail and still count as saved
 const HIDE_MS = 5000;
+const HIDE_BAD_MS = 10_000;
 
-const storageKey = (id: number) => `wattson.prefetched.${id}`;
+const savedKey = (id: number) => `wattson.prefetched.${id}`;
+const retryKey = (id: number) => `wattson.prefetch_retry.${id}`;
 
-function savedRecently(id: number): boolean {
+function within(key: string, ms: number): boolean {
   try {
-    const t = Date.parse(localStorage.getItem(storageKey(id)) ?? '');
-    return Number.isFinite(t) && Date.now() - t < FRESH_MS;
+    const t = Date.parse(localStorage.getItem(key) ?? '');
+    return Number.isFinite(t) && Date.now() - t < ms;
   } catch {
     return false;
   }
 }
 
-function markSaved(id: number): void {
+const skipForNow = (id: number) => within(savedKey(id), FRESH_MS) || within(retryKey(id), RETRY_MS);
+
+function mark(key: string): void {
   try {
-    localStorage.setItem(storageKey(id), new Date().toISOString());
+    localStorage.setItem(key, new Date().toISOString());
   } catch {
     /* storage blocked: the map is simply fetched again next time */
   }
@@ -31,7 +37,13 @@ function saveData(): boolean {
   return !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
 }
 
-type State = { kind: 'idle' } | { kind: 'saving'; pct: number } | { kind: 'saved' } | { kind: 'full' };
+type State =
+  | { kind: 'idle' }
+  | { kind: 'saving'; pct: number }
+  | { kind: 'saved' }
+  | { kind: 'partial'; cached: number; total: number }
+  | { kind: 'failed' }
+  | { kind: 'full' };
 
 /**
  * Downloads the map tiles along a route into the service worker cache so the
@@ -51,35 +63,51 @@ export function PrefetchPill({ routeId }: { routeId: number }) {
     queryFn: async () => unwrap(await api.GET('/api/routes/{id}/profile', { params: { path: { id: routeId } } })),
   });
   const [state, setState] = useState<State>({ kind: 'idle' });
+  // The worker takes control after the first visit's load; start once it does.
+  const [controlled, setControlled] = useState(hasController);
+  useEffect(() => {
+    setControlled(hasController());
+    return onControllerChange(() => setControlled(hasController()));
+  }, []);
   const prof = profile.data;
   const hasMap = !!route.data && route.data.source !== 'synthetic';
 
   useEffect(() => {
-    if (!hasMap || !prof || !hasController() || saveData() || savedRecently(routeId)) return;
-    let live = true;
+    if (!hasMap || !prof || !controlled || saveData() || skipForNow(routeId)) return;
+    const ctl = new AbortController(); // aborting tells the worker to stop fetching
+    const live = () => !ctl.signal.aborted;
     void (async () => {
       try {
         const urls = routeUrls(prof, await vectorTemplate());
-        if (!live || urls.length === 0) return;
+        if (!live() || urls.length === 0) return;
         setState({ kind: 'saving', pct: 0 });
-        const res = await prefetchRoute(urls, (done, total) => {
-          if (live) setState({ kind: 'saving', pct: total ? Math.floor((done / total) * 100) : 0 });
-        });
-        if (!live) return;
-        if (res.cached > 0 && res.failed === 0) markSaved(routeId);
-        setState({ kind: 'saved' });
+        const res = await prefetchRoute(
+          urls,
+          (done, total) => {
+            if (live()) setState({ kind: 'saving', pct: total ? Math.floor((done / total) * 100) : 0 });
+          },
+          ctl.signal,
+        );
+        if (!live()) return;
+        const total = res.total || res.cached + res.failed;
+        if (res.cached > 0 && res.failed <= total * TOLERATED) {
+          mark(savedKey(routeId));
+          setState({ kind: 'saved' });
+        } else {
+          mark(retryKey(routeId));
+          setState(res.cached > 0 ? { kind: 'partial', cached: res.cached, total } : { kind: 'failed' });
+        }
       } catch (e) {
-        if (live) setState(e instanceof Error && e.message === 'quota' ? { kind: 'full' } : { kind: 'idle' });
+        if (!live()) return;
+        setState(e instanceof Error && e.message === 'quota' ? { kind: 'full' } : { kind: 'idle' });
       }
     })();
-    return () => {
-      live = false;
-    };
-  }, [hasMap, prof, routeId]);
+    return () => ctl.abort();
+  }, [hasMap, prof, routeId, controlled]);
 
   useEffect(() => {
-    if (state.kind !== 'saved') return;
-    const t = setTimeout(() => setState({ kind: 'idle' }), HIDE_MS);
+    if (state.kind !== 'saved' && state.kind !== 'partial' && state.kind !== 'failed') return;
+    const t = setTimeout(() => setState({ kind: 'idle' }), state.kind === 'saved' ? HIDE_MS : HIDE_BAD_MS);
     return () => clearTimeout(t);
   }, [state.kind]);
 
@@ -89,7 +117,11 @@ export function PrefetchPill({ routeId }: { routeId: number }) {
       ? `Saving map for offline… ${state.pct} %`
       : state.kind === 'saved'
         ? 'Map saved for this route'
-        : "Couldn't save the map: storage is full";
+        : state.kind === 'partial'
+          ? `Map partly saved (${state.cached} of ${state.total})`
+          : state.kind === 'failed'
+            ? "Couldn't save the map — you'll need internet"
+            : "Couldn't save the map: storage is full";
   return (
     <p role="status" className="self-start rounded-control border border-line bg-raised px-4 py-2 text-sm text-chalk">
       {text}

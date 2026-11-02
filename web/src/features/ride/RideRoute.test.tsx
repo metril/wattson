@@ -319,6 +319,7 @@ describe('Ride route mode', () => {
       });
 
       it('building says so, then flips to photos once ready', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
         localStorage.setItem('wattson.view', 'photo');
         let status = 'building';
         const { ws } = await setup('/?route=3', {
@@ -329,8 +330,10 @@ describe('Ride route mode', () => {
         expect(screen.getByRole('radio', { name: /Street photos/ })).toBeDisabled();
         expect(screen.getByText('Finding street photos…')).toBeInTheDocument();
         status = 'ready';
-        await waitFor(() => expect(screen.getByTestId('photoview')).toBeInTheDocument(), { timeout: 5000 });
-      }, 10_000);
+        await act(async () => void vi.advanceTimersByTime(3100)); // the 3 s poll
+        await waitFor(() => expect(screen.getByTestId('photoview')).toBeInTheDocument());
+        vi.useRealTimers();
+      });
 
       it('shows the server message on error and the empty text when there is no coverage', async () => {
         const a = await setup('/?route=3', photos({ status: 'error', message: 'Mapillary rejected the token' }));

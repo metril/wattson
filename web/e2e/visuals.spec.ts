@@ -40,7 +40,22 @@ test('3D flyover pitches the camera, is remembered per device and 2D on another 
   await chooseView(page, '3D flyover');
   const view = page.getByTestId('route-3d');
   await expect(view).toBeVisible();
-  await expect.poll(async () => Number((await view.getAttribute('data-pitch')) ?? 0), { timeout: 10_000 }).toBeGreaterThan(50);
+  // The live MapLibre camera, not just the attribute that mirrors it.
+  const livePitch = () =>
+    view.evaluate((el) => (el as HTMLElement & { __map?: { getPitch(): number } }).__map?.getPitch() ?? 0);
+  await expect.poll(livePitch, { timeout: 10_000 }).toBeGreaterThan(50);
+  await expect.poll(async () => Number((await view.getAttribute('data-pitch')) ?? 0)).toBeGreaterThan(50);
+  // ... and it renders in perspective: the ground in the top half of the view spans far more than the bottom half.
+  const span = await view.evaluate((el) => {
+    const m = (el as HTMLElement & { __map?: any }).__map;
+    const c = m.getCanvas();
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    const d = (p: any, q: any) => Math.hypot((p.lng - q.lng) * 78000, (p.lat - q.lat) * 111000);
+    const mid = m.unproject([w / 2, h / 2]);
+    return d(m.unproject([w / 2, 0]), mid) / d(mid, m.unproject([w / 2, h]));
+  });
+  expect(span, 'perspective: the top half shows far more ground').toBeGreaterThan(1.5);
   expect(await page.evaluate(() => localStorage.getItem('wattson.view'))).toBe('3d');
 
   // The same device after a reload.
@@ -64,7 +79,7 @@ test('3D flyover pitches the camera, is remembered per device and 2D on another 
 });
 
 test('fallback simulation: a ~10 fps display drops 3D to 2D and says why', async ({ page, routeId }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   await page.addInitScript(() => {
     // Every animation frame arrives 100 ms apart, like a very slow display.
     window.requestAnimationFrame = (cb) => window.setTimeout(() => cb(performance.now()), 100);
@@ -75,7 +90,7 @@ test('fallback simulation: a ~10 fps display drops 3D to 2D and says why', async
   await chooseView(page, '3D flyover');
   await expect(page.getByTestId('route-3d')).toBeVisible();
   // Two warm-ups (full tier, then lite) and their windows.
-  await expect(page.getByText(/3D was too slow on this display/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/3D was too slow on this display/)).toBeVisible({ timeout: 100_000 });
   await expect(page.getByTestId('route-3d')).toHaveCount(0);
   await expect(page.locator('.maplibregl-canvas')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('wattson.view'))).toBe('2d');

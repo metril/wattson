@@ -89,6 +89,8 @@ export default function Ride3D(p: {
         fail('webgl');
         return null;
       }
+      // Handle for end-to-end tests, which assert on the live camera (map.getPitch()), not on data attributes.
+      (box.current as (HTMLDivElement & { __map?: MlMap }) | null)!.__map = map;
       const accent = token('--accent', '#54a9ff');
       const el = document.createElement('div');
       el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${accent};border:3px solid ${token('--chalk', '#eaf1ee')};box-shadow:0 0 0 4px rgba(84,169,255,.35)`;

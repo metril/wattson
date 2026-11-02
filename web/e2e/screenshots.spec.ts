@@ -7,12 +7,12 @@ import { apiAs, expect, importRamp, setupAdmin, test as base, useFakeMapillary, 
 // Real OpenFreeMap and Terrarium tiles (needs internet); photos come from the worker's fake Mapillary.
 const OUT = resolve(import.meta.dirname, '../../docs/images');
 
-// A climb above a lake (Alps) that looks good under real tiles: a swinging line with ~700 m of ascent over 5 km.
+// A climb along a lake shore (Alps), so the slopes are beside the camera, not a wall in front of it: ~700 m of ascent over 3.6 km.
 const SCENIC_GPX = `<?xml version="1.0"?><gpx version="1.1" creator="wattson-docs" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Lakeside climb</name><trkseg>${Array.from(
   { length: 61 },
   (_, i) => {
     const t = i / 60;
-    return `<trkpt lat="${(45.8394 - 0.0361 * t).toFixed(6)}" lon="${(6.2330 + 0.0017 * t + 0.0045 * Math.sin(t * Math.PI * 4)).toFixed(6)}"><ele>${(460 + 700 * t).toFixed(1)}</ele></trkpt>`;
+    return `<trkpt lat="${(45.8394 + 0.0231 * t).toFixed(6)}" lon="${(6.2161 - 0.0280 * t + 0.0015 * Math.sin(t * Math.PI * 6)).toFixed(6)}"><ele>${(460 + 700 * t).toFixed(1)}</ele></trkpt>`;
   },
 ).join('')}</trkseg></trk></gpx>`;
 
@@ -100,7 +100,19 @@ test('ride-tv-3d: the TV with the 3D flyover', async ({ page, routeId }) => {
   await page.waitForTimeout(10_000); // software rendering draws the tiles a few at a time
   const view = page.getByTestId('route-3d');
   await expect(view).toBeVisible(); // still 3D: no fallback to the 2D map
-  await expect.poll(async () => Number((await view.getAttribute('data-pitch')) ?? 0)).toBeGreaterThan(50);
+  // The live MapLibre camera must be pitched and show it: the ground in the top half of the view
+  // spans clearly more than in the bottom half (a steep slope facing the camera would flatten it).
+  const cam = await view.evaluate((el) => {
+    const m = (el as HTMLElement & { __map?: any }).__map;
+    const c = m.getCanvas();
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    const d = (p: any, q: any) => Math.hypot((p.lng - q.lng) * 78000, (p.lat - q.lat) * 111000);
+    const mid = m.unproject([w / 2, h / 2]);
+    return { pitch: m.getPitch(), top: d(m.unproject([w / 2, 0]), mid), bottom: d(mid, m.unproject([w / 2, h])) };
+  });
+  expect(cam.pitch, 'the live camera is pitched').toBeGreaterThan(50);
+  expect(cam.top / cam.bottom, 'perspective: the top half shows far more ground').toBeGreaterThan(1.5);
   await shoot(page, 'ride-tv-3d');
 });
 

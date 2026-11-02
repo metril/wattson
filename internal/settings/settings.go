@@ -22,6 +22,7 @@ type Settings struct {
 	Bike      Bike      `json:"bike"`
 	HA        HA        `json:"ha"`
 	MQTT      MQTT      `json:"mqtt"`
+	HeartRate HeartRate `json:"heart_rate"`
 	BRouter   BRouter   `json:"brouter"`
 	Elevation Elevation `json:"elevation"`
 	Mapillary Mapillary `json:"mapillary"`
@@ -66,6 +67,19 @@ type Bike struct {
 	ESPHomeKey     string `json:"esphome_key"` // secret
 	IdleReleaseMin int    `json:"idle_release_min"`
 	SimCadenceRpm  int    `json:"sim_cadence_rpm"`
+	// Entities of the Home Assistant driver (driver "ha").
+	HAResistanceEntity string `json:"ha_resistance_entity"` // number.*
+	HAPowerEntity      string `json:"ha_power_entity"`      // sensor.*
+	HACadenceEntity    string `json:"ha_cadence_entity"`    // sensor.*
+}
+
+// HeartRate selects the optional heart rate source: off, ble (a strap or
+// broadcaster at Address) or ha (a sensor.* entity in Home Assistant).
+type HeartRate struct {
+	Source   string `json:"source"`
+	Address  string `json:"address"`
+	Name     string `json:"name"`
+	HAEntity string `json:"ha_entity"`
 }
 
 type HA struct {
@@ -77,6 +91,8 @@ type MQTT struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"` // secret
+	// DiscoveryPrefix is the Home Assistant MQTT discovery topic prefix.
+	DiscoveryPrefix string `json:"discovery_prefix"`
 }
 
 // BRouter configures routing (route drawing). PublicFallback sends route
@@ -108,8 +124,10 @@ type Strava struct {
 // Defaults returns the settings used before anything is stored.
 func Defaults() Settings {
 	return Settings{
-		Auth: Auth{AllowLocalLogin: true, SessionTTLHours: 168},
-		Bike: Bike{Driver: "sim", Transport: "local", IdleReleaseMin: 10, SimCadenceRpm: 80},
+		Auth:      Auth{AllowLocalLogin: true, SessionTTLHours: 168},
+		Bike:      Bike{Driver: "sim", Transport: "local", IdleReleaseMin: 10, SimCadenceRpm: 80},
+		HeartRate: HeartRate{Source: "off"},
+		MQTT:      MQTT{DiscoveryPrefix: "homeassistant"},
 		BRouter: BRouter{URL: "http://brouter:17777", Profile: "trekking", SegmentsDir: "/segments",
 			SegmentsURL: "https://brouter.de/brouter/segments4/", PublicURL: "https://brouter.de"},
 		Elevation: Elevation{OpenTopoDataURL: "https://api.opentopodata.org/v1/mapzen"},
@@ -145,9 +163,9 @@ func (s Settings) Validate() error {
 		}
 	}
 	switch s.Bike.Driver {
-	case "auto", "fitplus", "ftms", "sim":
+	case "auto", "fitplus", "ftms", "sim", "ha":
 	default:
-		return bad("bike.driver", "must be one of auto, fitplus, ftms, sim")
+		return bad("bike.driver", "must be one of auto, fitplus, ftms, sim, ha")
 	}
 	switch s.Bike.Transport {
 	case "local", "esphome":
@@ -173,12 +191,66 @@ func (s Settings) Validate() error {
 	if v := s.Bike.SimCadenceRpm; v < 0 || v > 150 {
 		return bad("bike.sim_cadence_rpm", "must be between 0 and 150")
 	}
+	for _, e := range []struct {
+		field, v, domain string
+		required         bool
+	}{
+		{"bike.ha_resistance_entity", s.Bike.HAResistanceEntity, "number", s.Bike.Driver == "ha"},
+		{"bike.ha_power_entity", s.Bike.HAPowerEntity, "sensor", false},
+		{"bike.ha_cadence_entity", s.Bike.HACadenceEntity, "sensor", false},
+	} {
+		if e.v == "" && e.required {
+			return bad(e.field, "required when the driver is ha (a %s.* entity)", e.domain)
+		}
+		if e.v != "" && !validEntity(e.v, e.domain) {
+			return bad(e.field, "must be a %s.* entity id such as %s.name", e.domain, e.domain)
+		}
+	}
+	if s.Bike.Driver == "ha" {
+		if s.HA.URL == "" {
+			return bad("ha.url", "required when the bike driver is ha")
+		}
+		if s.HA.Token == "" {
+			return bad("ha.token", "required when the bike driver is ha")
+		}
+	}
 	if v := s.HA.URL; v != "" {
 		if u, ok := parseURL(v, "http", "https"); !ok {
 			return bad("ha.url", "must be an absolute http(s) URL")
 		} else if u.User != nil {
 			return bad("ha.url", "must not contain credentials (user:pass@); use the token field")
 		}
+	}
+	switch s.HeartRate.Source {
+	case "off":
+	case "ble":
+		if _, err := blue.ParseAddress(s.HeartRate.Address); err != nil {
+			return bad("heart_rate.address", "must be a Bluetooth address like AA:BB:CC:DD:EE:FF when the source is ble")
+		}
+	case "ha":
+		if s.HA.URL == "" {
+			return bad("ha.url", "required when the heart rate source is ha")
+		}
+		if !validEntity(s.HeartRate.HAEntity, "sensor") {
+			return bad("heart_rate.ha_entity", "must be a sensor.* entity id when the source is ha")
+		}
+	default:
+		return bad("heart_rate.source", "must be one of off, ble, ha")
+	}
+	if v := s.HeartRate.Address; v != "" {
+		if _, err := blue.ParseAddress(v); err != nil {
+			return bad("heart_rate.address", "must be a Bluetooth address like AA:BB:CC:DD:EE:FF")
+		}
+	}
+	if len(s.HeartRate.Name) > 64 {
+		return bad("heart_rate.name", "at most 64 characters")
+	}
+	if v := s.HeartRate.HAEntity; v != "" && !validEntity(v, "sensor") {
+		return bad("heart_rate.ha_entity", "must be a sensor.* entity id")
+	}
+	if v := s.MQTT.DiscoveryPrefix; v == "" || len(v) > 128 || strings.ContainsAny(v, "+#") ||
+		strings.HasPrefix(v, "/") || strings.HasSuffix(v, "/") || strings.Contains(v, "//") || strings.ContainsRune(v, 0) {
+		return bad("mqtt.discovery_prefix", "must be a non-empty topic prefix without + or #, a leading or trailing /, or empty levels (default homeassistant)")
 	}
 	if v := s.MQTT.URL; v != "" {
 		if u, ok := parseURL(v, "mqtt", "mqtts"); !ok {
@@ -215,6 +287,20 @@ func (s Settings) Validate() error {
 		return bad("elevation.opentopodata_url", "must be an absolute http(s) URL")
 	}
 	return nil
+}
+
+// validEntity reports whether v is a Home Assistant entity id in domain.
+func validEntity(v, domain string) bool {
+	rest, ok := strings.CutPrefix(v, domain+".")
+	if !ok || rest == "" {
+		return false
+	}
+	for _, c := range rest {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidStravaClientID reports whether v is a Strava client ID: 1 to 12 digits.

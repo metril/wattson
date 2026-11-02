@@ -72,6 +72,9 @@ export function settingsFixture(
       driver: 'sim',
       esphome_host: '',
       esphome_key_set: false,
+      ha_cadence_entity: '',
+      ha_power_entity: '',
+      ha_resistance_entity: '',
       idle_release_min: 10,
       sim_cadence_rpm: 80,
       transport: 'local',
@@ -87,8 +90,9 @@ export function settingsFixture(
     elevation: { opentopodata: false, opentopodata_url: 'https://api.opentopodata.org/v1/mapzen' },
     general: { public_url: 'https://w.example' },
     ha: { token_set: true, url: 'http://ha.local' },
+    heart_rate: { source: 'off', address: '', name: '', ha_entity: '' },
     mapillary: { token_set: false },
-    mqtt: { password_set: false, url: '', username: '' },
+    mqtt: { discovery_prefix: 'homeassistant', password_set: false, url: '', username: '' },
     strava: { client_id: '', client_secret_set: false },
   };
   for (const k of Object.keys(over) as (keyof typeof base)[]) {

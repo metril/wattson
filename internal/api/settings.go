@@ -19,6 +19,7 @@ type SettingsOut struct {
 	Bike      BikeOut      `json:"bike" doc:"Bike connection settings."`
 	HA        HAOut        `json:"ha" doc:"Home Assistant connection."`
 	MQTT      MQTTOut      `json:"mqtt" doc:"MQTT broker connection."`
+	HeartRate HeartRateOut `json:"heart_rate" doc:"Optional heart rate source."`
 	BRouter   BRouterOut   `json:"brouter" doc:"BRouter routing service."`
 	Elevation ElevationOut `json:"elevation" doc:"Elevation lookup for imported routes."`
 	Mapillary MapillaryOut `json:"mapillary" doc:"Mapillary street imagery."`
@@ -36,13 +37,24 @@ type AuthOut struct {
 }
 
 type BikeOut struct {
-	Driver         string `json:"driver" doc:"Bike protocol: auto, fitplus, ftms or sim."`
+	Driver         string `json:"driver" doc:"Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity, FTMS bridges only)."`
 	Transport      string `json:"transport" doc:"How the bike is reached: local (host Bluetooth) or esphome (Bluetooth proxy)."`
 	Address        string `json:"address" doc:"Bluetooth address of the bike, AA:BB:CC:DD:EE:FF; empty when unset."`
 	ESPHomeHost    string `json:"esphome_host" doc:"ESPHome Bluetooth proxy as host or host:port (default port 6053); empty when unset."`
 	ESPHomeKeySet  bool   `json:"esphome_key_set" doc:"Whether an ESPHome API encryption key is stored. The key itself is never returned."`
 	IdleReleaseMin int    `json:"idle_release_min" doc:"Minutes without a command before a bike that is connecting or ready is released, 0 to 240; 0 disables. A bike that is riding or paused is never released; the clock restarts when the ride stops."`
 	SimCadenceRpm  int    `json:"sim_cadence_rpm" doc:"Cadence of the simulated bike, in revolutions per minute, 0 to 150."`
+
+	HAResistanceEntity string `json:"ha_resistance_entity" doc:"Home Assistant number.* entity the ha driver writes the resistance level to (number.set_value); required for driver ha, empty when unset."`
+	HAPowerEntity      string `json:"ha_power_entity" doc:"Home Assistant sensor.* entity read as power, in watts; empty when unset."`
+	HACadenceEntity    string `json:"ha_cadence_entity" doc:"Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty when unset."`
+}
+
+type HeartRateOut struct {
+	Source   string `json:"source" doc:"Heart rate source: off, ble (Bluetooth strap or broadcaster at address) or ha (Home Assistant sensor)."`
+	Address  string `json:"address" doc:"Bluetooth address of the heart rate device, AA:BB:CC:DD:EE:FF; required for source ble, empty when unset."`
+	Name     string `json:"name" doc:"Advertised name of the heart rate device (at most 64 characters), shown in the UI; empty when unset."`
+	HAEntity string `json:"ha_entity" doc:"Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha, empty when unset."`
 }
 
 type HAOut struct {
@@ -54,6 +66,8 @@ type MQTTOut struct {
 	URL         string `json:"url" doc:"MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty when unset."`
 	Username    string `json:"username" doc:"MQTT username; empty when unset."`
 	PasswordSet bool   `json:"password_set" doc:"Whether an MQTT password is stored. The password itself is never returned."`
+
+	DiscoveryPrefix string `json:"discovery_prefix" doc:"Home Assistant MQTT discovery topic prefix, default homeassistant."`
 }
 
 type BRouterOut struct {
@@ -86,9 +100,14 @@ func settingsOut(s settings.Settings) SettingsOut {
 			TrustedProxies: append([]string{}, s.Auth.TrustedProxies...)},
 		Bike: BikeOut{Driver: s.Bike.Driver, Transport: s.Bike.Transport, Address: s.Bike.Address,
 			ESPHomeHost: s.Bike.ESPHomeHost, ESPHomeKeySet: s.Bike.ESPHomeKey != "",
-			IdleReleaseMin: s.Bike.IdleReleaseMin, SimCadenceRpm: s.Bike.SimCadenceRpm},
-		HA:   HAOut{URL: s.HA.URL, TokenSet: s.HA.Token != ""},
-		MQTT: MQTTOut{URL: s.MQTT.URL, Username: s.MQTT.Username, PasswordSet: s.MQTT.Password != ""},
+			IdleReleaseMin: s.Bike.IdleReleaseMin, SimCadenceRpm: s.Bike.SimCadenceRpm,
+			HAResistanceEntity: s.Bike.HAResistanceEntity, HAPowerEntity: s.Bike.HAPowerEntity,
+			HACadenceEntity: s.Bike.HACadenceEntity},
+		HA: HAOut{URL: s.HA.URL, TokenSet: s.HA.Token != ""},
+		MQTT: MQTTOut{URL: s.MQTT.URL, Username: s.MQTT.Username, PasswordSet: s.MQTT.Password != "",
+			DiscoveryPrefix: s.MQTT.DiscoveryPrefix},
+		HeartRate: HeartRateOut{Source: s.HeartRate.Source, Address: s.HeartRate.Address,
+			Name: s.HeartRate.Name, HAEntity: s.HeartRate.HAEntity},
 		BRouter: BRouterOut{URL: s.BRouter.URL, Profile: s.BRouter.Profile, SegmentsDir: s.BRouter.SegmentsDir,
 			SegmentsURL: s.BRouter.SegmentsURL, PublicURL: s.BRouter.PublicURL, PublicFallback: s.BRouter.PublicFallback},
 		Elevation: ElevationOut{OpenTopoData: s.Elevation.OpenTopoData, OpenTopoDataURL: s.Elevation.OpenTopoDataURL},
@@ -107,6 +126,7 @@ type SettingsPatch struct {
 	Bike      *BikePatch      `json:"bike,omitempty" doc:"Bike connection settings."`
 	HA        *HAPatch        `json:"ha,omitempty" doc:"Home Assistant connection."`
 	MQTT      *MQTTPatch      `json:"mqtt,omitempty" doc:"MQTT broker connection."`
+	HeartRate *HeartRatePatch `json:"heart_rate,omitempty" doc:"Optional heart rate source."`
 	BRouter   *BRouterPatch   `json:"brouter,omitempty" doc:"BRouter routing service."`
 	Elevation *ElevationPatch `json:"elevation,omitempty" doc:"Elevation lookup for imported routes."`
 	Mapillary *MapillaryPatch `json:"mapillary,omitempty" doc:"Mapillary street imagery."`
@@ -124,13 +144,24 @@ type AuthPatch struct {
 }
 
 type BikePatch struct {
-	Driver         *string `json:"driver,omitempty" doc:"Bike protocol: auto, fitplus, ftms or sim."`
+	Driver         *string `json:"driver,omitempty" doc:"Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity)."`
 	Transport      *string `json:"transport,omitempty" doc:"local or esphome."`
 	Address        *string `json:"address,omitempty" doc:"Bluetooth address AA:BB:CC:DD:EE:FF; empty clears it."`
 	ESPHomeHost    *string `json:"esphome_host,omitempty" doc:"ESPHome proxy as host or host:port; empty clears it."`
 	ESPHomeKey     *string `json:"esphome_key,omitempty" doc:"ESPHome API encryption key, base64 of 32 bytes. Omit to keep the stored key; an empty string clears it."`
 	IdleReleaseMin *int    `json:"idle_release_min,omitempty" doc:"Minutes without a command before a connecting or ready bike is released, 0 to 240; 0 disables."`
 	SimCadenceRpm  *int    `json:"sim_cadence_rpm,omitempty" doc:"Simulated cadence in revolutions per minute, 0 to 150."`
+
+	HAResistanceEntity *string `json:"ha_resistance_entity,omitempty" doc:"Home Assistant number.* entity for the resistance level (required for driver ha); empty clears it."`
+	HAPowerEntity      *string `json:"ha_power_entity,omitempty" doc:"Home Assistant sensor.* entity read as power, in watts; empty clears it."`
+	HACadenceEntity    *string `json:"ha_cadence_entity,omitempty" doc:"Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty clears it."`
+}
+
+type HeartRatePatch struct {
+	Source   *string `json:"source,omitempty" doc:"Heart rate source: off, ble or ha."`
+	Address  *string `json:"address,omitempty" doc:"Bluetooth address AA:BB:CC:DD:EE:FF (required for source ble); empty clears it."`
+	Name     *string `json:"name,omitempty" doc:"Advertised device name, at most 64 characters; empty clears it."`
+	HAEntity *string `json:"ha_entity,omitempty" doc:"Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha); empty clears it."`
 }
 
 type HAPatch struct {
@@ -142,6 +173,8 @@ type MQTTPatch struct {
 	URL      *string `json:"url,omitempty" doc:"MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty clears it."`
 	Username *string `json:"username,omitempty" doc:"MQTT username."`
 	Password *string `json:"password,omitempty" doc:"MQTT password. Omit to keep the stored password; an empty string clears it."`
+
+	DiscoveryPrefix *string `json:"discovery_prefix,omitempty" doc:"Home Assistant MQTT discovery topic prefix: non-empty, no + or #, no leading or trailing /. Default homeassistant."`
 }
 
 type BRouterPatch struct {
@@ -193,6 +226,9 @@ func (p SettingsPatch) apply(s *settings.Settings) {
 		set(&s.Bike.ESPHomeKey, b.ESPHomeKey)
 		set(&s.Bike.IdleReleaseMin, b.IdleReleaseMin)
 		set(&s.Bike.SimCadenceRpm, b.SimCadenceRpm)
+		set(&s.Bike.HAResistanceEntity, b.HAResistanceEntity)
+		set(&s.Bike.HAPowerEntity, b.HAPowerEntity)
+		set(&s.Bike.HACadenceEntity, b.HACadenceEntity)
 	}
 	if h := p.HA; h != nil {
 		set(&s.HA.URL, h.URL)
@@ -202,6 +238,13 @@ func (p SettingsPatch) apply(s *settings.Settings) {
 		set(&s.MQTT.URL, m.URL)
 		set(&s.MQTT.Username, m.Username)
 		set(&s.MQTT.Password, m.Password)
+		set(&s.MQTT.DiscoveryPrefix, m.DiscoveryPrefix)
+	}
+	if h := p.HeartRate; h != nil {
+		set(&s.HeartRate.Source, h.Source)
+		set(&s.HeartRate.Address, h.Address)
+		set(&s.HeartRate.Name, h.Name)
+		set(&s.HeartRate.HAEntity, h.HAEntity)
 	}
 	if b := p.BRouter; b != nil {
 		set(&s.BRouter.URL, b.URL)

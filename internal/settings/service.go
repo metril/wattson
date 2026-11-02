@@ -43,6 +43,7 @@ func sections(s *Settings) []section {
 		{"bike", &s.Bike, []secret{{"bike.esphome_key", &s.Bike.ESPHomeKey}}},
 		{"ha", &s.HA, []secret{{"ha.token", &s.HA.Token}}},
 		{"mqtt", &s.MQTT, []secret{{"mqtt.password", &s.MQTT.Password}}},
+		{"heart_rate", &s.HeartRate, nil},
 		{"brouter", &s.BRouter, nil},
 		{"elevation", &s.Elevation, nil},
 		{"mapillary", &s.Mapillary, []secret{{"mapillary.token", &s.Mapillary.Token}}},

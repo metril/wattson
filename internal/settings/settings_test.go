@@ -127,7 +127,7 @@ func TestValidate(t *testing.T) {
 		{"defaults", func(*settings.Settings) {}, ""},
 		{"ttl zero", func(s *settings.Settings) { s.Auth.SessionTTLHours = 0 }, "auth.session_ttl_hours"},
 		{"ttl too big", func(s *settings.Settings) { s.Auth.SessionTTLHours = 8761 }, "auth.session_ttl_hours"},
-		{"driver ha", func(s *settings.Settings) { s.Bike.Driver = "ha" }, "bike.driver"},
+		{"driver bogus", func(s *settings.Settings) { s.Bike.Driver = "ant" }, "bike.driver"},
 		{"driver auto", func(s *settings.Settings) { s.Bike.Driver = "auto" }, ""},
 		{"transport", func(s *settings.Settings) { s.Bike.Transport = "x" }, "bike.transport"},
 		{"public url path", func(s *settings.Settings) { s.General.PublicURL = "https://x/sub" }, "general.public_url"},
@@ -381,5 +381,95 @@ func TestSettingsStravaClientID(t *testing.T) {
 		case tc.field != "" && (!errors.As(err, &ve) || ve.Field != tc.field):
 			t.Errorf("%q: err = %v, want field %s", tc.id, err, tc.field)
 		}
+	}
+}
+
+func TestHRAndMQTTDefaults(t *testing.T) {
+	t.Parallel()
+	d := settings.Defaults()
+	if d.HeartRate.Source != "off" || d.MQTT.DiscoveryPrefix != "homeassistant" {
+		t.Fatalf("defaults: %+v %+v", d.HeartRate, d.MQTT)
+	}
+	svc, st := newSvc(t)
+	got, err := svc.Get(context.Background())
+	if err != nil || got.HeartRate.Source != "off" || got.MQTT.DiscoveryPrefix != "homeassistant" {
+		t.Fatalf("get: %+v %v", got, err)
+	}
+	// A stored mqtt section from before the prefix existed keeps the default.
+	if err := st.PutSettings(context.Background(), map[string]string{"mqtt": `{"url":"mqtt://b:1883"}`}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.Get(context.Background())
+	if err != nil || got.MQTT.URL != "mqtt://b:1883" || got.MQTT.DiscoveryPrefix != "homeassistant" {
+		t.Fatalf("legacy mqtt: %+v %v", got.MQTT, err)
+	}
+}
+
+func TestValidateM5(t *testing.T) {
+	t.Parallel()
+	haOK := func(s *settings.Settings) {
+		s.Bike.Driver = "ha"
+		s.HA.URL, s.HA.Token = "http://ha.local:8123", "tok"
+		s.Bike.HAResistanceEntity, s.Bike.HAPowerEntity, s.Bike.HACadenceEntity = "number.bike_res", "sensor.bike_p", "sensor.bike_c"
+	}
+	tests := []struct {
+		name  string
+		mod   func(*settings.Settings)
+		field string
+	}{
+		{"ha ok", haOK, ""},
+		{"ha no entities", func(s *settings.Settings) { s.Bike.Driver = "ha" }, "bike.ha_resistance_entity"},
+		{"ha no url", func(s *settings.Settings) { haOK(s); s.HA.URL = "" }, "ha.url"},
+		{"ha no token", func(s *settings.Settings) { haOK(s); s.HA.Token = "" }, "ha.token"},
+		{"ha power domain", func(s *settings.Settings) { haOK(s); s.Bike.HAPowerEntity = "light.x" }, "bike.ha_power_entity"},
+		{"ha cadence domain", func(s *settings.Settings) { haOK(s); s.Bike.HACadenceEntity = "number.c" }, "bike.ha_cadence_entity"},
+		{"ha resistance domain", func(s *settings.Settings) { haOK(s); s.Bike.HAResistanceEntity = "sensor.r" }, "bike.ha_resistance_entity"},
+		{"ha power uppercase", func(s *settings.Settings) { haOK(s); s.Bike.HAPowerEntity = "sensor.P" }, "bike.ha_power_entity"},
+		{"ha entities optional for other drivers", func(s *settings.Settings) { s.Bike.HAPowerEntity = "" }, ""},
+		{"ha entity bad for other drivers", func(s *settings.Settings) { s.Bike.HAPowerEntity = "light.x" }, "bike.ha_power_entity"},
+		{"hr off", func(s *settings.Settings) {}, ""},
+		{"hr source", func(s *settings.Settings) { s.HeartRate.Source = "ant" }, "heart_rate.source"},
+		{"hr ble no address", func(s *settings.Settings) { s.HeartRate.Source = "ble" }, "heart_rate.address"},
+		{"hr ble bad address", func(s *settings.Settings) { s.HeartRate.Source, s.HeartRate.Address = "ble", "zz" }, "heart_rate.address"},
+		{"hr ble ok", func(s *settings.Settings) {
+			s.HeartRate.Source, s.HeartRate.Address, s.HeartRate.Name = "ble", "AA:BB:CC:DD:EE:01", "HeartCast"
+		}, ""},
+		{"hr ble long name", func(s *settings.Settings) {
+			s.HeartRate.Source, s.HeartRate.Address, s.HeartRate.Name = "ble", "AA:BB:CC:DD:EE:01", strings.Repeat("x", 65)
+		}, "heart_rate.name"},
+		{"hr ha no url", func(s *settings.Settings) { s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "sensor.hr" }, "ha.url"},
+		{"hr ha no entity", func(s *settings.Settings) { s.HeartRate.Source = "ha"; s.HA.URL = "http://ha:8123" }, "heart_rate.ha_entity"},
+		{"hr ha bad entity", func(s *settings.Settings) {
+			s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "number.hr"
+			s.HA.URL = "http://ha:8123"
+		}, "heart_rate.ha_entity"},
+		{"hr ha ok", func(s *settings.Settings) {
+			s.HeartRate.Source, s.HeartRate.HAEntity = "ha", "sensor.hr"
+			s.HA.URL = "http://ha:8123"
+		}, ""},
+		{"prefix wildcard", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "ha/#" }, "mqtt.discovery_prefix"},
+		{"prefix plus", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "a/+/b" }, "mqtt.discovery_prefix"},
+		{"prefix empty", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "" }, "mqtt.discovery_prefix"},
+		{"prefix leading slash", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "/ha" }, "mqtt.discovery_prefix"},
+		{"prefix trailing slash", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "ha/" }, "mqtt.discovery_prefix"},
+		{"prefix nested ok", func(s *settings.Settings) { s.MQTT.DiscoveryPrefix = "home/assistant" }, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := settings.Defaults()
+			tc.mod(&s)
+			err := s.Validate()
+			if tc.field == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			var ve *settings.ValidationError
+			if !errors.As(err, &ve) || ve.Field != tc.field {
+				t.Fatalf("err = %v, want field %s", err, tc.field)
+			}
+		})
 	}
 }

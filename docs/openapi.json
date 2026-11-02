@@ -126,7 +126,7 @@
             "type": "string"
           },
           "driver": {
-            "description": "Bike protocol: auto, fitplus, ftms or sim.",
+            "description": "Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity, FTMS bridges only).",
             "type": "string"
           },
           "esphome_host": {
@@ -136,6 +136,18 @@
           "esphome_key_set": {
             "description": "Whether an ESPHome API encryption key is stored. The key itself is never returned.",
             "type": "boolean"
+          },
+          "ha_cadence_entity": {
+            "description": "Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty when unset.",
+            "type": "string"
+          },
+          "ha_power_entity": {
+            "description": "Home Assistant sensor.* entity read as power, in watts; empty when unset.",
+            "type": "string"
+          },
+          "ha_resistance_entity": {
+            "description": "Home Assistant number.* entity the ha driver writes the resistance level to (number.set_value); required for driver ha, empty when unset.",
+            "type": "string"
           },
           "idle_release_min": {
             "description": "Minutes without a command before a bike that is connecting or ready is released, 0 to 240; 0 disables. A bike that is riding or paused is never released; the clock restarts when the ride stops.",
@@ -159,7 +171,10 @@
           "esphome_host",
           "esphome_key_set",
           "idle_release_min",
-          "sim_cadence_rpm"
+          "sim_cadence_rpm",
+          "ha_resistance_entity",
+          "ha_power_entity",
+          "ha_cadence_entity"
         ],
         "type": "object"
       },
@@ -171,7 +186,7 @@
             "type": "string"
           },
           "driver": {
-            "description": "Bike protocol: auto, fitplus, ftms or sim.",
+            "description": "Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity).",
             "type": "string"
           },
           "esphome_host": {
@@ -180,6 +195,18 @@
           },
           "esphome_key": {
             "description": "ESPHome API encryption key, base64 of 32 bytes. Omit to keep the stored key; an empty string clears it.",
+            "type": "string"
+          },
+          "ha_cadence_entity": {
+            "description": "Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty clears it.",
+            "type": "string"
+          },
+          "ha_power_entity": {
+            "description": "Home Assistant sensor.* entity read as power, in watts; empty clears it.",
+            "type": "string"
+          },
+          "ha_resistance_entity": {
+            "description": "Home Assistant number.* entity for the resistance level (required for driver ha); empty clears it.",
             "type": "string"
           },
           "idle_release_min": {
@@ -785,6 +812,56 @@
         ],
         "type": "object"
       },
+      "HeartRateOut": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Bluetooth address of the heart rate device, AA:BB:CC:DD:EE:FF; required for source ble, empty when unset.",
+            "type": "string"
+          },
+          "ha_entity": {
+            "description": "Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha, empty when unset.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Advertised name of the heart rate device (at most 64 characters), shown in the UI; empty when unset.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Heart rate source: off, ble (Bluetooth strap or broadcaster at address) or ha (Home Assistant sensor).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "address",
+          "name",
+          "ha_entity"
+        ],
+        "type": "object"
+      },
+      "HeartRatePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Bluetooth address AA:BB:CC:DD:EE:FF (required for source ble); empty clears it.",
+            "type": "string"
+          },
+          "ha_entity": {
+            "description": "Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha); empty clears it.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Advertised device name, at most 64 characters; empty clears it.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Heart rate source: off, ble or ha.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LineStringOut": {
         "additionalProperties": false,
         "properties": {
@@ -837,6 +914,10 @@
       "MQTTOut": {
         "additionalProperties": false,
         "properties": {
+          "discovery_prefix": {
+            "description": "Home Assistant MQTT discovery topic prefix, default homeassistant.",
+            "type": "string"
+          },
           "password_set": {
             "description": "Whether an MQTT password is stored. The password itself is never returned.",
             "type": "boolean"
@@ -853,13 +934,18 @@
         "required": [
           "url",
           "username",
-          "password_set"
+          "password_set",
+          "discovery_prefix"
         ],
         "type": "object"
       },
       "MQTTPatch": {
         "additionalProperties": false,
         "properties": {
+          "discovery_prefix": {
+            "description": "Home Assistant MQTT discovery topic prefix: non-empty, no + or #, no leading or trailing /. Default homeassistant.",
+            "type": "string"
+          },
           "password": {
             "description": "MQTT password. Omit to keep the stored password; an empty string clears it.",
             "type": "string"
@@ -2181,6 +2267,10 @@
             "$ref": "#/components/schemas/HAOut",
             "description": "Home Assistant connection."
           },
+          "heart_rate": {
+            "$ref": "#/components/schemas/HeartRateOut",
+            "description": "Optional heart rate source."
+          },
           "mapillary": {
             "$ref": "#/components/schemas/MapillaryOut",
             "description": "Mapillary street imagery."
@@ -2200,6 +2290,7 @@
           "bike",
           "ha",
           "mqtt",
+          "heart_rate",
           "brouter",
           "elevation",
           "mapillary",
@@ -2233,6 +2324,10 @@
           "ha": {
             "$ref": "#/components/schemas/HAPatch",
             "description": "Home Assistant connection."
+          },
+          "heart_rate": {
+            "$ref": "#/components/schemas/HeartRatePatch",
+            "description": "Optional heart rate source."
           },
           "mapillary": {
             "$ref": "#/components/schemas/MapillaryPatch",

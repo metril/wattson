@@ -1077,12 +1077,18 @@ export interface components {
         BikeOut: {
             /** @description Bluetooth address of the bike, AA:BB:CC:DD:EE:FF; empty when unset. */
             address: string;
-            /** @description Bike protocol: auto, fitplus, ftms or sim. */
+            /** @description Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity, FTMS bridges only). */
             driver: string;
             /** @description ESPHome Bluetooth proxy as host or host:port (default port 6053); empty when unset. */
             esphome_host: string;
             /** @description Whether an ESPHome API encryption key is stored. The key itself is never returned. */
             esphome_key_set: boolean;
+            /** @description Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty when unset. */
+            ha_cadence_entity: string;
+            /** @description Home Assistant sensor.* entity read as power, in watts; empty when unset. */
+            ha_power_entity: string;
+            /** @description Home Assistant number.* entity the ha driver writes the resistance level to (number.set_value); required for driver ha, empty when unset. */
+            ha_resistance_entity: string;
             /**
              * Format: int64
              * @description Minutes without a command before a bike that is connecting or ready is released, 0 to 240; 0 disables. A bike that is riding or paused is never released; the clock restarts when the ride stops.
@@ -1099,12 +1105,18 @@ export interface components {
         BikePatch: {
             /** @description Bluetooth address AA:BB:CC:DD:EE:FF; empty clears it. */
             address?: string;
-            /** @description Bike protocol: auto, fitplus, ftms or sim. */
+            /** @description Bike protocol: auto, fitplus, ftms, sim or ha (Home Assistant; needs ha.url, ha.token and ha_resistance_entity). */
             driver?: string;
             /** @description ESPHome proxy as host or host:port; empty clears it. */
             esphome_host?: string;
             /** @description ESPHome API encryption key, base64 of 32 bytes. Omit to keep the stored key; an empty string clears it. */
             esphome_key?: string;
+            /** @description Home Assistant sensor.* entity read as cadence, in revolutions per minute; empty clears it. */
+            ha_cadence_entity?: string;
+            /** @description Home Assistant sensor.* entity read as power, in watts; empty clears it. */
+            ha_power_entity?: string;
+            /** @description Home Assistant number.* entity for the resistance level (required for driver ha); empty clears it. */
+            ha_resistance_entity?: string;
             /**
              * Format: int64
              * @description Minutes without a command before a connecting or ready bike is released, 0 to 240; 0 disables.
@@ -1363,6 +1375,26 @@ export interface components {
             /** @description Server build version. */
             version: string;
         };
+        HeartRateOut: {
+            /** @description Bluetooth address of the heart rate device, AA:BB:CC:DD:EE:FF; required for source ble, empty when unset. */
+            address: string;
+            /** @description Home Assistant sensor.* entity read as heart rate, in beats per minute; required for source ha, empty when unset. */
+            ha_entity: string;
+            /** @description Advertised name of the heart rate device (at most 64 characters), shown in the UI; empty when unset. */
+            name: string;
+            /** @description Heart rate source: off, ble (Bluetooth strap or broadcaster at address) or ha (Home Assistant sensor). */
+            source: string;
+        };
+        HeartRatePatch: {
+            /** @description Bluetooth address AA:BB:CC:DD:EE:FF (required for source ble); empty clears it. */
+            address?: string;
+            /** @description Home Assistant sensor.* entity for heart rate in beats per minute (required for source ha); empty clears it. */
+            ha_entity?: string;
+            /** @description Advertised device name, at most 64 characters; empty clears it. */
+            name?: string;
+            /** @description Heart rate source: off, ble or ha. */
+            source?: string;
+        };
         LineStringOut: {
             /** @description Track as [longitude, latitude] pairs in degrees, simplified to about 2 metres. */
             coordinates: number[][];
@@ -1379,6 +1411,8 @@ export interface components {
             username: string;
         };
         MQTTOut: {
+            /** @description Home Assistant MQTT discovery topic prefix, default homeassistant. */
+            discovery_prefix: string;
             /** @description Whether an MQTT password is stored. The password itself is never returned. */
             password_set: boolean;
             /** @description MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty when unset. */
@@ -1387,6 +1421,8 @@ export interface components {
             username: string;
         };
         MQTTPatch: {
+            /** @description Home Assistant MQTT discovery topic prefix: non-empty, no + or #, no leading or trailing /. Default homeassistant. */
+            discovery_prefix?: string;
             /** @description MQTT password. Omit to keep the stored password; an empty string clears it. */
             password?: string;
             /** @description MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty clears it. */
@@ -2092,6 +2128,8 @@ export interface components {
             general: components["schemas"]["GeneralOut"];
             /** @description Home Assistant connection. */
             ha: components["schemas"]["HAOut"];
+            /** @description Optional heart rate source. */
+            heart_rate: components["schemas"]["HeartRateOut"];
             /** @description Mapillary street imagery. */
             mapillary: components["schemas"]["MapillaryOut"];
             /** @description MQTT broker connection. */
@@ -2112,6 +2150,8 @@ export interface components {
             general?: components["schemas"]["GeneralPatch"];
             /** @description Home Assistant connection. */
             ha?: components["schemas"]["HAPatch"];
+            /** @description Optional heart rate source. */
+            heart_rate?: components["schemas"]["HeartRatePatch"];
             /** @description Mapillary street imagery. */
             mapillary?: components["schemas"]["MapillaryPatch"];
             /** @description MQTT broker connection. */

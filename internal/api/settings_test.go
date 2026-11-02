@@ -149,3 +149,57 @@ func TestSessionTTLApplies(t *testing.T) {
 		t.Errorf("Set-Cookie = %q, want Max-Age=3600", got)
 	}
 }
+
+func TestSettingsHeartRateRoundTrip(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{
+		"heart_rate": map[string]any{"source": "ble", "address": "AA:BB:CC:DD:EE:01", "name": "HeartCast"},
+		"mqtt":       map[string]any{"discovery_prefix": "ha/disc"},
+		"bike": map[string]any{"driver": "ha", "ha_resistance_entity": "number.res",
+			"ha_power_entity": "sensor.pow", "ha_cadence_entity": "sensor.cad"},
+		"ha": map[string]any{"url": "http://ha.local:8123", "token": "tok"},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	_, b = ts.do(t, admin, "GET", "/api/settings", nil)
+	g := decode[struct {
+		HeartRate struct {
+			Source, Address, Name, HAEntity string
+		} `json:"heart_rate"`
+		MQTT struct {
+			DiscoveryPrefix string `json:"discovery_prefix"`
+		} `json:"mqtt"`
+		Bike struct {
+			Driver string `json:"driver"`
+			Res    string `json:"ha_resistance_entity"`
+			Pow    string `json:"ha_power_entity"`
+			Cad    string `json:"ha_cadence_entity"`
+		} `json:"bike"`
+	}](t, b)
+	if g.HeartRate.Source != "ble" || g.HeartRate.Address != "AA:BB:CC:DD:EE:01" || g.HeartRate.Name != "HeartCast" ||
+		g.MQTT.DiscoveryPrefix != "ha/disc" || g.Bike.Driver != "ha" || g.Bike.Res != "number.res" ||
+		g.Bike.Pow != "sensor.pow" || g.Bike.Cad != "sensor.cad" {
+		t.Fatalf("got %s", b)
+	}
+	if strings.Contains(string(b), "tok\"") {
+		t.Fatalf("token leaked: %s", b)
+	}
+	// Partial patch leaves the rest.
+	resp, b = ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"heart_rate": map[string]any{"source": "off"}})
+	if resp.StatusCode != 200 {
+		t.Fatalf("patch2: %d %s", resp.StatusCode, b)
+	}
+	g2 := decode[struct {
+		HeartRate struct{ Source, Address string } `json:"heart_rate"`
+	}](t, b)
+	if g2.HeartRate.Source != "off" || g2.HeartRate.Address != "AA:BB:CC:DD:EE:01" {
+		t.Fatalf("partial: %s", b)
+	}
+	resp, b = ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"heart_rate": map[string]any{"source": "ant"}})
+	if resp.StatusCode != 400 || !strings.HasPrefix(decode[ErrorResponse](t, b).Error.Message, "heart_rate.source") {
+		t.Fatalf("bad source: %d %s", resp.StatusCode, b)
+	}
+}

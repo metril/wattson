@@ -1060,6 +1060,58 @@ export interface paths {
         patch: operations["updateUser"];
         trace?: never;
     };
+    "/api/workouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List workouts
+         * @description Returns every workout with its blocks, newest first. Workouts are shared: every signed-in user sees all of them. Requires the `read` scope.
+         */
+        get: operations["listWorkouts"];
+        put?: never;
+        /**
+         * Create a workout
+         * @description Creates a workout owned by the caller. Blocks are validated: 1 to 200 blocks of 5 to 7200 s, at most 21600 s in total; interval blocks set exactly one of `level` or `level_offset`, ERG blocks exactly one of `power_w` or `ftp_pct`. A violation is a 400 `invalid_request` whose message names the field, for example `blocks[2].power_w: exactly one of power_w or ftp_pct required for erg`. Requires the `control` scope.
+         */
+        post: operations["createWorkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workouts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a workout
+         * @description Returns a workout with its blocks. Any signed-in user may read any workout. Requires the `read` scope.
+         */
+        get: operations["getWorkout"];
+        /**
+         * Replace a workout
+         * @description Replaces the workout's name, type and blocks. Only the workout's owner or an admin may do this (403 `not_owner` otherwise). Blocks are resolved when a ride starts, so an edit applies to the next ride only. Validation errors are as for create. Requires the `control` scope.
+         */
+        put: operations["updateWorkout"];
+        post?: never;
+        /**
+         * Delete a workout
+         * @description Deletes a workout. Only the workout's owner or an admin may do this (403 `not_owner` otherwise). A workout the connected ride is using cannot be deleted (409 `workout_in_use`); stop the ride first. Requires the `control` scope.
+         */
+        delete: operations["deleteWorkout"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -1209,6 +1261,37 @@ export interface components {
             sim_cadence_rpm?: number;
             /** @description local or esphome. */
             transport?: string;
+        };
+        BlockIO: {
+            /** @description Cadence hint shown to the rider, for example 90-100 (rpm); at most 32 characters. Not enforced. */
+            cadence?: string;
+            /**
+             * Format: int64
+             * @description Block length in seconds, 5 to 7200.
+             */
+            duration_s: number;
+            /**
+             * Format: int64
+             * @description ERG only: target power as a percent of the rider's FTP, 20 to 200.
+             */
+            ftp_pct?: number;
+            /** @description Short block label, at most 40 characters. */
+            label?: string;
+            /**
+             * Format: int64
+             * @description Interval only: absolute resistance level, 1 to 32 (clamped to the rider's min and max level when ridden).
+             */
+            level?: number;
+            /**
+             * Format: int64
+             * @description Interval only: resistance level relative to the rider's flat-road offset level, -31 to 31 (clamped to the rider's min and max level when ridden).
+             */
+            level_offset?: number;
+            /**
+             * Format: int64
+             * @description ERG only: target power in watts, 50 to 1000.
+             */
+            power_w?: number;
         };
         CommandInBody: {
             /**
@@ -2735,6 +2818,53 @@ export interface components {
             oidc: boolean;
             /** @description Unique login name (case-insensitive). */
             username: string;
+        };
+        WorkoutIn: {
+            /** @description Blocks ridden in order, 1 to 200; the total must not exceed 21600 s (6 h). */
+            blocks: components["schemas"]["BlockIO"][];
+            /** @description Display name, 1 to 100 characters. */
+            name: string;
+            /**
+             * @description interval sets a resistance level per block; erg holds a target power per block.
+             * @enum {string}
+             */
+            type: "interval" | "erg";
+        };
+        WorkoutOut: {
+            /** @description Blocks ridden in order. */
+            blocks: components["schemas"]["BlockIO"][];
+            /**
+             * Format: date-time
+             * @description Creation time, UTC.
+             */
+            created_at: string;
+            /**
+             * Format: int64
+             * @description Total length of all blocks in seconds.
+             */
+            duration_s: number;
+            /**
+             * Format: int64
+             * @description Workout ID.
+             */
+            id: number;
+            /** @description Display name. */
+            name: string;
+            /**
+             * Format: int64
+             * @description ID of the user who created the workout; 0 when that user has since been deleted.
+             */
+            owner_id: number;
+            /**
+             * @description interval sets a resistance level per block; erg holds a target power per block.
+             * @enum {string}
+             */
+            type: "interval" | "erg";
+            /**
+             * Format: date-time
+             * @description Last change time, UTC.
+             */
+            updated_at: string;
         };
     };
     responses: never;
@@ -7001,6 +7131,346 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkouts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutOut"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWorkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkoutIn"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workout ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workout ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkoutIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workout ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

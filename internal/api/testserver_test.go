@@ -69,16 +69,17 @@ func (s *syncBuf) String() string {
 type tsOpt func(*tsConfig)
 
 type tsConfig struct {
-	extra      []func(huma.API)
-	riderInUse func(int64) bool
-	routeInUse func(int64) bool
-	openLocal  func() (blue.Transport, error)
-	wsRecheck  time.Duration
-	simDial    func(sim.Config) bike.Dial
-	noBike     bool
-	drawLimit  time.Duration
-	strava     bool
-	mqtt       MQTTBridge
+	extra        []func(huma.API)
+	riderInUse   func(int64) bool
+	routeInUse   func(int64) bool
+	workoutInUse func(int64) bool
+	openLocal    func() (blue.Transport, error)
+	wsRecheck    time.Duration
+	simDial      func(sim.Config) bike.Dial
+	noBike       bool
+	drawLimit    time.Duration
+	strava       bool
+	mqtt         MQTTBridge
 }
 
 // withMQTT sets Deps.MQTT.
@@ -114,6 +115,10 @@ func withRiderInUse(f func(int64) bool) tsOpt {
 }
 
 // withRouteInUse sets Deps.RouteInUse.
+func withWorkoutInUse(f func(int64) bool) tsOpt {
+	return func(c *tsConfig) { c.workoutInUse = f }
+}
+
 func withRouteInUse(f func(int64) bool) tsOpt {
 	return func(c *tsConfig) { c.routeInUse = f }
 }
@@ -149,7 +154,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	tiles := maptiles.New(svc.Get, http.DefaultClient)
 	t.Cleanup(tiles.Close)
 	d := Deps{Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
-		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit, MQTT: cfg.mqtt}
+		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, WorkoutInUse: cfg.workoutInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit, MQTT: cfg.mqtt}
 	if cfg.noBike {
 		d.Bike = nil
 	}

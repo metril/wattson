@@ -226,6 +226,60 @@
         },
         "type": "object"
       },
+      "BlockIO": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence": {
+            "description": "Cadence hint shown to the rider, for example 90-100 (rpm); at most 32 characters. Not enforced.",
+            "maxLength": 32,
+            "type": "string"
+          },
+          "duration_s": {
+            "description": "Block length in seconds, 5 to 7200.",
+            "format": "int64",
+            "maximum": 7200,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "ftp_pct": {
+            "description": "ERG only: target power as a percent of the rider's FTP, 20 to 200.",
+            "format": "int64",
+            "maximum": 200,
+            "minimum": 20,
+            "type": "integer"
+          },
+          "label": {
+            "description": "Short block label, at most 40 characters.",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "level": {
+            "description": "Interval only: absolute resistance level, 1 to 32 (clamped to the rider's min and max level when ridden).",
+            "format": "int64",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "level_offset": {
+            "description": "Interval only: resistance level relative to the rider's flat-road offset level, -31 to 31 (clamped to the rider's min and max level when ridden).",
+            "format": "int64",
+            "maximum": 31,
+            "minimum": -31,
+            "type": "integer"
+          },
+          "power_w": {
+            "description": "ERG only: target power in watts, 50 to 1000.",
+            "format": "int64",
+            "maximum": 1000,
+            "minimum": 50,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duration_s"
+        ],
+        "type": "object"
+      },
       "CommandInBody": {
         "additionalProperties": false,
         "properties": {
@@ -3382,6 +3436,100 @@
           "disabled",
           "oidc",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "WorkoutIn": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "description": "Blocks ridden in order, 1 to 200; the total must not exceed 21600 s (6 h).",
+            "items": {
+              "$ref": "#/components/schemas/BlockIO"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "description": "Display name, 1 to 100 characters.",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "description": "interval sets a resistance level per block; erg holds a target power per block.",
+            "enum": [
+              "interval",
+              "erg"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "blocks"
+        ],
+        "type": "object"
+      },
+      "WorkoutOut": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "description": "Blocks ridden in order.",
+            "items": {
+              "$ref": "#/components/schemas/BlockIO"
+            },
+            "type": "array"
+          },
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_s": {
+            "description": "Total length of all blocks in seconds.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "description": "Workout ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Display name.",
+            "type": "string"
+          },
+          "owner_id": {
+            "description": "ID of the user who created the workout; 0 when that user has since been deleted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": {
+            "description": "interval sets a resistance level per block; erg holds a target power per block.",
+            "enum": [
+              "interval",
+              "erg"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "Last change time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "owner_id",
+          "duration_s",
+          "blocks",
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       }
@@ -9061,6 +9209,455 @@
         "summary": "Update a user",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/workouts": {
+      "get": {
+        "description": "Returns every workout with its blocks, newest first. Workouts are shared: every signed-in user sees all of them. Requires the `read` scope.",
+        "operationId": "listWorkouts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkoutOut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List workouts",
+        "tags": [
+          "workouts"
+        ]
+      },
+      "post": {
+        "description": "Creates a workout owned by the caller. Blocks are validated: 1 to 200 blocks of 5 to 7200 s, at most 21600 s in total; interval blocks set exactly one of `level` or `level_offset`, ERG blocks exactly one of `power_w` or `ftp_pct`. A violation is a 400 `invalid_request` whose message names the field, for example `blocks[2].power_w: exactly one of power_w or ftp_pct required for erg`. Requires the `control` scope.",
+        "operationId": "createWorkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a workout",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/workouts/{id}": {
+      "delete": {
+        "description": "Deletes a workout. Only the workout's owner or an admin may do this (403 `not_owner` otherwise). A workout the connected ride is using cannot be deleted (409 `workout_in_use`); stop the ride first. Requires the `control` scope.",
+        "operationId": "deleteWorkout",
+        "parameters": [
+          {
+            "description": "Workout ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Workout ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete a workout",
+        "tags": [
+          "workouts"
+        ]
+      },
+      "get": {
+        "description": "Returns a workout with its blocks. Any signed-in user may read any workout. Requires the `read` scope.",
+        "operationId": "getWorkout",
+        "parameters": [
+          {
+            "description": "Workout ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Workout ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a workout",
+        "tags": [
+          "workouts"
+        ]
+      },
+      "put": {
+        "description": "Replaces the workout's name, type and blocks. Only the workout's owner or an admin may do this (403 `not_owner` otherwise). Blocks are resolved when a ride starts, so an edit applies to the next ride only. Validation errors are as for create. Requires the `control` scope.",
+        "operationId": "updateWorkout",
+        "parameters": [
+          {
+            "description": "Workout ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Workout ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Replace a workout",
+        "tags": [
+          "workouts"
         ]
       }
     },

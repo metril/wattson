@@ -156,6 +156,7 @@ func (d Deps) registerAPI(api huma.API) {
 	d.registerSettings(api)
 	d.registerRiders(api)
 	d.registerRoutes(api)
+	d.registerWorkouts(api)
 	d.registerDraw(api)
 	d.registerMaps(api)
 	d.registerOIDCProviders(api)

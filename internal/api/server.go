@@ -48,6 +48,11 @@ type Deps struct {
 	// deleting that route is refused with 409 route_in_use. Nil means no
 	// route is ever in use.
 	RouteInUse func(routeID int64) bool
+	// WorkoutInUse reports whether a workout is in use by the active ride;
+	// deleting that workout is refused with 409 workout_in_use. Nil means no
+	// workout is ever in use (the ride manager supplies it once it can ride
+	// workouts).
+	WorkoutInUse func(workoutID int64) bool
 	// Tiles downloads and lists BRouter map regions (segments). Nil disables
 	// the /api/maps endpoints (503) and the local tile check when drawing.
 	Tiles *maptiles.Manager

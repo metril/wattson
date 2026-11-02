@@ -87,6 +87,16 @@ describe('RidePage', () => {
     expect(screen.getByText('Turn the bike on and wake it.')).toBeInTheDocument();
   });
 
+  it('floor_unconfirmed on the bike status asks to lower the resistance, wording aside', async () => {
+    await setup({ state: 'idle', connected: false, last_error: 'bike not confirmed', floor_unconfirmed: true });
+    expect(screen.getByText('Lower the resistance at the console.')).toBeInTheDocument();
+  });
+
+  it('a last_error that merely mentions confirm is not a floor warning', async () => {
+    await setup({ state: 'idle', connected: false, last_error: 'could not confirm the minimum level of the adapter' });
+    expect(screen.queryByText('Lower the resistance at the console.')).not.toBeInTheDocument();
+  });
+
   it('release 424 floor_unconfirmed warns about the level', async () => {
     await setup({ state: 'riding' }, { state: 'riding', level: 9, reported_level: 9 }, {
       'POST /api/bike/release': apiError(424, 'floor_unconfirmed', 'could not confirm'),

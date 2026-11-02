@@ -51,7 +51,7 @@ type Command struct {
 // floor level the engine sent on pause, not the rider's manual level.
 type Tick struct {
 	At            time.Time `json:"at" doc:"When this snapshot was taken (RFC 3339)."`
-	State         State     `json:"state" doc:"Ride state: idle, connecting, ready, riding, paused or finished."`
+	State         State     `json:"state" enum:"idle,connecting,ready,riding,paused,finished" doc:"Ride state: idle, connecting, ready, riding, paused or finished."`
 	Mode          string    `json:"mode" doc:"Ride mode name, for example free."`
 	ElapsedS      float64   `json:"elapsed_s" doc:"Riding time in seconds."`
 	DistanceM     float64   `json:"distance_m" doc:"Simulated distance covered, in metres."`

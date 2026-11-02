@@ -67,6 +67,7 @@ export const tickFixture = (over: Partial<Tick> = {}): Tick => ({
 export const bikeFixture = (over: Partial<BikeStatus> = {}): BikeStatus => ({
   state: 'ready',
   connected: true,
+  floor_unconfirmed: false,
   since: '2026-01-01T00:00:00Z',
   rider_id: 1,
   protocol: 'sim',

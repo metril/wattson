@@ -5,7 +5,6 @@ import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { api, ApiError, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
-import { isFloorUnconfirmed } from '@/lib/bike-warnings';
 import { getSelectedRiderId, setSelectedRiderId } from '@/lib/rider';
 import type { TickStore } from '@/lib/tick-store';
 import type { BikeStatus, RideState } from '@/lib/ws-types';
@@ -72,7 +71,7 @@ export function BikeBar({
   });
 
   const lastError = bike?.last_error;
-  const floorBike = isFloorUnconfirmed(lastError);
+  const floorBike = !!bike?.floor_unconfirmed;
 
   return (
     <section aria-label="Bike" className="flex flex-col gap-3">

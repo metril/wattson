@@ -44,14 +44,15 @@ type Deps struct {
 
 // Status is the bike connection as the UI shows it.
 type Status struct {
-	State     string    `json:"state" doc:"idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished."`
-	RiderID   int64     `json:"rider_id,omitempty" doc:"Rider bound to the bike; absent when idle."`
-	Driver    string    `json:"driver,omitempty" doc:"Driver from settings in use: auto, fitplus, ftms or sim."`
-	Protocol  string    `json:"protocol,omitempty" doc:"Protocol of the live bike session: fitplus, ftms or sim."`
-	Connected bool      `json:"connected" doc:"Whether a live link to the bike exists right now."`
-	LastError string    `json:"last_error,omitempty" doc:"Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level."`
-	Hint      string    `json:"hint,omitempty" doc:"Advice for fixing LastError when it is a connection problem."`
-	Since     time.Time `json:"since" doc:"When State last changed (RFC 3339)."`
+	State            string    `json:"state" doc:"idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished."`
+	RiderID          int64     `json:"rider_id,omitempty" doc:"Rider bound to the bike; absent when idle."`
+	Driver           string    `json:"driver,omitempty" doc:"Driver from settings in use: auto, fitplus, ftms or sim."`
+	Protocol         string    `json:"protocol,omitempty" doc:"Protocol of the live bike session: fitplus, ftms or sim."`
+	Connected        bool      `json:"connected" doc:"Whether a live link to the bike exists right now."`
+	LastError        string    `json:"last_error,omitempty" doc:"Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level."`
+	Hint             string    `json:"hint,omitempty" doc:"Advice for fixing LastError when it is a connection problem."`
+	FloorUnconfirmed bool      `json:"floor_unconfirmed" doc:"True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed."`
+	Since            time.Time `json:"since" doc:"When State last changed (RFC 3339)."`
 }
 
 // conn is one bike connection: a rider, one transport, and the sequence of
@@ -307,7 +308,7 @@ func (m *Manager) pushLocked(c *conn) {
 	old := m.status
 	st := Status{
 		State: string(c.state), RiderID: c.rider.ID, Driver: c.plan.driver, Protocol: c.proto,
-		Connected: c.connected, LastError: c.lastError(), Hint: c.hint, Since: old.Since,
+		Connected: c.connected, LastError: c.lastError(), Hint: c.hint, FloorUnconfirmed: c.floorWarn != "", Since: old.Since,
 	}
 	m.setStatusLocked(st)
 }
@@ -445,7 +446,7 @@ func (m *Manager) finish(c *conn) {
 		m.cur = nil
 	}
 	c.eng, c.tap = nil, nil
-	m.setStatusLocked(Status{State: string(engine.StateIdle), LastError: c.lastError(), Hint: c.hint, Since: m.status.Since})
+	m.setStatusLocked(Status{State: string(engine.StateIdle), LastError: c.lastError(), Hint: c.hint, FloorUnconfirmed: c.floorWarn != "", Since: m.status.Since})
 	m.mu.Unlock()
 	c.cancel()
 	close(c.done)

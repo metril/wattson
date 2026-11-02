@@ -126,6 +126,10 @@
             "description": "Driver from settings in use: auto, fitplus, ftms or sim.",
             "type": "string"
           },
+          "floor_unconfirmed": {
+            "description": "True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed.",
+            "type": "boolean"
+          },
           "hint": {
             "description": "Advice for fixing LastError when it is a connection problem.",
             "type": "string"
@@ -156,6 +160,7 @@
         "required": [
           "state",
           "connected",
+          "floor_unconfirmed",
           "since"
         ],
         "type": "object"
@@ -222,6 +227,14 @@
           },
           "state": {
             "description": "Ride state: idle, connecting, ready, riding, paused or finished.",
+            "enum": [
+              "idle",
+              "connecting",
+              "ready",
+              "riding",
+              "paused",
+              "finished"
+            ],
             "type": "string"
           }
         },

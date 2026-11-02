@@ -1278,6 +1278,8 @@ export interface components {
             connected: boolean;
             /** @description Driver from settings in use: auto, fitplus, ftms or sim. */
             driver?: string;
+            /** @description True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed. */
+            floor_unconfirmed: boolean;
             /** @description Advice for fixing LastError when it is a connection problem. */
             hint?: string;
             /** @description Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level. */
@@ -1397,8 +1399,11 @@ export interface components {
              * @description Simulated speed in kilometres per hour.
              */
             speed_kmh: number;
-            /** @description Ride state: idle, connecting, ready, riding, paused or finished. */
-            state: string;
+            /**
+             * @description Ride state: idle, connecting, ready, riding, paused or finished.
+             * @enum {string}
+             */
+            state: "idle" | "connecting" | "ready" | "riding" | "paused" | "finished";
         };
         TokenOut: {
             /**

@@ -26,6 +26,7 @@ const sampleTick: Required<Tick> = {
 const sampleStatus: Required<BikeStatus> = {
   connected: false,
   driver: '',
+  floor_unconfirmed: false,
   hint: '',
   last_error: '',
   protocol: '',
@@ -48,10 +49,8 @@ describe('ws-types vs docs/asyncapi.yaml', () => {
     expect([...names].sort()).toEqual([...COMMAND_NAMES].sort());
   });
   it('Tick.state values match RideState', () => {
-    const doc = schemas.Tick.properties.state.description as string;
-    const mentioned = ['idle', 'connecting', 'ready', 'riding', 'paused', 'finished'].filter((n) => doc.includes(n));
     const states: Record<RideState, true> = { idle: true, connecting: true, ready: true, riding: true, paused: true, finished: true };
-    expect(mentioned.sort()).toEqual(Object.keys(states).sort());
+    expect([...schemas.Tick.properties.state.enum].sort()).toEqual(Object.keys(states).sort());
   });
   it('WSError shape matches ServerMsg', () => {
     const err = schemas.WSError;

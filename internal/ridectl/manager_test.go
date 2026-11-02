@@ -398,7 +398,7 @@ func TestReleaseReportsUnconfirmedFloor(t *testing.T) {
 		if !errors.Is(err, bike.ErrNoSession) {
 			t.Fatalf("Release = %v, want wrapping ErrNoSession", err)
 		}
-		if st := m.Status(); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") {
+		if st := m.Status(); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") || !st.FloorUnconfirmed {
 			t.Fatalf("status = %+v", st)
 		}
 	})
@@ -426,13 +426,13 @@ func TestFloorFailureSurvivesUnconnectedReconnect(t *testing.T) {
 		dropAndStop(t, rec, m)
 		time.Sleep(3 * time.Second) // the replacement engine keeps failing to connect
 		st := m.Status()
-		if st.State != "connecting" || !strings.Contains(st.LastError, "lower resistance") {
+		if st.State != "connecting" || !strings.Contains(st.LastError, "lower resistance") || !st.FloorUnconfirmed {
 			t.Fatalf("status = %+v", st)
 		}
 		if err := m.Release(t.Context()); !errors.Is(err, bike.ErrNoSession) {
 			t.Fatalf("Release = %v, want wrapping ErrNoSession", err)
 		}
-		if st := m.Status(); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") {
+		if st := m.Status(); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") || !st.FloorUnconfirmed {
 			t.Fatalf("idle status = %+v", st)
 		}
 	})
@@ -448,13 +448,13 @@ func TestFloorWarningClearsAfterConfirmedFloor(t *testing.T) {
 		time.Sleep(time.Second)
 		rec.fail.Store(false) // the bike is back
 		waitState(t, m, "ready")
-		if st := m.Status(); !strings.Contains(st.LastError, "lower resistance") {
+		if st := m.Status(); !strings.Contains(st.LastError, "lower resistance") || !st.FloorUnconfirmed {
 			t.Fatalf("warning lost on reconnect: %+v", st)
 		}
 		if err := m.Release(t.Context()); err != nil {
 			t.Fatalf("Release = %v, want nil (floor confirmed)", err)
 		}
-		if st := m.Status(); st.State != "idle" || st.LastError != "" {
+		if st := m.Status(); st.State != "idle" || st.LastError != "" || st.FloorUnconfirmed {
 			t.Fatalf("status = %+v, want idle without a stale warning", st)
 		}
 	})

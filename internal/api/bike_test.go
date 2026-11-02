@@ -444,7 +444,7 @@ func TestReleaseFloorUnconfirmed424(t *testing.T) {
 	if !strings.Contains(string(b), "lower the resistance at the console") {
 		t.Errorf("message lacks advice: %s", b)
 	}
-	if st := ts.bikeStatus(t, admin); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") {
+	if st := ts.bikeStatus(t, admin); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") || !st.FloorUnconfirmed {
 		t.Errorf("status after release = %+v", st)
 	}
 }

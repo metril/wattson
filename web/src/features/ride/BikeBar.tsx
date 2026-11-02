@@ -72,6 +72,11 @@ export function BikeBar({
 
   const lastError = bike?.last_error;
   const floorBike = !!bike?.floor_unconfirmed;
+  // One banner for the floor warning: the server's status wins, the client-side
+  // 424 level only covers the moment before that status arrives.
+  const floorWarn = floorBike || floorLevel !== null;
+  const known = ticks.latest ? ticks.latest.reported_level || ticks.latest.level : 0;
+  const floorN = floorBike ? known || floorLevel : floorLevel;
 
   return (
     <section aria-label="Bike" className="flex flex-col gap-3">
@@ -129,21 +134,23 @@ export function BikeBar({
           <p className="text-sm text-dim">Ride controls are off until the link is back.</p>
         </Banner>
       )}
-      {lastError && (
-        <Banner tone="error">
-          <p className="font-medium">{lastError}</p>
-          {bike?.hint && <p className="text-sm text-dim">{bike.hint}</p>}
-          {floorBike && <p className="font-medium">Lower the resistance at the console.</p>}
-        </Banner>
-      )}
-      {floorLevel !== null && (
+      {floorWarn ? (
         <Banner tone="error">
           <p className="font-medium">
-            {floorLevel > 0 ? `Bike may still be at level ${floorLevel}` : 'Bike may still be at a high level'} — lower
-            resistance at the console.
+            {floorN != null && floorN > 0
+              ? `Bike may still be at level ${floorN}`
+              : 'Bike may still be at a high level'}{' '}
+            — lower the resistance at the console.
           </p>
-          <p className="text-sm text-dim">The bike was released but did not confirm its minimum level.</p>
+          {floorBike && lastError && <p className="text-sm text-dim">{lastError}</p>}
         </Banner>
+      ) : (
+        lastError && (
+          <Banner tone="error">
+            <p className="font-medium">{lastError}</p>
+            {bike?.hint && <p className="text-sm text-dim">{bike.hint}</p>}
+          </Banner>
+        )
       )}
       {failure && <Banner tone="error">{failure}</Banner>}
     </section>

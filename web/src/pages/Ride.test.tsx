@@ -89,12 +89,15 @@ describe('RidePage', () => {
 
   it('floor_unconfirmed on the bike status asks to lower the resistance, wording aside', async () => {
     await setup({ state: 'idle', connected: false, last_error: 'bike not confirmed', floor_unconfirmed: true });
-    expect(screen.getByText('Lower the resistance at the console.')).toBeInTheDocument();
+    const alerts = screen.getAllByRole('alert').filter((a) => /lower the resistance/i.test(a.textContent ?? ''));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('Bike may still be at level 5 — lower the resistance at the console.');
+    expect(alerts[0]).toHaveTextContent('bike not confirmed');
   });
 
   it('a last_error that merely mentions confirm is not a floor warning', async () => {
     await setup({ state: 'idle', connected: false, last_error: 'could not confirm the minimum level of the adapter' });
-    expect(screen.queryByText('Lower the resistance at the console.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/lower the resistance/i)).not.toBeInTheDocument();
   });
 
   it('release 424 floor_unconfirmed warns about the level', async () => {
@@ -103,7 +106,18 @@ describe('RidePage', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Release' }));
     expect(await screen.findByText(/Bike may still be at level 9/)).toBeInTheDocument();
-    expect(screen.getByText(/lower resistance at the console/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('alert').filter((a) => /lower the resistance/i.test(a.textContent ?? ''))).toHaveLength(1);
+  });
+
+  it('server floor status after a 424 still shows exactly one banner', async () => {
+    const { ws } = await setup({ state: 'riding' }, { state: 'riding', level: 9, reported_level: 9 }, {
+      'POST /api/bike/release': apiError(424, 'floor_unconfirmed', 'could not confirm'),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Release' }));
+    await screen.findByText(/Bike may still be at level 9/);
+    push(ws, { type: 'state', bike: bikeFixture({ state: 'idle', last_error: 'bike not confirmed', floor_unconfirmed: true }), tick: tickFixture({ state: 'idle', level: 9, reported_level: 9 }) });
+    expect(screen.getAllByRole('alert').filter((a) => /lower the resistance/i.test(a.textContent ?? ''))).toHaveLength(1);
+    expect(screen.getAllByText(/level 9/)).toHaveLength(1);
   });
 
   it('keeps a tick alert while present and at least 10 s', async () => {

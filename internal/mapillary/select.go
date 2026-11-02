@@ -79,13 +79,38 @@ func bearingDiff(a, b float64) float64 {
 // then the newest capture, then the smaller id. Over Max photos, every other
 // one is dropped until it fits; the first and last are always kept.
 func Select(p *route.Profile, cands []Candidate, o SelectOpts) []Photo {
+	s := NewSelector(p, o)
+	if s == nil {
+		return nil
+	}
+	s.Add(cands)
+	return s.Photos()
+}
+
+type scored struct {
+	Photo
+	score float64
+}
+
+// Selector is Select fed in batches: it keeps only the best photo of each
+// bucket, so memory follows the route length, not the number of candidates
+// seen. Not safe for concurrent use.
+type Selector struct {
+	o       SelectOpts
+	grid    map[cellKey][]int32
+	segs    []segment
+	buckets map[int]scored
+}
+
+// NewSelector prepares the route; nil when it has no usable segment.
+func NewSelector(p *route.Profile, o SelectOpts) *Selector {
 	if p == nil || p.Len() < 2 || len(p.Lon) != p.Len() {
 		return nil
 	}
 	o = o.withDefaults()
-
+	sel := &Selector{o: o, grid: make(map[cellKey][]int32), buckets: make(map[int]scored)}
 	// Spatial hash of segments, each in every cell its bounding box covers.
-	grid := make(map[cellKey][]int32)
+	grid := sel.grid
 	var segs []segment
 	for i := 0; i+1 < p.Len(); i++ {
 		s := segment{aLat: p.Lat[i], aLon: p.Lon[i], bLat: p.Lat[i+1], bLon: p.Lon[i+1], d0: p.DistAt(i), d1: p.DistAt(i + 1)}
@@ -112,12 +137,13 @@ func Select(p *route.Profile, cands []Candidate, o SelectOpts) []Photo {
 	if len(segs) == 0 {
 		return nil
 	}
+	sel.segs = segs
+	return sel
+}
 
-	type scored struct {
-		Photo
-		score float64
-	}
-	buckets := make(map[int]scored)
+// Add considers candidates.
+func (sel *Selector) Add(cands []Candidate) {
+	o, grid, segs, buckets := sel.o, sel.grid, sel.segs, sel.buckets
 	for _, c := range cands {
 		if !finite(c.Lat, c.Lon) || (!c.Pano && !finite(c.Compass)) {
 			continue // a non-panorama needs a heading to be judged
@@ -177,7 +203,11 @@ func Select(p *route.Profile, cands []Candidate, o SelectOpts) []Photo {
 			buckets[b] = ph
 		}
 	}
+}
 
+// Photos returns the selection so far, sorted by distance along the route.
+func (sel *Selector) Photos() []Photo {
+	o, buckets := sel.o, sel.buckets
 	out := make([]Photo, 0, len(buckets))
 	for _, ph := range buckets {
 		out = append(out, ph.Photo)

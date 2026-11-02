@@ -308,15 +308,16 @@ func (d Deps) registerSettings(api huma.API) {
 		Description: "Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: " +
 			"omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. " +
 			"The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message " +
-			"`<section.field>: <problem>` and nothing is stored. Changing any `mqtt` field reconnects the MQTT bridge at once. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET.",
+			"`<section.field>: <problem>` and nothing is stored. Changing any `mapillary` field restarts a street photo build in progress. Changing any `mqtt` field reconnects the MQTT bridge at once. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET.",
 		Scope: auth.ScopeAdmin},
 		func(ctx context.Context, in *patchSettingsIn) (*settingsBody, error) {
-			var sharedChanged, mqttChanged bool
+			var sharedChanged, mqttChanged, mlyChanged bool
 			s, err := d.Settings.Update(ctx, func(s *settings.Settings) error {
-				before, mqttBefore := s.Strava, s.MQTT
+				before, mqttBefore, mlyBefore := s.Strava, s.MQTT, s.Mapillary
 				in.Body.apply(s)
 				sharedChanged = s.Strava.ClientID != before.ClientID || s.Strava.ClientSecret != before.ClientSecret
 				mqttChanged = s.MQTT != mqttBefore
+				mlyChanged = s.Mapillary != mlyBefore
 				return nil
 			})
 			var ve *settings.ValidationError
@@ -325,6 +326,9 @@ func (d Deps) registerSettings(api huma.API) {
 			}
 			if err != nil {
 				return nil, err
+			}
+			if mlyChanged && d.Photos != nil {
+				d.Photos.Reconfigure() // a street photo build in progress restarts with the new token or URLs
 			}
 			if mqttChanged && d.MQTT != nil {
 				d.MQTT.Reload()

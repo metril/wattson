@@ -47,6 +47,19 @@ func (ts *testServer) importRamp(t testing.TB, admin *http.Client) int64 {
 	return decode[RouteDetail](t, b).ID
 }
 
+// buildRamp imports ramp.gpx, sets the token and waits for the photo list, so
+// the fake's images 5000 to 5002 are listed by a route.
+func (ts *testServer) buildRamp(t testing.TB, admin *http.Client) int64 {
+	t.Helper()
+	id := ts.importRamp(t, admin)
+	ts.setMapillaryToken(t, mlyToken)
+	ts.photos(t, admin, id)
+	if out := ts.pollPhotos(t, admin, id); out.Status != "ready" || len(out.Photos) != 3 {
+		t.Fatalf("build: %+v", out)
+	}
+	return id
+}
+
 func (ts *testServer) photos(t testing.TB, c *http.Client, id int64) (*http.Response, RoutePhotosOut, []byte) {
 	t.Helper()
 	resp, b := ts.do(t, c, "GET", "/api/routes/"+itoa(id)+"/mapillary", nil)
@@ -217,7 +230,7 @@ func TestImageProxy(t *testing.T) {
 	f.SetToken(mlyToken)
 	ts := newTS(t, withMapillary(f))
 	admin := ts.setupAdmin(t)
-	ts.setMapillaryToken(t, mlyToken)
+	ts.buildRamp(t, admin)
 	resp, b := ts.do(t, admin, "GET", "/api/mapillary/images/5000", nil)
 	if resp.StatusCode != 200 || !bytes.Equal(b, mapillarytest.JPEG()) {
 		t.Fatalf("image: %d (%d bytes)", resp.StatusCode, len(b))
@@ -234,8 +247,12 @@ func TestImageProxy(t *testing.T) {
 			t.Errorf("id %q: %d %s, want 400 bad_id", bad, resp.StatusCode, b)
 		}
 	}
-	if resp, b := ts.do(t, admin, "GET", "/api/mapillary/images/424242", nil); resp.StatusCode != 502 || errCode(t, b) != "photo_unavailable" {
-		t.Errorf("unknown image: %d %s", resp.StatusCode, b)
+	graph := f.GraphRequests()
+	if resp, b := ts.do(t, admin, "GET", "/api/mapillary/images/424242", nil); resp.StatusCode != 404 || errCode(t, b) != "not_found" {
+		t.Errorf("unlisted image: %d %s", resp.StatusCode, b)
+	}
+	if f.GraphRequests() != graph {
+		t.Error("an unlisted id reached Mapillary")
 	}
 	if resp, _ := ts.do(t, nil, "GET", "/api/mapillary/images/5000", nil); resp.StatusCode != 401 {
 		t.Errorf("anonymous: %d", resp.StatusCode)
@@ -266,7 +283,7 @@ func TestImageProxyUpstreamFailures(t *testing.T) {
 			f.SetThumb(tc.status, tc.ctype, tc.body)
 			ts := newTS(t, withMapillary(f))
 			admin := ts.setupAdmin(t)
-			ts.setMapillaryToken(t, mlyToken)
+			ts.buildRamp(t, admin)
 			resp, b := ts.do(t, admin, "GET", "/api/mapillary/images/5000", nil)
 			if resp.StatusCode != 502 || errCode(t, b) != "photo_unavailable" || strings.HasPrefix(resp.Header.Get("Content-Type"), "image/") {
 				t.Errorf("%d %s (%s)", resp.StatusCode, b, resp.Header.Get("Content-Type"))
@@ -310,5 +327,52 @@ func TestTokenNeverExposed(t *testing.T) {
 		if strings.Contains(all, form) {
 			t.Errorf("the token (%q) appears in a response, header or log", form)
 		}
+	}
+}
+
+func TestDeleteRouteCancelsBuild(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, rampImages()...)
+	release := f.GateTiles()
+	ts := newTS(t, withMapillary(f))
+	admin := ts.setupAdmin(t)
+	id := ts.importRamp(t, admin)
+	ts.setMapillaryToken(t, mlyToken)
+	ts.photos(t, admin, id)
+	for f.TileRequests() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if resp, b := ts.do(t, admin, "DELETE", "/api/routes/"+itoa(id), nil); resp.StatusCode != 204 {
+		t.Fatalf("delete: %d %s", resp.StatusCode, b)
+	}
+	// The gated tile requests were cancelled with the build: the fake sees them end.
+	release()
+	if resp, _ := ts.do(t, admin, "GET", "/api/routes/"+itoa(id)+"/mapillary", nil); resp.StatusCode != 404 {
+		t.Errorf("after delete: %d", resp.StatusCode)
+	}
+}
+
+func TestSettingsChangeRestartsBuild(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, rampImages()...)
+	release := f.GateTiles()
+	ts := newTS(t, withMapillary(f))
+	admin := ts.setupAdmin(t)
+	id := ts.importRamp(t, admin)
+	ts.setMapillaryToken(t, mlyToken)
+	ts.photos(t, admin, id)
+	for f.TileRequests() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"token": mlyToken + "-2"}}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	release()
+	if out := ts.pollPhotos(t, admin, id); out.Status != "ready" {
+		t.Fatalf("after restart: %+v", out)
+	}
+	row, err := ts.Store.GetRoutePhotos(context.Background(), id)
+	if err != nil || row.TokenFP != ts.fp(mlyToken+"-2") {
+		t.Errorf("row built under the old token: %+v %v", row, err)
 	}
 }

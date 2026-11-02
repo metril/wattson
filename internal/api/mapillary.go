@@ -70,7 +70,7 @@ func init() {
 			Summary: "Get a street photo",
 			Description: "Streams the 2048 px JPEG of a Mapillary image through the server, so the browser never talks " +
 				"to Mapillary and never sees the token. `id` is a photo id from `GET /api/routes/{id}/mapillary` (digits only, " +
-				"else 400 `bad_id`). The response is `image/jpeg` of at most 5 MiB, cacheable by the browser for a day, " +
+				"else 400 `bad_id`; 404 `not_found` for an id no route lists). The response is `image/jpeg` of at most 5 MiB, cacheable by the browser for a day, " +
 				"with the photographer's Mapillary username in `X-Photo-Creator` (percent-encoded when not plain ASCII). " +
 				"Any upstream failure is 502 `photo_unavailable`; 503 `mapillary_unavailable` when the server has no photo support.",
 			Params: []p{{Name: "id", Doc: "Mapillary image id, digits only.", Type: "string"}},
@@ -96,13 +96,25 @@ func (d Deps) handleMapillaryImage(w http.ResponseWriter, r *http.Request) {
 	case !ident.Has(auth.ScopeRead):
 		writeEnvelope(w, http.StatusForbidden, "forbidden", "missing required scope: read")
 		return
-	case d.Mapillary == nil:
+	case d.Mapillary == nil || d.Photos == nil:
 		writeEnvelope(w, http.StatusServiceUnavailable, "mapillary_unavailable", "street photos are not available on this server")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if !imageIDRe.MatchString(id) {
 		writeEnvelope(w, http.StatusBadRequest, "bad_id", "id: must be 1 to 20 digits")
+		return
+	}
+	// Only photos some route lists are served, so the proxy cannot be used to
+	// spend the token's quota on arbitrary ids.
+	listed, err := d.Photos.HasImage(r.Context(), id)
+	if err != nil {
+		loggerFrom(r.Context()).Error("photo lookup failed", "err", err)
+		writeEnvelope(w, http.StatusInternalServerError, "internal_error", "internal error")
+		return
+	}
+	if !listed {
+		writeEnvelope(w, http.StatusNotFound, "not_found", "no such photo")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), photoFetchTimeout)

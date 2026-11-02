@@ -139,6 +139,13 @@ func (m *MQTT) Status() MQTTStatus {
 	return m.status
 }
 
+func (m *MQTT) resetStatus(enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.status = MQTTStatus{Enabled: enabled}
+	m.lastErr = ""
+}
+
 func (m *MQTT) setStatus(connected bool, errText string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -257,14 +264,15 @@ func (m *MQTT) apply(ctx context.Context) {
 			m.clearDiscovery(ctx, s, s.pubPrefix)
 			s.pubPrefix = ""
 		}
+		// Report the new state before closing: closing publishes "offline"
+		// and clears the configs, which an observer may see before this
+		// function returns, and Status must not still say connected then.
+		m.resetStatus(want.URL != "")
 		m.closeSession(s, clear)
 		m.sess = nil
 	}
 	m.havePub = false
-	m.mu.Lock()
-	m.status = MQTTStatus{Enabled: want.URL != ""}
-	m.lastErr = ""
-	m.mu.Unlock()
+	m.resetStatus(want.URL != "")
 	if want.URL == "" {
 		return
 	}

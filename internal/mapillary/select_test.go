@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -293,5 +294,26 @@ func TestSelectWideLateralScansFarCells(t *testing.T) {
 	got := Select(eastProfile(1000), []Candidate{at("a", 300, 400, 90)}, SelectOpts{MaxLateralM: 500})
 	if len(got) != 1 || math.Abs(got[0].DM-300) > 1 {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSelectorBatchesMatchSelect(t *testing.T) {
+	t.Parallel()
+	p := northRoute()
+	var cands []Candidate
+	for i := 0; i < 600; i++ { // many images per 15 m bucket
+		cands = append(cands, Candidate{ID: fmt.Sprint(i), Lat: 45 + float64(i%99)*10/111320 + 0.00001, Lon: 7 + float64(i%7)*2e-6,
+			Compass: 1, CapturedAt: int64(i)})
+	}
+	want := Select(p, cands, SelectOpts{})
+	sel := NewSelector(p, SelectOpts{})
+	for i := 0; i < len(cands); i += 50 {
+		sel.Add(cands[i:min(i+50, len(cands))])
+	}
+	if got := sel.Photos(); !reflect.DeepEqual(got, want) {
+		t.Errorf("batched selection differs: %d vs %d photos", len(got), len(want))
+	}
+	if len(sel.buckets) > 70 { // 990 m / 15 m
+		t.Errorf("selector holds %d buckets for 600 candidates", len(sel.buckets))
 	}
 }

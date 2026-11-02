@@ -49,6 +49,7 @@ type testServer struct {
 	Strava   *strava.Service   // set by withStrava
 	Fake     *stravatest.Fake  // the fake Strava behind Strava
 	Photos   *mapillary.Builder
+	fp       func(string) string // the photo cache's token fingerprint
 }
 
 // syncBuf is a goroutine-safe log sink.
@@ -172,8 +173,8 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 		mly.URLs = func(context.Context) (string, string) { return cfg.mly.GraphURL(), cfg.mly.TilesURL() }
 		mly.ImageHostOK = func(h string) bool { return h == cfg.mly.Host() }
 	}
-	photos := mapillary.NewBuilder(mly, st, ridectl.StoreRoutes(st), mapillary.NewFingerprint(box.Derive("mapillary-fp")), time.Now)
-	photos.Logger = logger
+	fp := mapillary.NewFingerprint(box.Derive("mapillary-fp"))
+	photos := mapillary.NewBuilder(mly, st, ridectl.StoreRoutes(st), fp, time.Now, logger)
 	t.Cleanup(func() { _ = photos.Close(context.Background()) }) // before the store closes
 	d := Deps{Photos: photos, Mapillary: mly, Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
 		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, WorkoutInUse: cfg.workoutInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit, MQTT: cfg.mqtt}
@@ -194,7 +195,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { _ = mgr.Close(context.Background()) }) // runs first: ends WebSocket handlers
-	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles, Strava: d.Strava, Fake: fake, Photos: photos}
+	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles, Strava: d.Strava, Fake: fake, Photos: photos, fp: fp}
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.

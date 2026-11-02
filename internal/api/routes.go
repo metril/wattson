@@ -358,6 +358,9 @@ func (d Deps) registerRoutes(api huma.API) {
 			} else if err != nil {
 				return nil, err
 			}
+			if d.Photos != nil {
+				d.Photos.Cancel(in.ID) // stop a street photo build for the deleted route
+			}
 			return &noContent{}, nil
 		})
 

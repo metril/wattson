@@ -252,8 +252,7 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 			return s.Mapillary.Token, err
 		}}
 	photos := mapillary.NewBuilder(mly, st, ridectl.StoreRoutes(st),
-		mapillary.NewFingerprint(box.Derive("mapillary-fp")), time.Now)
-	photos.Logger = logger
+		mapillary.NewFingerprint(box.Derive("mapillary-fp")), time.Now, logger)
 	closePhotos := func() {
 		pctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()

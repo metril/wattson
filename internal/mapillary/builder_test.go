@@ -67,8 +67,8 @@ func newBfix(t *testing.T, st *store.Store, f *mapillarytest.Fake) *bfix {
 	x.b = NewBuilder(x.c, st,
 		func(context.Context, int64) (*route.Profile, error) { return northRoute(), nil },
 		func(tok string) string { return "fp:" + tok },
-		func() time.Time { return time.Unix(x.now.Load(), 0) })
-	x.b.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+		func() time.Time { return time.Unix(x.now.Load(), 0) },
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -269,7 +269,7 @@ func TestBuilderCloseStopsWorker(t *testing.T) {
 			t.Fatal(err)
 		}
 		b := NewBuilder(c, st, func(context.Context, int64) (*route.Profile, error) { return northRoute(), nil },
-			func(s string) string { return s }, time.Now)
+			func(s string) string { return s }, time.Now, nil)
 		if s, err := b.Get(context.Background(), r.ID); err != nil || s.State != "building" {
 			t.Fatalf("get: %+v %v", s, err)
 		}
@@ -305,5 +305,93 @@ func TestBuilderNeverStoresToken(t *testing.T) {
 	}
 	if strings.Contains(s.Message+row.Error, "secret") {
 		t.Errorf("token leaked: %+v %+v", s, row)
+	}
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+func (b *Builder) idle() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.pending) == 0
+}
+
+func TestBuildTooLong(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, fakeImages()...)
+	x := newBfix(t, storetest.New(t), f)
+	long := &route.Profile{StepM: 4.45e6, LengthM: 4.45e6, // 4450 km due north from the equator
+		Lat: []float64{0, 40}, Lon: []float64{7, 7}, Ele: []float64{0, 0}, Grade: []float64{0, 0}}
+	if n := len(Tiles(long, coverageZoom, coverageBufM)); n <= maxTiles {
+		t.Fatalf("fixture has only %d tiles", n)
+	}
+	x.b.load = func(context.Context, int64) (*route.Profile, error) { return long, nil }
+	x.get(t)
+	s := x.settle(t)
+	if s.State != "error" || s.Message != "This route is too long for street photos" {
+		t.Fatalf("got %+v", s)
+	}
+	if f.TileRequests() != 0 {
+		t.Errorf("%d tile requests for a refused route", f.TileRequests())
+	}
+}
+
+func TestCancelStopsBuildAndStoresNothing(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, fakeImages()...)
+	release := f.GateTiles()
+	x := newBfix(t, storetest.New(t), f)
+	x.get(t)
+	waitFor(t, "a tile request", func() bool { return f.TileRequests() > 0 })
+	x.b.Cancel(x.route.ID)
+	waitFor(t, "the build to stop", x.b.idle)
+	release()
+	if _, err := x.st.GetRoutePhotos(context.Background(), x.route.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a cancelled build was stored: %v", err)
+	}
+	// A queued (not yet running) build is dropped too.
+	x.b.mu.Lock()
+	x.b.pending[77] = struct{}{}
+	x.b.queue = append(x.b.queue, 77)
+	x.b.mu.Unlock()
+	x.b.Cancel(77)
+	x.b.mu.Lock()
+	n, q := len(x.b.pending), len(x.b.queue)
+	x.b.mu.Unlock()
+	if n != 0 || q != 0 {
+		t.Errorf("pending=%d queue=%d after Cancel", n, q)
+	}
+}
+
+func TestReconfigureRestartsBuild(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, fakeImages()...)
+	release := f.GateTiles()
+	x := newBfix(t, storetest.New(t), f)
+	x.get(t)
+	waitFor(t, "a tile request", func() bool { return f.TileRequests() > 0 })
+	first := f.TileRequests()
+	x.setToken("MLY|9|other")
+	x.b.Reconfigure()
+	release()
+	s := x.settle(t)
+	if s.State != "ready" {
+		t.Fatalf("got %+v", s)
+	}
+	row, err := x.st.GetRoutePhotos(context.Background(), x.route.ID)
+	if err != nil || row.TokenFP != "fp:MLY|9|other" {
+		t.Errorf("row = %+v, %v: want a build under the new token", row, err)
+	}
+	if f.TileRequests() <= first {
+		t.Errorf("tile requests %d -> %d: the build did not restart", first, f.TileRequests())
 	}
 }

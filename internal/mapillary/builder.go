@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,7 +21,8 @@ const (
 	buildTimeout  = 10 * time.Minute
 	coverageZoom  = 14
 	coverageBufM  = 25
-	coverageFetch = 4 // concurrent tile requests within one build
+	coverageFetch = 4    // concurrent tile requests within one build
+	maxTiles      = 1500 // z14 tiles per route (about 2000 km); more is refused
 )
 
 // Status is what the photo endpoint reports for a route.
@@ -38,6 +40,7 @@ const (
 	msgRateLimited = "Mapillary is rate limiting requests. Try again in a few minutes."
 	msgUnreachable = "Mapillary could not be reached. Try again in a few minutes."
 	msgRouteBroken = "The route could not be read."
+	msgTooLong     = "This route is too long for street photos"
 )
 
 // ErrBuilderClosed is returned by Get after Close.
@@ -46,9 +49,7 @@ var ErrBuilderClosed = errors.New("mapillary: builder closed")
 // Builder keeps one cached photo list per route, built in the background by
 // a single worker goroutine from a deduplicated queue.
 type Builder struct {
-	// Logger receives build failures (errors never carry the token). Set
-	// before the first Get; defaults to slog.Default().
-	Logger *slog.Logger
+	logger *slog.Logger
 
 	c    *Client
 	st   *store.Store
@@ -57,6 +58,7 @@ type Builder struct {
 	now  func() time.Time
 
 	mu      sync.Mutex
+	cur     *job
 	queue   []int64
 	pending map[int64]struct{} // queued or being built
 	closed  bool
@@ -67,15 +69,26 @@ type Builder struct {
 	done   chan struct{}
 }
 
+// job is the build in progress.
+type job struct {
+	id     int64
+	cancel context.CancelFunc
+	drop   bool // route deleted: discard the result
+	redo   bool // credentials changed: discard the result and build again
+}
+
 // NewBuilder starts the worker. fp turns a token into the fingerprint kept
 // with the cached rows (see NewFingerprint); a changed token rebuilds.
 func NewBuilder(c *Client, st *store.Store, load func(ctx context.Context, routeID int64) (*route.Profile, error),
-	fp func(token string) string, now func() time.Time) *Builder {
+	fp func(token string) string, now func() time.Time, logger *slog.Logger) *Builder {
 	if now == nil {
 		now = time.Now
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	b := &Builder{c: c, st: st, load: load, fp: fp, now: now, pending: map[int64]struct{}{},
+	b := &Builder{logger: logger, c: c, st: st, load: load, fp: fp, now: now, pending: map[int64]struct{}{},
 		wake: make(chan struct{}, 1), ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	go b.run()
 	return b
@@ -89,13 +102,6 @@ func NewFingerprint(key []byte) func(token string) string {
 		m.Write([]byte(token))
 		return hex.EncodeToString(m.Sum(nil))[:16]
 	}
-}
-
-func (b *Builder) logger() *slog.Logger {
-	if b.Logger != nil {
-		return b.Logger
-	}
-	return slog.Default()
 }
 
 // Get reports the photo state of a route. A missing, stale (over 30 days) or
@@ -140,7 +146,7 @@ func (b *Builder) Get(ctx context.Context, routeID int64) (Status, error) {
 		}
 		ps, err := DecodePhotos(row.Photos)
 		if err != nil {
-			b.logger().Warn("discarding unreadable cached photos", "route", routeID, "err", err)
+			b.logger.Warn("discarding unreadable cached photos", "route", routeID, "err", err)
 			return b.enqueue(routeID, building)
 		}
 		return Status{State: "ready", BuiltAt: row.BuiltAt, Photos: ps}, nil
@@ -171,6 +177,40 @@ func (b *Builder) enqueue(routeID int64, st Status) (Status, error) {
 	return st, nil
 }
 
+// HasImage reports whether image id is in some route's cached photo list.
+// The image proxy serves only those, so it cannot be used to spend the
+// token's quota on arbitrary ids.
+func (b *Builder) HasImage(ctx context.Context, id string) (bool, error) {
+	return b.st.HasPhotoImage(ctx, id)
+}
+
+// Cancel forgets routeID: it leaves the queue and a build in progress for it
+// is stopped and discarded (call it when the route is deleted).
+func (b *Builder) Cancel(routeID int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if j := b.cur; j != nil && j.id == routeID {
+		j.drop = true
+		j.cancel()
+	}
+	if _, ok := b.pending[routeID]; ok && (b.cur == nil || b.cur.id != routeID) {
+		delete(b.pending, routeID)
+		b.queue = slices.DeleteFunc(b.queue, func(id int64) bool { return id == routeID })
+	}
+}
+
+// Reconfigure stops a build in progress and runs it again from the start
+// (call it when the Mapillary token or URLs change). Queued builds read the
+// settings when they start, so they need nothing.
+func (b *Builder) Reconfigure() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if j := b.cur; j != nil && !j.drop {
+		j.redo = true
+		j.cancel()
+	}
+}
+
 // Close stops the worker, cancelling a build in progress (its result is
 // discarded), and waits for it or for ctx.
 func (b *Builder) Close(ctx context.Context) error {
@@ -193,10 +233,20 @@ func (b *Builder) run() {
 		if !ok {
 			return
 		}
-		b.build(id)
+		redo := b.build(id)
 		b.mu.Lock()
-		delete(b.pending, id)
+		if redo && !b.closed {
+			b.queue = append(b.queue, id) // stays pending
+		} else {
+			delete(b.pending, id)
+		}
 		b.mu.Unlock()
+		if redo {
+			select {
+			case b.wake <- struct{}{}:
+			default:
+			}
+		}
 	}
 }
 
@@ -222,12 +272,24 @@ func (b *Builder) next() (int64, bool) {
 	}
 }
 
-func (b *Builder) build(id int64) {
+// build runs one job; redo reports that the credentials changed meanwhile
+// and the route must be built again.
+func (b *Builder) build(id int64) (redo bool) {
 	ctx, cancel := context.WithTimeout(b.ctx, buildTimeout)
 	defer cancel()
+	j := &job{id: id, cancel: cancel}
+	b.mu.Lock()
+	b.cur = j
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		b.cur = nil
+		redo = j.redo && !j.drop && !b.closed
+		b.mu.Unlock()
+	}()
 	tok, err := b.c.token(ctx)
 	if err != nil {
-		return // token removed since the request; the next Get reports disabled
+		return false // token removed since the request; the next Get reports disabled
 	}
 	row := store.RoutePhotos{RouteID: id, TokenFP: b.fp(tok)}
 	var photos []Photo
@@ -237,17 +299,24 @@ func (b *Builder) build(id int64) {
 	} else {
 		err = errors.Join(errRouteUnreadable, err)
 	}
-	if b.ctx.Err() != nil {
-		return // shutting down: store nothing
+	b.mu.Lock()
+	superseded := j.drop || j.redo
+	b.mu.Unlock()
+	if b.ctx.Err() != nil || superseded {
+		return false // shutting down, route deleted or credentials changed: store nothing
 	}
 	if err == nil {
 		row.Status = "ready"
 		if row.Photos, err = EncodePhotos(photos); err != nil {
 			row.Photos = nil
 		}
+		row.ImageIDs = make([]string, len(photos))
+		for i, ph := range photos {
+			row.ImageIDs[i] = ph.ID
+		}
 	}
 	if err != nil {
-		b.logger().Warn("street photo build failed", "route", id, "err", err)
+		b.logger.Warn("street photo build failed", "route", id, "err", err)
 		row.Status = "error"
 		switch {
 		case errors.Is(err, ErrTokenRejected):
@@ -256,6 +325,8 @@ func (b *Builder) build(id int64) {
 			row.Error = msgRateLimited
 		case errors.Is(err, errRouteUnreadable):
 			row.Error = msgRouteBroken
+		case errors.Is(err, errTooLong):
+			row.Error = msgTooLong
 		default:
 			row.Error = msgUnreachable
 		}
@@ -264,16 +335,28 @@ func (b *Builder) build(id int64) {
 	sctx, scancel := context.WithTimeout(b.ctx, 10*time.Second)
 	defer scancel()
 	if err := b.st.PutRoutePhotos(sctx, row); err != nil && !errors.Is(err, store.ErrNotFound) && b.ctx.Err() == nil {
-		b.logger().Warn("storing street photos failed", "route", id, "err", err)
+		b.logger.Warn("storing street photos failed", "route", id, "err", err)
 	}
+	return false
 }
 
-var errRouteUnreadable = errors.New("route unreadable")
+var (
+	errRouteUnreadable = errors.New("route unreadable")
+	errTooLong         = errors.New("route too long")
+)
 
 // fetch reads the coverage tiles along p (coverageFetch at a time) and
-// selects the photos. Any tile failure fails the whole build.
+// selects the photos as the tiles arrive, so only the best photo per bucket
+// is kept. Any tile failure fails the whole build.
 func (b *Builder) fetch(ctx context.Context, p *route.Profile) ([]Photo, error) {
 	tiles := Tiles(p, coverageZoom, coverageBufM)
+	if len(tiles) > maxTiles {
+		return nil, errTooLong
+	}
+	sel := NewSelector(p, SelectOpts{})
+	if sel == nil {
+		return []Photo{}, nil
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	jobs := make(chan [3]int, len(tiles))
@@ -286,8 +369,6 @@ func (b *Builder) fetch(ctx context.Context, p *route.Profile) ([]Photo, error) 
 		mu       sync.Mutex
 		wg       sync.WaitGroup
 		firstErr error
-		seen     = map[string]bool{}
-		cands    []Candidate
 	)
 	for range min(coverageFetch, len(tiles)) {
 		wg.Go(func() {
@@ -305,12 +386,7 @@ func (b *Builder) fetch(ctx context.Context, p *route.Profile) ([]Photo, error) 
 					mu.Unlock()
 					return
 				}
-				for _, c := range cs {
-					if !seen[c.ID] { // an image near a tile edge appears in both tiles
-						seen[c.ID] = true
-						cands = append(cands, c)
-					}
-				}
+				sel.Add(cs) // an image near a tile edge may come twice; it lands in the same bucket
 				mu.Unlock()
 			}
 		})
@@ -322,7 +398,7 @@ func (b *Builder) fetch(ctx context.Context, p *route.Profile) ([]Photo, error) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out := Select(p, cands, SelectOpts{})
+	out := sel.Photos()
 	if out == nil {
 		out = []Photo{}
 	}

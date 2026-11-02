@@ -5433,7 +5433,7 @@
     },
     "/api/mapillary/images/{id}": {
       "get": {
-        "description": "Streams the 2048 px JPEG of a Mapillary image through the server, so the browser never talks to Mapillary and never sees the token. `id` is a photo id from `GET /api/routes/{id}/mapillary` (digits only, else 400 `bad_id`). The response is `image/jpeg` of at most 5 MiB, cacheable by the browser for a day, with the photographer's Mapillary username in `X-Photo-Creator` (percent-encoded when not plain ASCII). Any upstream failure is 502 `photo_unavailable`; 503 `mapillary_unavailable` when the server has no photo support. Requires the `read` scope.",
+        "description": "Streams the 2048 px JPEG of a Mapillary image through the server, so the browser never talks to Mapillary and never sees the token. `id` is a photo id from `GET /api/routes/{id}/mapillary` (digits only, else 400 `bad_id`; 404 `not_found` for an id no route lists). The response is `image/jpeg` of at most 5 MiB, cacheable by the browser for a day, with the photographer's Mapillary username in `X-Photo-Creator` (percent-encoded when not plain ASCII). Any upstream failure is 502 `photo_unavailable`; 503 `mapillary_unavailable` when the server has no photo support. Requires the `read` scope.",
         "operationId": "getMapillaryImage",
         "parameters": [
           {
@@ -8572,7 +8572,7 @@
         ]
       },
       "patch": {
-        "description": "Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `\u003csection.field\u003e: \u003cproblem\u003e` and nothing is stored. Changing any `mqtt` field reconnects the MQTT bridge at once. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET. Requires the `admin` scope.",
+        "description": "Changes the fields present in the body and leaves the rest alone. Secret fields are write-only: omit one to keep the stored value, send an empty string to clear it, or send a value to replace it. The merged result is validated as a whole; a bad value returns 400 `invalid_setting` with the message `\u003csection.field\u003e: \u003cproblem\u003e` and nothing is stored. Changing any `mapillary` field restarts a street photo build in progress. Changing any `mqtt` field reconnects the MQTT bridge at once. Changing `strava.client_id` or `strava.client_secret` disconnects every rider connected through the shared app (best-effort revoke at Strava); riders with their own app are untouched. Returns the new settings in the same shape as the GET. Requires the `admin` scope.",
         "operationId": "updateSettings",
         "requestBody": {
           "content": {

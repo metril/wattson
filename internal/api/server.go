@@ -147,8 +147,11 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	return r, nil
 }
 
-const csp = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org https://s3.amazonaws.com; " +
-	"img-src 'self' data: blob: https://tiles.openfreemap.org https://s3.amazonaws.com; " +
+// csp notes: ws: and wss: are listed explicitly because older TV browsers
+// do not let 'self' cover same-origin WebSockets; the DEM host is limited to
+// the one Terrarium bucket (a path source matches by prefix).
+const csp = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org https://s3.amazonaws.com/elevation-tiles-prod/; " +
+	"img-src 'self' data: blob: https://tiles.openfreemap.org https://s3.amazonaws.com/elevation-tiles-prod/; " +
 	"worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
 	"object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 

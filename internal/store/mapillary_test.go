@@ -28,11 +28,17 @@ func TestRoutePhotosRoundTripAndCascade(t *testing.T) {
 		t.Fatalf("missing source: %v", err)
 	}
 	at := time.Unix(1700000000, 0).UTC()
-	in := store.RoutePhotos{RouteID: r.ID, Status: "ready", TokenFP: "ab", BuiltAt: at, Photos: []byte("x")}
+	in := store.RoutePhotos{RouteID: r.ID, Status: "ready", TokenFP: "ab", BuiltAt: at, Photos: []byte("x"), ImageIDs: []string{"11", "12", "11"}}
 	if err := s.PutRoutePhotos(ctx, in); err != nil {
 		t.Fatal(err)
 	}
-	in.Status, in.Error, in.Photos = "error", "boom", nil
+	if ok, err := s.HasPhotoImage(ctx, "12"); err != nil || !ok {
+		t.Fatalf("HasPhotoImage(12) = %v, %v", ok, err)
+	}
+	if ok, _ := s.HasPhotoImage(ctx, "13"); ok {
+		t.Fatal("HasPhotoImage(13) = true")
+	}
+	in.Status, in.Error, in.Photos, in.ImageIDs = "error", "boom", nil, nil
 	if err := s.PutRoutePhotos(ctx, in); err != nil { // replace
 		t.Fatal(err)
 	}
@@ -43,10 +49,20 @@ func TestRoutePhotosRoundTripAndCascade(t *testing.T) {
 	if err := s.PutRoutePhotos(ctx, store.RoutePhotos{RouteID: 999, Status: "ready", BuiltAt: at}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("put for missing route: %v", err)
 	}
+	if ok, _ := s.HasPhotoImage(ctx, "11"); ok {
+		t.Fatal("ids not replaced by the second Put")
+	}
+	in.ImageIDs = []string{"21"}
+	if err := s.PutRoutePhotos(ctx, in); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.DeleteRoute(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetRoutePhotos(ctx, r.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("after cascade: %v", err)
+	}
+	if ok, _ := s.HasPhotoImage(ctx, "21"); ok {
+		t.Fatal("ids survived the route")
 	}
 }

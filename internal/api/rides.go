@@ -348,7 +348,7 @@ func (d Deps) registerRideStrava(api huma.API) {
 			"and 200 when the ride is already `done`, which is never uploaded again. Only one upload is ever started per ride, " +
 			"however many requests arrive; a failed ride (`error`) can be retried. Strava reporting a duplicate counts as done " +
 			"with the existing activity. Errors: 409 `strava_not_connected` (the rider has not connected Strava), 409 " +
-			"`ride_in_progress`; 404 for a ride of another user unless the caller is an admin.",
+			"`ride_in_progress`; 503 `shutting_down` while the server stops; 404 for a ride of another user unless the caller is an admin.",
 		Scope: auth.ScopeControl, Status: http.StatusAccepted, AlsoOK: []int{http.StatusOK},
 		Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *rideIDIn) (*stravaUploadOut, error) {
@@ -365,6 +365,10 @@ func (d Deps) registerRideStrava(api huma.API) {
 				return nil, apiErr(http.StatusConflict, "strava_not_connected", "the rider has not connected Strava")
 			case errors.Is(err, store.ErrNotFound):
 				return nil, errNoRide()
+			case errors.Is(err, strava.ErrRideInProgress):
+				return nil, apiErr(http.StatusConflict, "ride_in_progress", "the ride is still recording")
+			case errors.Is(err, strava.ErrClosed):
+				return nil, apiErrPublic(http.StatusServiceUnavailable, "shutting_down", "the server is shutting down; try again shortly")
 			case err != nil:
 				return nil, err
 			}
@@ -374,4 +378,11 @@ func (d Deps) registerRideStrava(api huma.API) {
 			}
 			return &stravaUploadOut{Status: code, Body: stravaStatus(st)}, nil
 		})
+	if op := api.OpenAPI().Paths["/api/rides/{id}/strava"]; op != nil && op.Post != nil && op.Post.Responses["202"] != nil {
+		accepted := *op.Post.Responses["202"]
+		accepted.Description = "Upload started or already running"
+		done := accepted
+		done.Description = "Already uploaded"
+		op.Post.Responses["202"], op.Post.Responses["200"] = &accepted, &done
+	}
 }

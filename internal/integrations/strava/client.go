@@ -81,6 +81,18 @@ var (
 	ErrUnauthorized = errors.New("strava: unauthorized")
 )
 
+// StatusError is an unexpected HTTP status from the Strava API (401 and 429
+// have their own sentinels).
+type StatusError struct {
+	Method, Path string
+	Code         int
+	Message      string // Strava's own message, at most 200 bytes
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("strava: %s %s: status %d: %s", e.Method, e.Path, e.Code, e.Message)
+}
+
 // Client is a Strava API client over one set of endpoints.
 type Client struct {
 	ep Endpoints
@@ -364,7 +376,7 @@ func (c *Client) call(ctx context.Context, ts oauth2.TokenSource, method, path, 
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return fmt.Errorf("strava: %s %s: %w", method, path, ErrRateLimited)
 	case resp.StatusCode/100 != 2:
-		return fmt.Errorf("strava: %s %s: status %d: %s", method, path, resp.StatusCode, apiMessage(raw))
+		return &StatusError{Method: method, Path: path, Code: resp.StatusCode, Message: apiMessage(raw)}
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("strava: %s %s: decode: %w", method, path, err)

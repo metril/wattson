@@ -819,10 +819,103 @@ func TestCloseStopsWorkers(t *testing.T) {
 	if st := ts.rideStrava(t, admin, r.ID); st.Status != "uploading" {
 		t.Errorf("status after close = %+v, want uploading (resumable)", st)
 	}
-	if code, _, _ := ts.postUpload(t, admin, r.ID); code != 202 && code != 200 {
-		t.Errorf("POST after close = %d", code)
+	code, _, b := ts.postUpload(t, admin, r.ID)
+	if code != 503 || errCode(t, b) != "shutting_down" {
+		t.Errorf("POST after close = %d %s, want 503 shutting_down", code, b)
 	}
 	if n := len(ts.Fake.Uploads()); n != 1 {
 		t.Errorf("uploads = %d", n)
+	}
+}
+
+func (ts *testServer) waitUploadID(t testing.TB, c *http.Client, id int64) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ts.rideStrava(t, c, id).UploadID == 0; time.Sleep(2 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("upload id never saved")
+		}
+	}
+}
+
+func TestResumeResendsAutoUploadRide(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	ctx := context.Background()
+	if resp, b := ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"auto_upload": true}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	// The last shutdown cut the upload off before it got an upload id.
+	if won, err := ts.Store.ClaimStravaUpload(ctx, r.ID, time.Now()); err != nil || !won {
+		t.Fatalf("claim: %v %v", won, err)
+	}
+	ts.Strava.Resume(ctx)
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" || st.ActivityID != 777 {
+		t.Errorf("status = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Errorf("uploads = %d", n)
+	}
+}
+
+func TestPollSurvivesTransientError(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	_, r := ts.connectedRide(t, admin)
+	ts.Fake.ProcessingPolls(30)
+	ts.postUpload(t, admin, r.ID)
+	ts.waitUploadID(t, admin, r.ID)
+	ts.Fake.FailNextUpload(500, "Internal Server Error")
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" || st.ActivityID != 777 {
+		t.Errorf("status = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Errorf("uploads = %d", n)
+	}
+}
+
+func TestAutoUploadRacesManualUpload(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	if resp, b := ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"auto_upload": true}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	ts.Fake.ProcessingPolls(20)
+	if code, _, b := ts.postUpload(t, admin, r.ID); code != 202 {
+		t.Fatalf("POST = %d %s", code, b)
+	}
+	ts.Strava.AutoUpload(context.Background(), r) // while the manual upload is in flight
+	if st := ts.settled(t, admin, r.ID); st.Status != "done" {
+		t.Fatalf("status = %+v", st)
+	}
+	if n := len(ts.Fake.Uploads()); n != 1 {
+		t.Errorf("uploads = %d, want 1", n)
+	}
+}
+
+func TestUploadNotConfiguredMessage(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withStrava())
+	admin := ts.setupAdmin(t)
+	rider, r := ts.connectedRide(t, admin)
+	ctx := context.Background()
+	l, err := ts.Store.StravaLink(ctx, rider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.ExpiresAt = time.Now().Add(-time.Hour) // forces a refresh, which needs the app
+	if err := ts.Store.PutStravaLink(ctx, l); err != nil {
+		t.Fatal(err)
+	}
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"strava": map[string]any{"client_id": "", "client_secret": ""}}); resp.StatusCode != 200 {
+		t.Fatalf("settings: %d %s", resp.StatusCode, b)
+	}
+	ts.postUpload(t, admin, r.ID)
+	if st := ts.settled(t, admin, r.ID); st.Status != "error" || st.Error != "Strava isn't configured on this server — ask an admin" {
+		t.Errorf("status = %+v", st)
 	}
 }

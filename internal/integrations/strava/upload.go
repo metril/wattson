@@ -26,6 +26,15 @@ const (
 	msgUnauth      = "Strava authorization expired; reconnect Strava for this rider"
 	msgStillBusy   = "Strava is still processing; check again later"
 	msgInterrupted = "interrupted; retry"
+	msgNotConfig   = "Strava isn't configured on this server — ask an admin"
+	msgNotSaved    = "could not record the Strava upload; retry"
+)
+
+var (
+	// ErrRideInProgress reports a ride that is still recording.
+	ErrRideInProgress = errors.New("strava: ride is still recording")
+	// ErrClosed reports an upload requested while the service shuts down.
+	ErrClosed = errors.New("strava: shutting down")
 )
 
 // uploader is the worker pool state of a Service.
@@ -44,6 +53,12 @@ func (u *uploader) init() {
 	u.ctx, u.cancel = context.WithCancel(context.Background())
 	u.sem = make(chan struct{}, maxUploads)
 	u.running = map[int64]bool{}
+}
+
+func (u *uploader) isClosed() bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.closed
 }
 
 // reserve marks rideID as having a worker; false when it already has one or
@@ -99,9 +114,15 @@ func (s *Service) Close() {
 // who is not connected is ErrNotConnected and the ride is left untouched; a
 // missing ride is store.ErrNotFound.
 func (s *Service) Upload(ctx context.Context, rideID int64) (st store.StravaState, started bool, err error) {
+	if s.up.isClosed() {
+		return store.StravaState{}, false, ErrClosed
+	}
 	r, err := s.d.Store.Ride(ctx, rideID)
 	if err != nil {
 		return store.StravaState{}, false, err
+	}
+	if r.EndedAt == nil {
+		return r.Strava, false, ErrRideInProgress
 	}
 	l, err := s.d.Store.StravaLink(ctx, r.RiderID)
 	if err != nil {
@@ -123,10 +144,9 @@ func (s *Service) Upload(ctx context.Context, rideID int64) (st store.StravaStat
 		return r.Strava, false, err
 	}
 	if !s.up.spawn(rideID, func() { s.work(rideID, false) }) {
-		// Closing: the claim stays and Resume picks it up (or reports it
-		// interrupted) at the next start.
-		r, err = s.d.Store.Ride(ctx, rideID)
-		return r.Strava, false, err
+		// Closed since the check: the claim stays and Resume picks it up at
+		// the next start.
+		return store.StravaState{}, false, ErrClosed
 	}
 	r, err = s.d.Store.Ride(ctx, rideID)
 	return r.Strava, true, err
@@ -143,14 +163,16 @@ func (s *Service) AutoUpload(ctx context.Context, r store.Ride) {
 	if !l.AutoUpload || !l.Connected() {
 		return
 	}
-	if _, _, err := s.Upload(ctx, r.ID); err != nil {
+	if _, _, err := s.Upload(ctx, r.ID); err != nil && !errors.Is(err, ErrClosed) {
 		s.d.Logger.Warn("strava auto-upload", "ride", r.ID, "err", err)
 	}
 }
 
 // Resume restarts the workers of rides left "uploading" by a previous run:
-// those with an upload ID poll it, those without one are marked failed
-// ("interrupted; retry") since the file may or may not have reached Strava.
+// those with an upload ID poll it. Those without one may or may not have
+// reached Strava: when the rider is connected with auto_upload on they are
+// sent again (Strava answers a repeat with the existing activity), otherwise
+// they are marked failed ("interrupted; retry").
 func (s *Service) Resume(ctx context.Context) {
 	rs, err := s.d.Store.RidesUploading(ctx)
 	if err != nil {
@@ -159,8 +181,13 @@ func (s *Service) Resume(ctx context.Context) {
 	}
 	for _, r := range rs {
 		id := r.ID
+		resend := false
+		if r.Strava.UploadID == 0 {
+			l, err := s.d.Store.StravaLink(ctx, r.RiderID)
+			resend = err == nil && l.AutoUpload && l.Connected()
+		}
 		if s.up.reserve(id) {
-			s.up.spawn(id, func() { s.work(id, true) })
+			s.up.spawn(id, func() { s.work(id, !resend) })
 		}
 	}
 }
@@ -219,7 +246,10 @@ func (s *Service) work(rideID int64, resume bool) {
 			return
 		}
 		uploadID = up.ID
-		if !s.write(rideID, store.StravaState{Status: "uploading", UploadID: uploadID}) {
+		if err := s.write(rideID, store.StravaState{Status: "uploading", UploadID: uploadID}); err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				s.finish(rideID, store.StravaState{Status: "error", UploadID: uploadID, Error: msgNotSaved})
+			}
 			return
 		}
 	} else {
@@ -261,14 +291,33 @@ func (s *Service) work(rideID int64, resume bool) {
 		if up, err = s.d.Client.UploadStatus(pctx, ts, uploadID); err != nil {
 			switch {
 			case ctx.Err() != nil:
+				return
 			case pctx.Err() != nil:
 				s.finish(rideID, store.StravaState{Status: "error", UploadID: uploadID, Error: msgStillBusy})
+				return
+			case transient(err):
+				s.d.Logger.Debug("strava upload poll failed; retrying", "ride", rideID, "err", err)
+				up = Upload{ID: uploadID}
 			default:
 				s.fail(ctx, r, ts, err, uploadID)
+				return
 			}
-			return
 		}
 	}
+}
+
+// transient reports whether a status-poll error is worth retrying until the
+// deadline: network failures and 5xx answers. Authorisation, rate limits and
+// other 4xx answers are final.
+func transient(err error) bool {
+	var se *StatusError
+	switch {
+	case errors.Is(err, ErrUnauthorized), errors.Is(err, ErrRateLimited), errors.Is(err, ErrNotConnected), errors.Is(err, ErrNotConfigured):
+		return false
+	case errors.As(err, &se):
+		return se.Code >= 500
+	}
+	return true
 }
 
 // send encodes the ride and uploads it.
@@ -300,7 +349,9 @@ func (s *Service) fail(ctx context.Context, r store.Ride, ts *tokenRec, err erro
 	switch {
 	case errors.Is(err, ErrRateLimited):
 		st.Error = msgRateLimited
-	case errors.Is(err, ErrUnauthorized), errors.Is(err, ErrNotConnected), errors.Is(err, ErrNotConfigured):
+	case errors.Is(err, ErrNotConfigured):
+		st.Error = msgNotConfig
+	case errors.Is(err, ErrUnauthorized), errors.Is(err, ErrNotConnected):
 		st.Error = msgUnauth
 		if ts != nil && ts.last != "" && errors.Is(err, ErrUnauthorized) {
 			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stateWrite)
@@ -317,24 +368,20 @@ func (s *Service) fail(ctx context.Context, r store.Ride, ts *tokenRec, err erro
 }
 
 // finish writes a terminal state.
-func (s *Service) finish(rideID int64, st store.StravaState) { s.write(rideID, st) }
+func (s *Service) finish(rideID int64, st store.StravaState) { _ = s.write(rideID, st) }
 
-// write stores st even while shutting down; false when the ride is gone or
-// the write failed (the worker then stops). A deleted ride is the end of the
-// story, not an error.
-func (s *Service) write(rideID int64, st store.StravaState) bool {
+// write stores st even while shutting down. A deleted ride is
+// store.ErrNotFound, the end of the story rather than a failure; any other
+// error is logged here and returned.
+func (s *Service) write(rideID int64, st store.StravaState) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.up.ctx), stateWrite)
 	defer cancel()
 	st.UpdatedAt = s.d.Now().UTC()
 	err := s.d.Store.SetStravaState(ctx, rideID, st)
-	switch {
-	case err == nil:
-		return true
-	case errors.Is(err, store.ErrNotFound):
-	default:
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.d.Logger.Warn("strava upload: save state", "ride", rideID, "err", err)
 	}
-	return false
+	return err
 }
 
 func clip(s string) string {

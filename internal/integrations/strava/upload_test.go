@@ -3,6 +3,7 @@ package strava_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -137,4 +138,20 @@ func TestDeletedRideStopsPolling(t *testing.T) {
 			t.Errorf("polling went on after the ride was deleted: %d -> %d", n, got)
 		}
 	})
+}
+
+func TestUploadOpenRideRefused(t *testing.T) {
+	t.Parallel()
+	svc, st, _, done := bubbleEnv(t)
+	open, err := st.CreateRide(context.Background(), store.Ride{RiderID: done.RiderID, Mode: "free", StartedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, started, err := svc.Upload(context.Background(), open.ID); !errors.Is(err, strava.ErrRideInProgress) || started {
+		t.Errorf("started %v, err %v", started, err)
+	}
+	svc.Close()
+	if _, _, err := svc.Upload(context.Background(), done.ID); !errors.Is(err, strava.ErrClosed) {
+		t.Errorf("after Close: %v", err)
+	}
 }

@@ -595,7 +595,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a ride to Strava
-         * @description Uploads the ride to its rider's connected Strava account as a FIT activity. The upload runs in the background: the response is 202 with status `uploading` while a worker runs (poll `GET /api/rides/{id}/strava`), and 200 when the ride is already `done`, which is never uploaded again. Only one upload is ever started per ride, however many requests arrive; a failed ride (`error`) can be retried. Strava reporting a duplicate counts as done with the existing activity. Errors: 409 `strava_not_connected` (the rider has not connected Strava), 409 `ride_in_progress`; 404 for a ride of another user unless the caller is an admin. Requires the `control` scope.
+         * @description Uploads the ride to its rider's connected Strava account as a FIT activity. The upload runs in the background: the response is 202 with status `uploading` while a worker runs (poll `GET /api/rides/{id}/strava`), and 200 when the ride is already `done`, which is never uploaded again. Only one upload is ever started per ride, however many requests arrive; a failed ride (`error`) can be retried. Strava reporting a duplicate counts as done with the existing activity. Errors: 409 `strava_not_connected` (the rider has not connected Strava), 409 `ride_in_progress`; 503 `shutting_down` while the server stops; 404 for a ride of another user unless the caller is an admin. Requires the `control` scope.
          */
         post: operations["uploadRideStrava"];
         delete?: never;
@@ -4946,7 +4946,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Accepted */
+            /** @description Already uploaded */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4955,7 +4955,7 @@ export interface operations {
                     "application/json": components["schemas"]["StravaStatusOut"];
                 };
             };
-            /** @description Accepted */
+            /** @description Upload started or already running */
             202: {
                 headers: {
                     [name: string]: unknown;

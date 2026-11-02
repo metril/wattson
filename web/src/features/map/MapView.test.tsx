@@ -136,6 +136,16 @@ describe('MapView', () => {
     expect(map.setStyle).toHaveBeenCalledTimes(1);
   });
 
+  it('warns about MapLibre errors once the style is ready', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { map } = await mount();
+    map.emit('style.load');
+    map.emit('error', { error: new Error('tile 404') });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(map.setStyle).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('removes the map on unmount', async () => {
     const { map, unmount } = await mount();
     unmount();

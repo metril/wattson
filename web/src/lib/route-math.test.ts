@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { levelFor, distAt, gradeAt, indexAt, positionAt, previewLevels, syntheticProfile, type Profile } from './route-math';
 
 const golden = JSON.parse(
-  readFileSync(resolve(process.cwd(), '../internal/engine/testdata/mapper_golden.json'), 'utf8'),
+  readFileSync(resolve(import.meta.dirname, '../../../internal/engine/testdata/mapper_golden.json'), 'utf8'),
 ) as {
   gain: number;
   offset: number;

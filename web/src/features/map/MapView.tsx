@@ -108,11 +108,13 @@ export default function MapView(p: {
       };
 
       map.on('style.load', setup);
-      map.on('error', () => {
+      map.on('error', (e) => {
         // The hosted style failed before it loaded: carry on with a blank ground.
         if (!ready && !fellBack) {
           fellBack = true;
           map.setStyle(BLANK_STYLE);
+        } else if (ready) {
+          console.warn('MapLibre error', (e as { error?: unknown } | undefined)?.error ?? e);
         }
       });
       map.on('click', (e) => {

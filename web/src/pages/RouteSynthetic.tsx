@@ -14,6 +14,8 @@ import { syntheticProfile } from '@/lib/route-math';
 
 type Row = { length: string; grade: string };
 
+const MAX_TOTAL_M = 500_000;
+
 const valid = (r: Row) => {
   const l = Number(r.length);
   const g = Number(r.grade);
@@ -34,7 +36,8 @@ export function RouteSyntheticPage() {
   const synthetic = useMemo(() => syntheticProfile(segs), [segs]);
   const totalM = segs.reduce((a, s) => a + s.length_m, 0);
   const ascent = segs.reduce((a, s) => a + (s.grade_pct > 0 ? (s.length_m * s.grade_pct) / 100 : 0), 0);
-  const allValid = rows.length > 0 && rows.every(valid);
+  const tooLong = totalM > MAX_TOTAL_M;
+  const allValid = rows.length > 0 && rows.every(valid) && !tooLong;
 
   const save = useMutation({
     mutationFn: async () =>
@@ -110,6 +113,7 @@ export function RouteSyntheticPage() {
           <p className="text-sm text-dim">
             Segment lengths run 10 m to 100 km, grades -25 to 25 %. The route starts at 100 m elevation.
           </p>
+          {tooLong && <Banner tone="warn">A route can be at most 500 km in total. Shorten a segment or remove one.</Banner>}
           {error && <Banner tone="error">{error}</Banner>}
           <div>
             <Button

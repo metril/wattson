@@ -96,7 +96,7 @@ export function RoutesPage() {
           Loading…
         </p>
       ) : q.isError ? (
-        <Banner tone="error">Couldn't load routes.</Banner>
+        <Banner tone="error">{errMessage(q.error)}</Banner>
       ) : routes.length === 0 ? (
         <div className="rounded-panel border border-dashed border-line p-8 text-center text-dim">
           <p className="text-lg text-chalk">No routes yet</p>

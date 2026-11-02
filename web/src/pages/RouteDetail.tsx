@@ -118,8 +118,8 @@ function Tuner({ profile }: { profile: Profile }) {
             </span>
             <input
               type="range"
-              min={s.min}
-              max={s.max}
+              min={s.key === 'offset_level' ? Math.max(1, rider.min_level) : s.min}
+              max={s.key === 'offset_level' ? rider.max_level : s.max}
               step={s.step}
               value={cur[s.key]}
               onChange={(e) => setEdit((p) => ({ ...p, [s.key]: Number(e.target.value) }))}

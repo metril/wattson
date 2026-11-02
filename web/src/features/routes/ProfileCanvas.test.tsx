@@ -34,6 +34,20 @@ describe('ProfileCanvas', () => {
   });
 });
 
+describe('ProfileCanvas fill', () => {
+  it('fills one path for a whole same-colour run', () => {
+    const fill = vi.fn();
+    const ctx = new Proxy({} as Record<string, unknown>, {
+      get: (t, k) => (k === 'fill' ? fill : k in t ? t[k as string] : () => {}),
+      set: (t, k, v) => ((t[k as string] = v), true),
+    });
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+    render(<ProfileCanvas profile={profileFixture({ length_m: 200, lon: Array(21).fill(7), lat: Array(21).fill(45), ele_m: Array(21).fill(100), grade_pct: Array(21).fill(4) })} />);
+    expect(fill).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+});
+
 describe('gradeColor', () => {
   it('bands by grade', () => {
     const c = [-1, 0, 2, 3, 6, 7].map(gradeColor);

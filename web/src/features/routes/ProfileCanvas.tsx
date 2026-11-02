@@ -63,19 +63,33 @@ export function ProfileCanvas(p: {
     const base = h - PAD;
     const stride = Math.max(1, Math.floor(n / Math.max(1, width)));
     ctx.globalAlpha = 0.9;
+    // One filled path per run of same-colour columns: separate per-column polygons leave hairline seams.
+    let runColor = '';
+    let runEnd = -1;
+    const flush = () => {
+      if (runEnd < 0) return;
+      ctx.lineTo(geo.x(series.distance[runEnd]), base);
+      ctx.closePath();
+      ctx.fillStyle = runColor;
+      ctx.fill();
+      runEnd = -1;
+    };
     for (let i = 0; i < n - 1; i += stride) {
       const j = Math.min(i + stride, n - 1);
       let g = 0;
       for (let k = i + 1; k <= j; k++) g += series.grade[k];
-      ctx.fillStyle = gradeColor(g / (j - i));
-      ctx.beginPath();
-      ctx.moveTo(geo.x(series.distance[i]), base);
-      ctx.lineTo(geo.x(series.distance[i]), geo.y(series.ele[i]));
+      const color = gradeColor(g / (j - i));
+      if (color !== runColor || runEnd !== i) {
+        flush();
+        runColor = color;
+        ctx.beginPath();
+        ctx.moveTo(geo.x(series.distance[i]), base);
+        ctx.lineTo(geo.x(series.distance[i]), geo.y(series.ele[i]));
+      }
       ctx.lineTo(geo.x(series.distance[j]), geo.y(series.ele[j]));
-      ctx.lineTo(geo.x(series.distance[j]), base);
-      ctx.closePath();
-      ctx.fill();
+      runEnd = j;
     }
+    flush();
     ctx.globalAlpha = 1;
     ctx.strokeStyle = tok('--chalk', '#eaf1ee');
     ctx.lineWidth = 1.5;

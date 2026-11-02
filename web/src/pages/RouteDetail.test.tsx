@@ -83,6 +83,14 @@ describe('RouteDetailPage', () => {
     expect(screen.getByText('min L11')).toBeInTheDocument();
   });
 
+  it("bounds the flat-road slider to the rider's levels", async () => {
+    base({ 'GET /api/riders': [200, [rider({ min_level: 3, max_level: 12 })]] });
+    renderWithClient(ui, '/routes/3');
+    const s = await screen.findByLabelText(/^Flat-road level/);
+    expect(s).toHaveAttribute('min', '3');
+    expect(s).toHaveAttribute('max', '12');
+  });
+
   it('saves only the changed slider to the rider', async () => {
     const stub = base({ 'PATCH /api/riders/1': [200, rider({ gain: 2 })] });
     renderWithClient(ui, '/routes/3');

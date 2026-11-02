@@ -56,6 +56,25 @@ describe('RouteSyntheticPage', () => {
     expect(screen.getByRole('button', { name: 'Remove segment 1' })).toBeDisabled();
   });
 
+  it('blocks saving a route longer than 500 km', async () => {
+    stubApi({});
+    renderWithClient(<RouteSyntheticPage />);
+    await userEvent.type(screen.getByLabelText('Name'), 'X');
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) await userEvent.click(screen.getByRole('button', { name: 'Add segment' }));
+      const len = screen.getByLabelText(`Segment ${i + 1} length (m)`);
+      await userEvent.clear(len);
+      await userEvent.type(len, '100000');
+    }
+    expect(screen.getByRole('button', { name: 'Save route' })).toBeEnabled(); // exactly 500 km
+    await userEvent.click(screen.getByRole('button', { name: 'Add segment' }));
+    const len6 = screen.getByLabelText('Segment 6 length (m)');
+    await userEvent.clear(len6);
+    await userEvent.type(len6, '10');
+    expect(screen.getByRole('button', { name: 'Save route' })).toBeDisabled();
+    expect(screen.getByText(/at most 500 km/)).toBeInTheDocument();
+  });
+
   it('blocks saving an out-of-range grade', async () => {
     stubApi({});
     renderWithClient(<RouteSyntheticPage />);

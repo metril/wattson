@@ -29,6 +29,12 @@ describe('RoutesPage', () => {
     expect(screen.getByText('GPX file')).toBeInTheDocument();
   });
 
+  it('shows the server message when the list fails', async () => {
+    stubApi({ 'GET /api/routes': apiError(500, 'internal', 'database is locked') });
+    renderWithClient(ui, '/routes');
+    expect(await screen.findByRole('alert')).toHaveTextContent('database is locked');
+  });
+
   it('offers Draw and Synthetic', async () => {
     stubApi({ 'GET /api/routes': [200, []] });
     renderWithClient(ui, '/routes');

@@ -16,10 +16,10 @@ const (
 
 // ScanRequest selects what to scan with; empty fields fall back to settings.
 type ScanRequest struct {
-	Transport string        `json:"transport,omitempty" doc:"local or esphome; empty uses the saved setting."`
-	Host      string        `json:"host,omitempty" doc:"ESPHome proxy host or host:port; empty uses the saved setting."`
-	Key       string        `json:"key,omitempty" doc:"ESPHome API noise key (base64); empty uses the saved setting."`
-	Duration  time.Duration `json:"duration,omitempty" doc:"How long to scan, in nanoseconds; default 5 s, maximum 30 s." `
+	Transport string `json:"transport,omitempty" doc:"local or esphome; empty uses the saved setting."`
+	Host      string `json:"host,omitempty" doc:"ESPHome proxy host or host:port; empty uses the saved setting."`
+	Key       string `json:"key,omitempty" doc:"ESPHome API noise key (base64); empty uses the saved setting."`
+	DurationS int    `json:"duration_s,omitempty" doc:"How long to scan, in seconds; default 5, maximum 30."`
 }
 
 // Device is one advertising BLE device.
@@ -66,11 +66,10 @@ func (m *Manager) Scan(ctx context.Context, q ScanRequest) ([]Device, error) {
 	if key == "" {
 		key = s.Bike.ESPHomeKey
 	}
-	dur := q.Duration
+	dur := time.Duration(min(q.DurationS, int(maxScan/time.Second))) * time.Second
 	if dur <= 0 {
 		dur = defaultScan
 	}
-	dur = min(dur, maxScan)
 
 	// Closing the manager ends an in-flight scan.
 	ctx, cancel := context.WithCancel(ctx)

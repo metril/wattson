@@ -25,7 +25,7 @@ func TestScanDedupAndOrder(t *testing.T) {
 		}}
 		m := newMgr(nil, 0, nil, Deps{OpenLocal: func() (blue.Transport, error) { return tr, nil }})
 		defer m.Close(context.Background())
-		got, err := m.Scan(t.Context(), ScanRequest{Duration: time.Second})
+		got, err := m.Scan(t.Context(), ScanRequest{DurationS: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +54,7 @@ func TestScanDurationAndOverrides(t *testing.T) {
 		}})
 		defer m.Close(context.Background())
 		t0 := time.Now()
-		got, err := m.Scan(t.Context(), ScanRequest{Transport: "esphome", Host: "10.0.0.5", Key: "kk", Duration: time.Hour})
+		got, err := m.Scan(t.Context(), ScanRequest{Transport: "esphome", Host: "10.0.0.5", Key: "kk", DurationS: 3600})
 		if err != nil || len(got) != 0 {
 			t.Fatalf("Scan = %v, %v", got, err)
 		}

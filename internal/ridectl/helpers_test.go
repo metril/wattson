@@ -22,11 +22,15 @@ var testRider = store.Rider{ID: 7, UserID: 1, Name: "r", MinLevel: 1, MaxLevel: 
 type simRec struct {
 	mu   sync.Mutex
 	sess []*sim.Session
+	fail atomic.Bool // dials fail while set: the bike is unreachable
 }
 
 func (r *simRec) dial(c sim.Config) bike.Dial {
 	inner := sim.Dial(c)
 	return func(ctx context.Context) (bike.Session, error) {
+		if r.fail.Load() {
+			return nil, blue.ErrNotFound
+		}
 		s, err := inner(ctx)
 		if err == nil {
 			r.mu.Lock()

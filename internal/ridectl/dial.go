@@ -66,7 +66,7 @@ func hostPort(host string) string {
 func (m *Manager) openTransport(ctx context.Context, kind, host, key string) (blue.Transport, error) {
 	switch kind {
 	case "local", "":
-		return m.d.OpenLocal()
+		return m.openLocal(ctx)
 	case "esphome":
 		if strings.TrimSpace(host) == "" {
 			return nil, ErrNoHost
@@ -93,4 +93,30 @@ func (m *Manager) dialFor(p plan, r store.Rider, tr blue.Transport) bike.Dial {
 		o.Protocol = bike.ProtoFTMS
 	}
 	return bike.BLEDial(tr, p.addr, o)
+}
+
+// openLocal runs Deps.OpenLocal (which takes no context and may block on the
+// BlueZ adapter) so that ctx can abandon it; a transport that arrives after
+// the abandon is closed.
+func (m *Manager) openLocal(ctx context.Context) (blue.Transport, error) {
+	type result struct {
+		tr  blue.Transport
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		tr, err := m.d.OpenLocal()
+		ch <- result{tr, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.tr, r.err
+	case <-ctx.Done():
+		go func() {
+			if r := <-ch; r.tr != nil {
+				_ = r.tr.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	}
 }

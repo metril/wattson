@@ -375,12 +375,17 @@ func (m *Manager) run(c *conn) {
 		releasing := c.releasing
 		ever := tp.everConnected
 		lo := c.rider.MinLevel
-		var floorErr error
-		if ever && cerr != nil {
-			floorErr = fmt.Errorf("bike not confirmed back at level %d: %w", lo, cerr)
-			c.floorWarn = fmt.Sprintf("bike not confirmed back at level %d (%v); lower resistance at the console", lo, cerr)
+		// Only an engine whose session came up says anything about the floor;
+		// a reconnect engine that never connected must not erase an earlier
+		// failure (the bike may still be at its last level).
+		if ever {
+			if cerr != nil {
+				c.relErr = fmt.Errorf("bike not confirmed back at level %d: %w", lo, cerr)
+				c.floorWarn = fmt.Sprintf("bike not confirmed back at level %d (%v); lower resistance at the console", lo, cerr)
+			} else {
+				c.relErr, c.floorWarn = nil, ""
+			}
 		}
-		c.relErr = floorErr
 		if err != nil && !releasing && c.ctx.Err() == nil && c.connErr == "" {
 			c.connErr = err.Error()
 		}
@@ -392,7 +397,7 @@ func (m *Manager) run(c *conn) {
 			m.pushLocked(c)
 		}
 		m.mu.Unlock()
-		if floorErr != nil {
+		if ever && cerr != nil {
 			m.log.Warn("bike not confirmed at minimum level", "err", cerr)
 		}
 		if !again {

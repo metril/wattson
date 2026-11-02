@@ -404,6 +404,136 @@ func TestReleaseReportsUnconfirmedFloor(t *testing.T) {
 	})
 }
 
+// dropAndStop loses the link while riding, then stops the ride with the bike
+// unreachable, so the floor write cannot be confirmed.
+func dropAndStop(t *testing.T, rec *simRec, m *Manager) {
+	t.Helper()
+	ride(t, m)
+	rec.fail.Store(true)
+	rec.get(0).Drop()
+	time.Sleep(100 * time.Millisecond)
+	if err := m.Do(t.Context(), engine.Command{Kind: engine.CmdStop}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFloorFailureSurvivesUnconnectedReconnect(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		rec := &simRec{}
+		m := newMgr(rec, 20*time.Millisecond, nil, Deps{})
+		defer m.Close(context.Background())
+		dropAndStop(t, rec, m)
+		time.Sleep(3 * time.Second) // the replacement engine keeps failing to connect
+		st := m.Status()
+		if st.State != "connecting" || !strings.Contains(st.LastError, "lower resistance") {
+			t.Fatalf("status = %+v", st)
+		}
+		if err := m.Release(t.Context()); !errors.Is(err, bike.ErrNoSession) {
+			t.Fatalf("Release = %v, want wrapping ErrNoSession", err)
+		}
+		if st := m.Status(); st.State != "idle" || !strings.Contains(st.LastError, "lower resistance") {
+			t.Fatalf("idle status = %+v", st)
+		}
+	})
+}
+
+func TestFloorWarningClearsAfterConfirmedFloor(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		rec := &simRec{}
+		m := newMgr(rec, 20*time.Millisecond, nil, Deps{})
+		defer m.Close(context.Background())
+		dropAndStop(t, rec, m)
+		time.Sleep(time.Second)
+		rec.fail.Store(false) // the bike is back
+		waitState(t, m, "ready")
+		if st := m.Status(); !strings.Contains(st.LastError, "lower resistance") {
+			t.Fatalf("warning lost on reconnect: %+v", st)
+		}
+		if err := m.Release(t.Context()); err != nil {
+			t.Fatalf("Release = %v, want nil (floor confirmed)", err)
+		}
+		if st := m.Status(); st.State != "idle" || st.LastError != "" {
+			t.Fatalf("status = %+v, want idle without a stale warning", st)
+		}
+	})
+}
+
+func TestReleaseDuringTransportBackoff(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		opens := 0
+		m := newMgr(nil, 20*time.Millisecond, func(s *settings.Settings) {
+			s.Bike.Driver, s.Bike.Address = "auto", "AA:BB:CC:DD:EE:FF"
+		}, Deps{OpenLocal: func() (blue.Transport, error) { opens++; return nil, errors.New("adapter off") }})
+		defer m.Close(context.Background())
+		if _, err := m.Connect(t.Context(), testRider); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2500 * time.Millisecond) // first open fails, retry after 1 s fails, now in the 2 s backoff
+		st := m.Status()
+		if st.State != "connecting" || st.LastError != "adapter off" || st.Hint == "" || opens < 2 {
+			t.Fatalf("status = %+v, opens = %d", st, opens)
+		}
+		if err := m.Release(t.Context()); err != nil {
+			t.Fatalf("Release = %v", err)
+		}
+		if st := m.Status(); st.State != "idle" {
+			t.Fatalf("status = %+v", st)
+		}
+	})
+}
+
+func TestOpenLocalAbandonedOnRelease(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		gate := make(chan struct{})
+		tr := &advTransport{}
+		m := newMgr(nil, 20*time.Millisecond, func(s *settings.Settings) {
+			s.Bike.Driver, s.Bike.Address = "auto", "AA:BB:CC:DD:EE:FF"
+		}, Deps{OpenLocal: func() (blue.Transport, error) { <-gate; return tr, nil }})
+		defer m.Close(context.Background())
+		if _, err := m.Connect(t.Context(), testRider); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if err := m.Release(t.Context()); err != nil { // OpenLocal is still blocked
+			t.Fatalf("Release = %v", err)
+		}
+		close(gate)
+		synctest.Wait()
+		if !tr.closed.Load() {
+			t.Error("transport that arrived after the abandon was not closed")
+		}
+	})
+}
+
+// A release racing the stop -> replacement-engine window must still end idle.
+func TestReleaseRightAfterStop(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		rec := &simRec{}
+		m := newMgr(rec, 20*time.Millisecond, nil, Deps{})
+		defer m.Close(context.Background())
+		for i := range 10 {
+			ride(t, m)
+			if err := m.Do(t.Context(), engine.Command{Kind: engine.CmdStop}); err != nil {
+				t.Fatal(err)
+			}
+			if i%2 == 1 {
+				time.Sleep(time.Duration(i) * time.Millisecond)
+			}
+			if err := m.Release(t.Context()); err != nil {
+				t.Fatalf("round %d: Release = %v", i, err)
+			}
+			if st := m.Status(); st.State != "idle" {
+				t.Fatalf("round %d: status = %+v", i, st)
+			}
+		}
+	})
+}
+
 func TestScanBusy(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -423,7 +553,7 @@ func TestConnectBusyWhileScanning(t *testing.T) {
 		m := newMgr(&simRec{}, 20*time.Millisecond, nil, Deps{OpenLocal: func() (blue.Transport, error) { return tr, nil }})
 		defer m.Close(context.Background())
 		done := make(chan error, 1)
-		go func() { _, err := m.Scan(t.Context(), ScanRequest{Duration: 5 * time.Second}); done <- err }()
+		go func() { _, err := m.Scan(t.Context(), ScanRequest{DurationS: 5}); done <- err }()
 		time.Sleep(time.Second)
 		if _, err := m.Connect(t.Context(), testRider); !errors.Is(err, ErrBusy) {
 			t.Errorf("Connect during scan = %v, want ErrBusy", err)

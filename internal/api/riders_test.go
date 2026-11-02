@@ -209,6 +209,13 @@ func TestRiderDeleteInUse(t *testing.T) {
 	if resp, _ = ts.do(t, admin, "GET", path, nil); resp.StatusCode != 200 {
 		t.Errorf("rider gone after refused delete: %d", resp.StatusCode)
 	}
+	// Someone else's in-use rider is indistinguishable from a missing one.
+	ts.addUser(t, "bob", "bob-password-1", false)
+	bob := ts.loginAs(t, "bob", "bob-password-1")
+	resp, b = ts.do(t, bob, "DELETE", path, nil)
+	if resp.StatusCode != 404 || errCode(t, b) != "not_found" {
+		t.Errorf("bob delete in-use: %d %s, want 404 not_found", resp.StatusCode, b)
+	}
 	busy.Store(0)
 	if resp, b = ts.do(t, admin, "DELETE", path, nil); resp.StatusCode != 204 {
 		t.Errorf("delete after release: %d %s", resp.StatusCode, b)

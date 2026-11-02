@@ -12,6 +12,8 @@ import (
 	"github.com/metril/wattson/internal/secretbox"
 )
 
+const testAAD = "test.field"
+
 func newBox(t *testing.T) *secretbox.Box {
 	t.Helper()
 	b, err := secretbox.LoadOrCreateKey(t.TempDir())
@@ -25,14 +27,14 @@ func TestRoundTrip(t *testing.T) {
 	t.Parallel()
 	b := newBox(t)
 	for _, plain := range []string{"", "hello", "ünï©ode ✓", strings.Repeat("x", 5000)} {
-		sealed := b.Seal(plain)
+		sealed := b.SealFor(plain, testAAD)
 		if plain == "" && sealed != "" {
 			t.Fatalf("empty must seal to empty, got %q", sealed)
 		}
 		if plain != "" && !strings.HasPrefix(sealed, "v1.") {
 			t.Fatalf("missing prefix: %q", sealed)
 		}
-		got, err := b.Open(sealed)
+		got, err := b.OpenFor(sealed, testAAD)
 		if err != nil || got != plain {
 			t.Fatalf("Open = %q, %v; want %q", got, err, plain)
 		}
@@ -42,7 +44,7 @@ func TestRoundTrip(t *testing.T) {
 func TestSealRandomized(t *testing.T) {
 	t.Parallel()
 	b := newBox(t)
-	if b.Seal("x") == b.Seal("x") {
+	if b.SealFor("x", testAAD) == b.SealFor("x", testAAD) {
 		t.Fatal("two seals of the same plaintext are identical")
 	}
 }
@@ -50,18 +52,18 @@ func TestSealRandomized(t *testing.T) {
 func TestTamper(t *testing.T) {
 	t.Parallel()
 	b := newBox(t)
-	s := []byte(b.Seal("secret"))
+	s := []byte(b.SealFor("secret", testAAD))
 	i := len(s) - 2
 	if s[i] == 'A' {
 		s[i] = 'B'
 	} else {
 		s[i] = 'A'
 	}
-	if _, err := b.Open(string(s)); !errors.Is(err, secretbox.ErrDecrypt) {
+	if _, err := b.OpenFor(string(s), testAAD); !errors.Is(err, secretbox.ErrDecrypt) {
 		t.Fatalf("tampered: err = %v, want ErrDecrypt", err)
 	}
 	for _, bad := range []string{"plain", "v2.abc", "v1.", "v1.!!!"} {
-		if _, err := b.Open(bad); !errors.Is(err, secretbox.ErrDecrypt) {
+		if _, err := b.OpenFor(bad, testAAD); !errors.Is(err, secretbox.ErrDecrypt) {
 			t.Fatalf("Open(%q) err = %v, want ErrDecrypt", bad, err)
 		}
 	}
@@ -70,7 +72,7 @@ func TestTamper(t *testing.T) {
 func TestWrongKey(t *testing.T) {
 	t.Parallel()
 	a, b := newBox(t), newBox(t)
-	if _, err := b.Open(a.Seal("secret")); !errors.Is(err, secretbox.ErrDecrypt) {
+	if _, err := b.OpenFor(a.SealFor("secret", testAAD), testAAD); !errors.Is(err, secretbox.ErrDecrypt) {
 		t.Fatalf("err = %v, want ErrDecrypt", err)
 	}
 }
@@ -101,7 +103,7 @@ func TestKeyReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := b.Open(a.Seal("persisted"))
+	got, err := b.OpenFor(a.SealFor("persisted", testAAD), testAAD)
 	if err != nil || got != "persisted" {
 		t.Fatalf("Open = %q, %v", got, err)
 	}
@@ -140,7 +142,7 @@ func TestAADBinding(t *testing.T) {
 	if _, err := b.OpenFor(sealed, "mapillary.token"); !errors.Is(err, secretbox.ErrDecrypt) {
 		t.Fatalf("other aad: err = %v, want ErrDecrypt", err)
 	}
-	if _, err := b.Open(sealed); !errors.Is(err, secretbox.ErrDecrypt) {
+	if _, err := b.OpenFor(sealed, testAAD); !errors.Is(err, secretbox.ErrDecrypt) {
 		t.Fatalf("no aad: err = %v, want ErrDecrypt", err)
 	}
 }
@@ -202,7 +204,10 @@ func TestKeyPermsTightened(t *testing.T) {
 func TestDeriveIndependentOfSealingKey(t *testing.T) {
 	t.Parallel()
 	b := newBox(t)
-	if bytes.Equal(b.Derive("wattson secretbox v1"), b.Derive("other")) {
-		t.Fatal("labels collide")
+	sealing := secretbox.SealingKey(b)
+	for _, label := range []string{"wattson secretbox v1", "secretbox v1", "", "other"} {
+		if bytes.Equal(b.Derive(label), sealing) {
+			t.Fatalf("Derive(%q) equals the sealing key", label)
+		}
 	}
 }

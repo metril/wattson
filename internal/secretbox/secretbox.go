@@ -25,6 +25,9 @@ const (
 	// aeadLabel is the HKDF info for the sealing key, so the master key is
 	// never used directly and other Derive labels stay independent of it.
 	aeadLabel = "wattson secretbox v1"
+	// deriveDomain prefixes every Derive label, so no Derive output can equal
+	// the sealing key (whose info string lacks this prefix).
+	deriveDomain = "wattson derive:"
 )
 
 var (
@@ -118,19 +121,16 @@ func loadKey(path string) (*Box, error) {
 	}
 	if fi, err := os.Stat(path); err == nil && fi.Mode().Perm()&0o077 != 0 {
 		if err := os.Chmod(path, 0o600); err != nil {
-			return nil, fmt.Errorf("secretbox: tighten key permissions: %w", err)
+			// Not fatal: e.g. a read-only or foreign-owned mount. Keep running.
+			slog.Warn("secret key file is readable by others and permissions could not be tightened",
+				"path", path, "mode", fi.Mode().Perm().String(), "err", err)
+		} else {
+			slog.Warn("secret key file was readable by others; permissions reset to 0600",
+				"path", path, "was", fi.Mode().Perm().String())
 		}
-		slog.Warn("secret key file was readable by others; permissions reset to 0600",
-			"path", path, "was", fi.Mode().Perm().String())
 	}
 	return NewBox(key)
 }
-
-// Seal is SealFor with no context binding. Prefer SealFor.
-func (b *Box) Seal(plain string) string { return b.SealFor(plain, "") }
-
-// Open is OpenFor with no context binding. Prefer OpenFor.
-func (b *Box) Open(sealed string) (string, error) { return b.OpenFor(sealed, "") }
 
 // SealFor returns "v1." + base64url(nonce || ciphertext); "" seals to "".
 // aad (for example "ha.token") is authenticated but not stored: the value
@@ -170,9 +170,10 @@ func (b *Box) OpenFor(sealed, aad string) (string, error) {
 	return string(plain), nil
 }
 
-// Derive returns a 32-byte subkey for label (HKDF-SHA256, no salt).
+// Derive returns a 32-byte subkey for label (HKDF-SHA256, no salt; info is
+// "wattson derive:" + label, disjoint from the sealing key's info).
 func (b *Box) Derive(label string) []byte {
-	k, err := hkdf.Key(sha256.New, b.key, nil, label, keyLen)
+	k, err := hkdf.Key(sha256.New, b.key, nil, deriveDomain+label, keyLen)
 	if err != nil {
 		panic("secretbox: hkdf: " + err.Error())
 	}

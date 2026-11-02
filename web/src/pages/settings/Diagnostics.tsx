@@ -201,15 +201,16 @@ function DevicesTable({ devices, rssi }: { devices: DeviceDiag[]; rssi: (d: Devi
 
 /** Bluetooth health: the local adapter or the ESPHome proxy, and the configured devices. */
 export function DiagnosticsPage() {
-  const q = useQuery({
-    queryKey: ['diagnostics', 'bluetooth'],
-    queryFn: () => fetchDiag(0),
-    refetchInterval: POLL_MS,
-    retry: false,
-  });
   // Signal strength comes only from an explicit scan; polls never scan.
   const [scan, setScan] = useState<Diag | null>(null);
   const [scanning, setScanning] = useState(false);
+  const q = useQuery({
+    queryKey: ['diagnostics', 'bluetooth'],
+    queryFn: () => fetchDiag(0),
+    // No polling while a scan runs: the two would fight for the proxy.
+    refetchInterval: scanning ? false : POLL_MS,
+    retry: false,
+  });
   const [scanError, setScanError] = useState<string | null>(null);
 
   async function runScan() {
@@ -235,6 +236,11 @@ export function DiagnosticsPage() {
           {scanning && <Loader2 aria-hidden className="size-5 animate-spin" />}
           {scanning ? `Scanning ${SCAN_S} s…` : 'Scan for signal strength'}
         </Button>
+        {q.data?.transport === 'esphome' && (
+          <span className="text-sm text-dim">
+            A scan briefly takes the proxy's Bluetooth from Home Assistant.
+          </span>
+        )}
         {scan && !scanning && (
           <span className="text-sm text-dim">Signal measured {new Date(scan.checked_at).toLocaleTimeString()}</span>
         )}

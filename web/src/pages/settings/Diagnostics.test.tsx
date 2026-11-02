@@ -120,4 +120,33 @@ describe('Diagnostics', () => {
     renderWithClient(<DiagnosticsPage />);
     expect(await screen.findByText('diagnostics unavailable')).toBeInTheDocument();
   });
+
+  it('pauses the 10 s poll while a scan runs and warns about the proxy', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let finish!: () => void;
+      const seen: string[] = [];
+      stubApi({ 'GET /api/diagnostics/bluetooth': [200, held] });
+      const orig = globalThis.fetch;
+      vi.stubGlobal('fetch', async (req: Request) => {
+        const search = new URL(req.url).search;
+        seen.push(search);
+        if (search.includes('scan_s=4')) await new Promise<void>((r) => (finish = r));
+        return orig(req);
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderWithClient(<DiagnosticsPage />);
+      expect(await screen.findByText(/briefly takes the proxy's Bluetooth from Home Assistant/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Scan for signal strength' }));
+      await screen.findByRole('button', { name: /Scanning/ });
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(seen.filter((x) => x === '?scan_s=0')).toHaveLength(1);
+      finish();
+      await screen.findByRole('button', { name: 'Scan for signal strength' });
+      await vi.advanceTimersByTimeAsync(10_500);
+      expect(seen.filter((x) => x === '?scan_s=0').length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

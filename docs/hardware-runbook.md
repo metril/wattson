@@ -107,7 +107,7 @@ If Home Assistant already has a heart rate sensor (for example from the Apple He
 
 ### Home Assistant as the bike driver
 
-`bike.driver = ha` (Settings, Bike, driver "Home Assistant (FTMS)") is for FTMS bridges only, not for FitPlus bikes. See [home-assistant.md](home-assistant.md). Wattson needs no Bluetooth then, and Diagnostics reports "No Bluetooth in use".
+`bike.driver = ha` (Settings, Bike, driver "Home Assistant (FTMS)") is for FTMS bridges only, not for FitPlus bikes. See [home-assistant.md](home-assistant.md). Wattson needs no Bluetooth for the bike then. Diagnostics reports "No Bluetooth in use" only when the heart rate source is not Bluetooth either; with a Bluetooth heart rate monitor it checks the adapter or proxy for that.
 
 ### Diagnostics
 

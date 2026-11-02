@@ -51,11 +51,13 @@ Port defaults to 6053 (`esphome://host:6053`). Avoid putting the key in shell hi
 
 ## Held by another client
 
-The proxy serves one Bluetooth subscriber. If Home Assistant adopts it (or another tool subscribes), the proxy stops sending Wattson its Bluetooth data: scans find nothing and connects time out, though the proxy looks fine. Settings, Diagnostics then shows **Held by another client** under the ESPHome proxy card, with the fix. In short: remove the proxy from Home Assistant's ESPHome integration (Settings, Devices, ESPHome, the proxy, Delete) or disable that entry, then open Diagnostics again; the card turns OK once Wattson has reconnected (start a ride connection or wait for the next retry). Wattson only reports this state, it never fights for the subscription.
+The proxy serves one Bluetooth subscriber. If Home Assistant adopts it (or another tool subscribes), the proxy stops sending Wattson its Bluetooth data: scans find nothing and connects time out, though the proxy looks fine. Settings, Diagnostics then shows **Held by another client** under the ESPHome proxy card, with the fix. In short: remove the proxy from Home Assistant's ESPHome integration (Settings, Devices, ESPHome, the proxy, Delete) or disable that entry, then **release the bike and connect again** on the Ride screen. Connect retries never resubscribe, so waiting does not help; only a new connection takes the subscription back. Wattson only reports this state, it never fights for the subscription.
 
 ## Diagnostics page
 
 Settings, **Diagnostics** (admin only) checks the Bluetooth path that is in use: for the proxy its name, ESPHome version, MAC, feature flags (missing ones, `active_connections` and `raw_advertisements`, are marked red and need new firmware), free and total slots with the addresses holding them, and the subscription state. The **Devices** table lists the configured bike and heart rate monitor with their state and, after **Scan for signal strength**, their signal in dBm ("not seen" if the scan did not hear them; connected devices often stop advertising). A check can take up to about 20 seconds when the proxy is slow or unreachable.
+
+The page refreshes every 10 seconds with a read-only probe (identity, flags, slots) that does not subscribe to Bluetooth, so leaving it open does not take the proxy from Home Assistant. While a bike is connected the subscription state is shown; with no bike connected it reads "unknown". **Scan for signal strength** does subscribe: it briefly takes the proxy's Bluetooth from Home Assistant while it runs, and the polling pauses meanwhile.
 
 ## Troubleshooting
 

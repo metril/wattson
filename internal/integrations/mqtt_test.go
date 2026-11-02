@@ -3,9 +3,12 @@ package integrations
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -417,14 +420,64 @@ func TestProbeMQTT(t *testing.T) {
 	b := mqtttest.Start(t, map[string]string{"u": "p"})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := ProbeMQTT(ctx, b.URL(), "u", "p"); err != nil {
+	if err := ProbeMQTT(ctx, b.URL(), "u", "p", false); err != nil {
 		t.Errorf("good login: %v", err)
 	}
-	err := ProbeMQTT(ctx, b.URL(), "u", "bad")
+	err := ProbeMQTT(ctx, b.URL(), "u", "bad", false)
 	if err == nil || !strings.Contains(err.Error(), "refused") {
 		t.Errorf("bad login: %v", err)
 	}
-	if err := ProbeMQTT(ctx, "http://x", "", ""); err == nil {
+	if err := ProbeMQTT(ctx, "http://x", "", "", false); err == nil {
 		t.Error("a non-mqtt URL was accepted")
+	}
+}
+
+func TestProbeMQTTSelfSignedTLS(t *testing.T) {
+	t.Parallel()
+	hs := httptest.NewUnstartedServer(http.NotFoundHandler())
+	hs.StartTLS()
+	cert := hs.TLS.Certificates
+	hs.Close()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mqtttest.StartOn(t, tls.NewListener(ln, &tls.Config{Certificates: cert}), nil)
+	url := "mqtts://" + ln.Addr().String()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := ProbeMQTT(ctx, url, "", "", false); err == nil {
+		t.Error("a self-signed certificate was accepted without the opt-in")
+	}
+	if err := ProbeMQTT(ctx, url, "", "", true); err != nil {
+		t.Errorf("with tls_insecure_skip_verify: %v", err)
+	}
+}
+
+func TestCredentialChangeKeepsDiscovery(t *testing.T) {
+	t.Parallel()
+	b := mqtttest.Start(t, nil)
+	r := newRig(t, b.URL(), "", "")
+	ready(t, b)
+	cfgs := b.Watch("homeassistant/#")
+	status := b.Watch("wattson/status")
+	r.set(func(c *settings.MQTT) { c.Password = "new" })
+	var seen []string
+	deadline := time.After(2 * time.Second)
+	for !(len(seen) >= 2 && seen[len(seen)-1] == "online" && seen[len(seen)-2] == "offline") {
+		select {
+		case m := <-status:
+			seen = append(seen, string(m.Payload))
+		case <-deadline:
+			t.Fatalf("status sequence = %v, want a reconnect", seen)
+		}
+	}
+	for len(cfgs) > 0 {
+		if m := <-cfgs; len(m.Payload) == 0 {
+			t.Errorf("discovery config %s was emptied by a credential change", m.Topic)
+		}
+	}
+	if b.Retained("homeassistant/sensor/wattson_power/config") == nil {
+		t.Error("discovery missing after the reconnect")
 	}
 }

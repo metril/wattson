@@ -80,7 +80,7 @@ type originInfo struct {
 type discoveryConfig struct {
 	Name              string     `json:"name"`
 	UniqueID          string     `json:"unique_id"`
-	ObjectID          string     `json:"object_id"`
+	DefaultEntityID   string     `json:"default_entity_id"`
 	AvailabilityTopic string     `json:"availability_topic"`
 	StateTopic        string     `json:"state_topic,omitempty"`
 	ValueTemplate     string     `json:"value_template,omitempty"`
@@ -126,7 +126,9 @@ func Discovery(prefix, version string) []DiscoveryMsg {
 	out := make([]DiscoveryMsg, 0, len(sensorDefs)+len(buttonDefs))
 	add := func(component string, c discoveryConfig) {
 		id := "wattson_" + c.UniqueID
-		c.UniqueID, c.ObjectID = id, id
+		// Home Assistant 2026.4 dropped the object_id option; default_entity_id
+		// is the full entity id.
+		c.UniqueID, c.DefaultEntityID = id, component+"."+id
 		c.AvailabilityTopic = topicStatus
 		c.Device, c.Origin = dev, org
 		b, _ := json.Marshal(c) // plain strings: cannot fail

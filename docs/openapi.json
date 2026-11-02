@@ -1118,6 +1118,10 @@
             "description": "Whether an MQTT password is stored. The password itself is never returned.",
             "type": "boolean"
           },
+          "tls_insecure_skip_verify": {
+            "description": "Whether certificate checks are disabled for mqtts:// URLs. Only for a self-signed broker on a trusted LAN: it lets anyone on the path impersonate the broker. Default false.",
+            "type": "boolean"
+          },
           "url": {
             "description": "MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty when unset.",
             "type": "string"
@@ -1131,7 +1135,8 @@
           "url",
           "username",
           "password_set",
-          "discovery_prefix"
+          "discovery_prefix",
+          "tls_insecure_skip_verify"
         ],
         "type": "object"
       },
@@ -1145,6 +1150,10 @@
           "password": {
             "description": "MQTT password. Omit to keep the stored password; an empty string clears it.",
             "type": "string"
+          },
+          "tls_insecure_skip_verify": {
+            "description": "Disable certificate checks for mqtts:// URLs, for a self-signed broker on a trusted LAN. WARNING: it lets anyone on the network path impersonate the broker and read the credentials. Default false.",
+            "type": "boolean"
           },
           "url": {
             "description": "MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty clears it.",
@@ -3006,6 +3015,10 @@
           "password": {
             "description": "Password to test. Empty uses the stored password, but only when the URL is the stored one.",
             "type": "string"
+          },
+          "tls_insecure_skip_verify": {
+            "description": "Disable certificate checks for an mqtts:// URL (self-signed broker). WARNING: it lets anyone on the path impersonate the broker. Omit to use the stored setting when the URL is the stored one, otherwise checks stay on.",
+            "type": "boolean"
           },
           "url": {
             "description": "MQTT broker URL to test, mqtt:// or mqtts://. Empty uses the stored URL.",

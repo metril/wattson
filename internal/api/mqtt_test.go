@@ -105,3 +105,21 @@ func TestMQTTStatusEndpoint(t *testing.T) {
 		t.Errorf("without a bridge: %d, want 503", resp.StatusCode)
 	}
 }
+
+func TestMQTTTLSInsecureSetting(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	_, raw := ts.do(t, admin, "GET", "/api/settings", nil)
+	if decode[struct {
+		MQTT struct {
+			Insecure bool `json:"tls_insecure_skip_verify"`
+		} `json:"mqtt"`
+	}](t, raw).MQTT.Insecure {
+		t.Fatal("tls_insecure_skip_verify should default to false")
+	}
+	resp, raw := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mqtt": map[string]any{"tls_insecure_skip_verify": true}})
+	if resp.StatusCode != 200 || !strings.Contains(string(raw), `"tls_insecure_skip_verify":true`) {
+		t.Errorf("patch: %d %s", resp.StatusCode, raw)
+	}
+}

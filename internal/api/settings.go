@@ -68,6 +68,8 @@ type MQTTOut struct {
 	PasswordSet bool   `json:"password_set" doc:"Whether an MQTT password is stored. The password itself is never returned."`
 
 	DiscoveryPrefix string `json:"discovery_prefix" doc:"Home Assistant MQTT discovery topic prefix, default homeassistant."`
+
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify" doc:"Whether certificate checks are disabled for mqtts:// URLs. Only for a self-signed broker on a trusted LAN: it lets anyone on the path impersonate the broker. Default false."`
 }
 
 type BRouterOut struct {
@@ -105,7 +107,7 @@ func settingsOut(s settings.Settings) SettingsOut {
 			HACadenceEntity: s.Bike.HACadenceEntity},
 		HA: HAOut{URL: s.HA.URL, TokenSet: s.HA.Token != ""},
 		MQTT: MQTTOut{URL: s.MQTT.URL, Username: s.MQTT.Username, PasswordSet: s.MQTT.Password != "",
-			DiscoveryPrefix: s.MQTT.DiscoveryPrefix},
+			DiscoveryPrefix: s.MQTT.DiscoveryPrefix, TLSInsecureSkipVerify: s.MQTT.TLSInsecureSkipVerify},
 		HeartRate: HeartRateOut{Source: s.HeartRate.Source, Address: s.HeartRate.Address,
 			Name: s.HeartRate.Name, HAEntity: s.HeartRate.HAEntity},
 		BRouter: BRouterOut{URL: s.BRouter.URL, Profile: s.BRouter.Profile, SegmentsDir: s.BRouter.SegmentsDir,
@@ -175,6 +177,8 @@ type MQTTPatch struct {
 	Password *string `json:"password,omitempty" doc:"MQTT password. Omit to keep the stored password; an empty string clears it."`
 
 	DiscoveryPrefix *string `json:"discovery_prefix,omitempty" doc:"Home Assistant MQTT discovery topic prefix: non-empty, no + or #, no leading or trailing /. Default homeassistant."`
+
+	TLSInsecureSkipVerify *bool `json:"tls_insecure_skip_verify,omitempty" doc:"Disable certificate checks for mqtts:// URLs, for a self-signed broker on a trusted LAN. WARNING: it lets anyone on the network path impersonate the broker and read the credentials. Default false."`
 }
 
 type BRouterPatch struct {
@@ -239,6 +243,7 @@ func (p SettingsPatch) apply(s *settings.Settings) {
 		set(&s.MQTT.Username, m.Username)
 		set(&s.MQTT.Password, m.Password)
 		set(&s.MQTT.DiscoveryPrefix, m.DiscoveryPrefix)
+		set(&s.MQTT.TLSInsecureSkipVerify, m.TLSInsecureSkipVerify)
 	}
 	if h := p.HeartRate; h != nil {
 		set(&s.HeartRate.Source, h.Source)

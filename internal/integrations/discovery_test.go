@@ -61,7 +61,7 @@ func TestDiscoveryPower(t *testing.T) {
 		t.Fatal(err)
 	}
 	for k, want := range map[string]string{
-		"name": "Power", "unique_id": "wattson_power", "object_id": "wattson_power", "unit_of_measurement": "W",
+		"name": "Power", "unique_id": "wattson_power", "default_entity_id": "sensor.wattson_power", "unit_of_measurement": "W",
 		"device_class": "power", "state_class": "measurement", "state_topic": "wattson/state",
 		"availability_topic": "wattson/status", "value_template": "{{ value_json.power_w }}",
 	} {

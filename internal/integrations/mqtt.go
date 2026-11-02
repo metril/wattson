@@ -248,7 +248,9 @@ func (m *MQTT) apply(ctx context.Context) {
 			}
 			return
 		}
-		m.closeSession(s, true)
+		// The same broker with new credentials keeps its retained discovery:
+		// only another URL, or switching the bridge off, clears it.
+		m.closeSession(s, want.URL == "" || want.URL != s.cfg.URL)
 		m.sess = nil
 	}
 	m.havePub = false
@@ -269,7 +271,8 @@ func (m *MQTT) apply(ctx context.Context) {
 }
 
 func sameConnection(a, b settings.MQTT) bool {
-	return a.URL == b.URL && a.Username == b.Username && a.Password == b.Password
+	return a.URL == b.URL && a.Username == b.Username && a.Password == b.Password &&
+		a.TLSInsecureSkipVerify == b.TLSInsecureSkipVerify
 }
 
 // open starts connecting to the broker; the connection comes up (or fails)
@@ -291,7 +294,7 @@ func (m *MQTT) open(ctx context.Context, cfg settings.MQTT) (*session, error) {
 	var everUp atomic.Bool
 	cc := autopaho.ClientConfig{
 		ServerUrls:                    []*url.URL{u},
-		TlsCfg:                        &tls.Config{ServerName: u.Hostname(), MinVersion: tls.VersionTLS12},
+		TlsCfg:                        tlsConfig(u, cfg.TLSInsecureSkipVerify),
 		KeepAlive:                     keepAliveS,
 		CleanStartOnInitialConnection: true,
 		SessionExpiryInterval:         0,
@@ -488,6 +491,10 @@ func (m *MQTT) runCommand(ctx context.Context, key string) {
 	}
 }
 
+func tlsConfig(u *url.URL, insecure bool) *tls.Config {
+	return &tls.Config{ServerName: u.Hostname(), MinVersion: tls.VersionTLS12, InsecureSkipVerify: insecure} //nolint:gosec // opt-in for self-signed LAN brokers
+}
+
 // brokerURL parses an mqtt:// or mqtts:// URL and adds the default port.
 func brokerURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
@@ -540,16 +547,16 @@ func describeErr(err error) string {
 }
 
 // ProbeMQTT makes one connection attempt with a random client id and
-// disconnects. The error says why the broker could not be reached or why it
+// disconnects. insecureTLS skips certificate checks for mqtts. The error says why the broker could not be reached or why it
 // refused the login. It never reports the password.
-func ProbeMQTT(ctx context.Context, rawURL, username, password string) error {
+func ProbeMQTT(ctx context.Context, rawURL, username, password string, insecureTLS bool) error {
 	u, err := brokerURL(rawURL)
 	if err != nil {
 		return err
 	}
 	var conn net.Conn
 	if u.Scheme == "mqtts" {
-		d := tls.Dialer{Config: &tls.Config{ServerName: u.Hostname(), MinVersion: tls.VersionTLS12}}
+		d := tls.Dialer{Config: tlsConfig(u, insecureTLS)}
 		conn, err = d.DialContext(ctx, "tcp", u.Host)
 	} else {
 		var d net.Dialer

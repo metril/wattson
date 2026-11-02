@@ -92,7 +92,7 @@ export function settingsFixture(
     ha: { token_set: true, url: 'http://ha.local' },
     heart_rate: { source: 'off', address: '', name: '', ha_entity: '' },
     mapillary: { token_set: false },
-    mqtt: { discovery_prefix: 'homeassistant', password_set: false, url: '', username: '' },
+    mqtt: { discovery_prefix: 'homeassistant', password_set: false, tls_insecure_skip_verify: false, url: '', username: '' },
     strava: { client_id: '', client_secret_set: false },
   };
   for (const k of Object.keys(over) as (keyof typeof base)[]) {

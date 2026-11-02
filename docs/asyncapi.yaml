@@ -689,11 +689,11 @@
     "handleButton": {
       "action": "receive",
       "channel": {
-        "$ref": "#/channels/wattson~1command~1{command}"
+        "$ref": "#/channels/wattson~1command~1%7Bcommand%7D"
       },
       "messages": [
         {
-          "$ref": "#/channels/wattson~1command~1{command}/messages/mqttPress"
+          "$ref": "#/channels/wattson~1command~1%7Bcommand%7D/messages/mqttPress"
         }
       ],
       "summary": "Home Assistant presses a button",

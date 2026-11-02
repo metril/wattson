@@ -140,9 +140,9 @@ func AsyncAPIDoc() ([]byte, error) {
 				"messages": []any{map[string]any{"$ref": "#/channels/wattson~1state/messages/mqttState"}},
 			},
 			"handleButton": map[string]any{
-				"action": "receive", "channel": map[string]any{"$ref": "#/channels/wattson~1command~1{command}"},
+				"action": "receive", "channel": map[string]any{"$ref": "#/channels/wattson~1command~1%7Bcommand%7D"},
 				"title": "Receive a button press", "summary": "Home Assistant presses a button",
-				"messages": []any{map[string]any{"$ref": "#/channels/wattson~1command~1{command}/messages/mqttPress"}},
+				"messages": []any{map[string]any{"$ref": "#/channels/wattson~1command~1%7Bcommand%7D/messages/mqttPress"}},
 			},
 			"publishRideEvents": map[string]any{
 				"action": "send", "channel": map[string]any{"$ref": "#/channels/ride"},

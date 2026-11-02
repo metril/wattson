@@ -27,9 +27,10 @@ type mqttStatusOut struct {
 
 type testMQTTIn struct {
 	Body struct {
-		URL      string `json:"url,omitempty" doc:"MQTT broker URL to test, mqtt:// or mqtts://. Empty uses the stored URL."`
-		Username string `json:"username,omitempty" doc:"Username to test. Empty uses the stored username, but only when the URL is the stored one."`
-		Password string `json:"password,omitempty" doc:"Password to test. Empty uses the stored password, but only when the URL is the stored one."`
+		URL                   string `json:"url,omitempty" doc:"MQTT broker URL to test, mqtt:// or mqtts://. Empty uses the stored URL."`
+		Username              string `json:"username,omitempty" doc:"Username to test. Empty uses the stored username, but only when the URL is the stored one."`
+		Password              string `json:"password,omitempty" doc:"Password to test. Empty uses the stored password, but only when the URL is the stored one."`
+		TLSInsecureSkipVerify *bool  `json:"tls_insecure_skip_verify,omitempty" doc:"Disable certificate checks for an mqtts:// URL (self-signed broker). WARNING: it lets anyone on the path impersonate the broker. Omit to use the stored setting when the URL is the stored one, otherwise checks stay on."`
 	}
 }
 
@@ -62,8 +63,13 @@ func (d Deps) registerMQTT(api huma.API) {
 			}
 			base := orStored(in.Body.URL, s.MQTT.URL)
 			user, pass := in.Body.Username, in.Body.Password
+			skip := false
 			if in.Body.URL == "" || sameURL(in.Body.URL, s.MQTT.URL) {
 				user, pass = orStored(user, s.MQTT.Username), orStored(pass, s.MQTT.Password)
+				skip = s.MQTT.TLSInsecureSkipVerify
+			}
+			if in.Body.TLSInsecureSkipVerify != nil {
+				skip = *in.Body.TLSInsecureSkipVerify
 			}
 			u, err := url.Parse(base)
 			switch {
@@ -74,7 +80,7 @@ func (d Deps) registerMQTT(api huma.API) {
 			}
 			ctx, cancel := context.WithTimeout(ctx, connTestTimeout)
 			defer cancel()
-			if err := integrations.ProbeMQTT(ctx, base, user, pass); err != nil {
+			if err := integrations.ProbeMQTT(ctx, base, user, pass, skip); err != nil {
 				return result(start, false, "%s", err.Error()), nil
 			}
 			return result(start, true, "connected to %s (MQTT 5)", serverLabel(base)), nil

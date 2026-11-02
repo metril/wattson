@@ -93,6 +93,9 @@ type MQTT struct {
 	Password string `json:"password"` // secret
 	// DiscoveryPrefix is the Home Assistant MQTT discovery topic prefix.
 	DiscoveryPrefix string `json:"discovery_prefix"`
+	// TLSInsecureSkipVerify disables certificate checks for mqtts:// (a
+	// self-signed broker on a LAN).
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify"`
 }
 
 // BRouter configures routing (route drawing). PublicFallback sends route

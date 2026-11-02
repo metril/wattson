@@ -1576,6 +1576,8 @@ export interface components {
             discovery_prefix: string;
             /** @description Whether an MQTT password is stored. The password itself is never returned. */
             password_set: boolean;
+            /** @description Whether certificate checks are disabled for mqtts:// URLs. Only for a self-signed broker on a trusted LAN: it lets anyone on the path impersonate the broker. Default false. */
+            tls_insecure_skip_verify: boolean;
             /** @description MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty when unset. */
             url: string;
             /** @description MQTT username; empty when unset. */
@@ -1586,6 +1588,8 @@ export interface components {
             discovery_prefix?: string;
             /** @description MQTT password. Omit to keep the stored password; an empty string clears it. */
             password?: string;
+            /** @description Disable certificate checks for mqtts:// URLs, for a self-signed broker on a trusted LAN. WARNING: it lets anyone on the network path impersonate the broker and read the credentials. Default false. */
+            tls_insecure_skip_verify?: boolean;
             /** @description MQTT broker URL (mqtt:// or mqtts://, no user:pass@); empty clears it. */
             url?: string;
             /** @description MQTT username. */
@@ -2521,6 +2525,8 @@ export interface components {
         TestMQTTInBody: {
             /** @description Password to test. Empty uses the stored password, but only when the URL is the stored one. */
             password?: string;
+            /** @description Disable certificate checks for an mqtts:// URL (self-signed broker). WARNING: it lets anyone on the path impersonate the broker. Omit to use the stored setting when the URL is the stored one, otherwise checks stay on. */
+            tls_insecure_skip_verify?: boolean;
             /** @description MQTT broker URL to test, mqtt:// or mqtts://. Empty uses the stored URL. */
             url?: string;
             /** @description Username to test. Empty uses the stored username, but only when the URL is the stored one. */

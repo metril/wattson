@@ -31,9 +31,9 @@ func cmdScan(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, "wattson scan: --duration must be positive")
 		return 2
 	}
-	tr, ok := openTransportCtx(ctx, d, tf, stderr)
-	if !ok {
-		return 1
+	tr, code := openTransportCtx(ctx, d, tf, stderr)
+	if code != 0 {
+		return code
 	}
 	defer tr.Close()
 

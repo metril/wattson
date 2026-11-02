@@ -33,6 +33,8 @@ Docs: [hardware runbook](docs/hardware-runbook.md), [ESPHome proxy](docs/esphome
 
 - Level 0 is never sent; the lowest level is 1.
 - Ctrl-C stops the sweep and wattson tries to return the bike to its minimum level. It is back only when wattson prints `bike returned to level N`; on `failed to return bike to level N` lower the resistance manually at the console.
+- A second Ctrl-C exits immediately (`forced exit; bike may still be at level N`): lower resistance at the console. Ctrl-C before the connection is up exits 130 with `interrupted before connecting` (no level was set).
+- `drive` also treats 5 s without bike telemetry as a disconnect (`no telemetry for 5s — treating bike as disconnected at level N`, exit 1); a powered-off bike over an ESPHome proxy is otherwise only noticed after 8-10 s.
 - Exit codes: 130 interrupted, 1 bike disconnected or failure.
 - Sweeps change real pedal resistance. Be on the bike or next to it.
 

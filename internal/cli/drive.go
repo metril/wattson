@@ -15,7 +15,13 @@ import (
 	"github.com/metril/wattson/internal/blue"
 )
 
-const closeTimeout = 3 * time.Second
+const (
+	closeTimeout = 3 * time.Second
+	// silenceTimeout is how long drive tolerates a telemetry-less bike. Over an
+	// ESPHome proxy a powered-off bike is only noticed after the proxy's 8-10 s
+	// supervision timeout, so drive also watches for silence.
+	silenceTimeout = 5 * time.Second
+)
 
 // sweepLevels is min..max..min with the peak visited once (1,2,3,2,1).
 func sweepLevels(lo, hi int) []int {
@@ -74,6 +80,7 @@ const (
 	sweepDone sweepOutcome = iota
 	sweepInterrupted
 	sweepDropped
+	sweepSilent
 	sweepFailed
 )
 
@@ -96,7 +103,7 @@ func cmdDrive(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 		fmt.Fprintf(stderr, "wattson drive: --addr: %v\n", err)
 		return 2
 	}
-	opts := bike.Options{MaxLevel: *maxL, MinLevel: *minL}
+	opts := bike.Options{MaxLevel: *maxL, MinLevel: *minL, SilenceTimeout: silenceTimeout}
 	switch *protoS {
 	case "auto":
 	case "fitplus":
@@ -127,15 +134,19 @@ func cmdDrive(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 		d.tweakBike(&opts)
 	}
 
-	tr, ok := openTransportCtx(ctx, d, tf, stderr)
-	if !ok {
-		return 1
+	tr, ocode := openTransportCtx(ctx, d, tf, stderr)
+	if ocode != 0 {
+		return ocode
 	}
 	defer tr.Close()
 	fmt.Fprintf(stderr, "connecting to %s...\n", addr)
-	conn, err := connectTo(ctx, tr, addr)
+	conn, err := connectTo(ctx, d, tr, addr)
 	if err != nil {
-		fmt.Fprintf(stderr, "wattson drive: connect: %v\n", err)
+		if interrupted(ctx) {
+			fmt.Fprintln(stderr, "wattson drive: interrupted before connecting (no level was set)")
+			return exitInterrupted
+		}
+		fmt.Fprintf(stderr, "wattson drive: connect: %v%s\n", err, connectHint(err, tf, addr))
 		return 1
 	}
 	octx, ocancel := context.WithTimeout(ctx, 15*time.Second)
@@ -143,6 +154,10 @@ func cmdDrive(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 	ocancel()
 	if err != nil {
 		_ = conn.Close()
+		if interrupted(ctx) {
+			fmt.Fprintln(stderr, "wattson drive: interrupted before connecting (no level was set)")
+			return exitInterrupted
+		}
 		fmt.Fprintf(stderr, "wattson drive: open bike: %v\n", err)
 		return 1
 	}
@@ -176,6 +191,15 @@ func cmdDrive(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 		}
 	}()
 
+	// stopped classifies why the session ended: link drop or telemetry silence.
+	stopped := func() sweepOutcome {
+		if errors.Is(b.Err(), bike.ErrSilence) && !isDone(conn) {
+			return sweepSilent
+		}
+		return sweepDropped
+	}
+	bikeDone := b.Done()
+
 	var rows []levelRow
 	cur := 0
 	outcome := sweepDone
@@ -188,8 +212,8 @@ sweep:
 		case ctx.Err() != nil:
 			outcome = sweepInterrupted
 			break sweep
-		case isDone(conn) || errors.Is(err, blue.ErrDisconnected):
-			outcome = sweepDropped
+		case isDone(conn) || isClosed(bikeDone) || errors.Is(err, blue.ErrDisconnected):
+			outcome = stopped()
 			break sweep
 		default:
 			fmt.Fprintf(stderr, "wattson drive: set level %d: %v\n", want, err)
@@ -197,6 +221,7 @@ sweep:
 			break sweep
 		}
 		cur = sent
+		lastLevel.Store(int32(sent))
 		set := time.Now()
 		timer := time.NewTimer(*dwell)
 		select {
@@ -209,6 +234,10 @@ sweep:
 			timer.Stop()
 			outcome = sweepDropped
 			break sweep
+		case <-bikeDone:
+			timer.Stop()
+			outcome = stopped()
+			break sweep
 		}
 		mu.Lock()
 		row := summarize(sent, samples, start, set.Add(*dwell/2), set.Add(*dwell))
@@ -219,6 +248,9 @@ sweep:
 	}
 
 	cerr := closeBike()
+	if cerr == nil && outcome != sweepSilent {
+		lastLevel.Store(int32(lo))
+	}
 
 	status := "complete"
 	code := 0
@@ -249,6 +281,16 @@ sweep:
 		code = 1
 		if cerr != nil {
 			returned()
+		}
+	case sweepSilent:
+		status = fmt.Sprintf("INCOMPLETE (no telemetry for %s at level %s)", silenceDur(opts), curStr)
+		fmt.Fprintf(stderr, "no telemetry for %s — treating bike as disconnected at level %s\n", silenceDur(opts), curStr)
+		code = 1
+		if cerr != nil {
+			returned()
+		} else {
+			// The link may be alive but silent: the write was sent, not confirmed.
+			fmt.Fprintf(stderr, "level %d write sent but unconfirmed (bike silent); check the console\n", lo)
 		}
 	case sweepFailed:
 		status = fmt.Sprintf("INCOMPLETE (command failed at level %s)", curStr)
@@ -289,6 +331,17 @@ sweep:
 		}
 	}
 	return code
+}
+
+func silenceDur(o bike.Options) time.Duration { return o.SilenceTimeout }
+
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
 
 func isDone(c blue.Conn) bool {

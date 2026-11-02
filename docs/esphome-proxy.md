@@ -41,6 +41,10 @@ wattson scan --via esphome://192.0.2.10 --key "$KEY" --name-prefix MRK-
 
 Port defaults to 6053 (`esphome://host:6053`). Avoid putting the key in shell history: `KEY=$(grep wattson_proxy_api_key esphome/secrets.yaml | cut -d'"' -f2)`.
 
+## How it talks to the proxy
+
+`bluetooth_proxy` sends every BLE reply (connection state, GATT services, reads, acks, notifications, errors) only to the API client that subscribed to advertisements, and drops them otherwise. Wattson therefore subscribes once when the transport opens and keeps that subscription until it exits (a newer subscriber replaces an older one, so do not run two clients at once; Home Assistant adopting the proxy would take it over).
+
 ## Slots
 
 `bluetooth_proxy: connection_slots: 3`. Wattson needs one for the bike. A slot stays taken until the link is dropped; if a previous run crashed, wait a bit or reboot the proxy.
@@ -53,6 +57,8 @@ Port defaults to 6053 (`esphome://host:6053`). Avoid putting the key in shell hi
 | `--key ... is required with --via esphome://` | Pass `--key`. |
 | `proxy has no free bluetooth connection slots` (`ErrNoSlots`) | Another client holds the slots. Disconnect HA/other tools, wait, or reboot the proxy. Check HA did not adopt it. |
 | `device is using the plaintext protocol` | Firmware has no `api: encryption`; re-flash this config. |
-| Connection refused / timeout | Wrong host/IP, proxy offline, firewall on 6053. Check the proxy's logs (`esphome logs wattson-proxy.yaml`). |
+| `connection refused` (names `host:port`) | Wrong port, or the API is not listening. Check the proxy's logs (`esphome logs wattson-proxy.yaml`). |
+| `dial timeout: host:port did not answer within 5s` | Wrong host/IP, proxy offline or unreachable, firewall on 6053. Whole transport setup is capped at 10 s. |
+| BLE connect times out (hint: `pass --addr XX:..:XX/random`) | The bike advertises a random address but `--addr` lacks `/random`. Copy ADDR from `scan` exactly. |
 | Bike not in `scan` | Bike asleep (pedal to wake), out of range, or the proxy is not near it. Remove `--name-prefix` to see all devices. |
 | `bike disconnected` mid-sweep | Weak link between proxy and bike: move the proxy closer, then retry. Record it in `docs/s29r2.md`. |

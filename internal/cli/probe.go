@@ -17,8 +17,12 @@ import (
 var gapDeviceName = blue.UUID16(0x2a00)
 
 // connectTo connects with a bounded wait.
-func connectTo(ctx context.Context, tr blue.Transport, addr blue.Address) (blue.Conn, error) {
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+func connectTo(ctx context.Context, d deps, tr blue.Transport, addr blue.Address) (blue.Conn, error) {
+	to := d.connectTimeout
+	if to <= 0 {
+		to = 30 * time.Second
+	}
+	cctx, cancel := context.WithTimeout(ctx, to)
 	defer cancel()
 	return tr.Connect(cctx, addr)
 }
@@ -89,15 +93,19 @@ func cmdProbe(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 	}
 	sk := &sink{stdout: stdout}
 
-	tr, ok := openTransportCtx(ctx, d, tf, stderr)
-	if !ok {
-		return 1
+	tr, code := openTransportCtx(ctx, d, tf, stderr)
+	if code != 0 {
+		return code
 	}
 	defer tr.Close()
 	fmt.Fprintf(stderr, "connecting to %s...\n", addr)
-	conn, err := connectTo(ctx, tr, addr)
+	conn, err := connectTo(ctx, d, tr, addr)
 	if err != nil {
-		fmt.Fprintf(stderr, "wattson probe: connect: %v\n", err)
+		if interrupted(ctx) {
+			fmt.Fprintln(stderr, "wattson probe: interrupted before connecting")
+			return exitInterrupted
+		}
+		fmt.Fprintf(stderr, "wattson probe: connect: %v%s\n", err, connectHint(err, tf, addr))
 		return 1
 	}
 	defer conn.Close()

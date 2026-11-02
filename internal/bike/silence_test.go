@@ -52,6 +52,9 @@ func TestSilenceWatchdogTreatsLinkAsDown(t *testing.T) {
 	if err := b.Err(); !errors.Is(err, blue.ErrDisconnected) {
 		t.Fatalf("Err = %v, want ErrDisconnected", err)
 	}
+	if !errors.Is(b.Err(), ErrSilence) {
+		t.Fatalf("Err = %v, want ErrSilence", b.Err())
+	}
 	select {
 	case _, ok := <-b.Telemetry():
 		for ok { // drain the buffered sample

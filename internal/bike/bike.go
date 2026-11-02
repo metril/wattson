@@ -16,6 +16,9 @@ var (
 	ErrUnsupported = errors.New("bike: no supported protocol on device")
 	// ErrClosed means the session was closed.
 	ErrClosed = errors.New("bike: session closed")
+	// ErrSilence is wrapped (with blue.ErrDisconnected) in Bike.Err when the
+	// silence watchdog ended the session.
+	ErrSilence = errors.New("bike: telemetry silence")
 	// ErrControlRejected means the FTMS control point answered with a non-success result.
 	ErrControlRejected = errors.New("bike: control point rejected request")
 )
@@ -324,7 +327,7 @@ func (b *Bike) watch() {
 				timer.Reset(b.silence)
 			}
 		case <-fire:
-			b.end(fmt.Errorf("no telemetry for %s: %w", b.silence, blue.ErrDisconnected))
+			b.end(fmt.Errorf("no telemetry for %s: %w: %w", b.silence, ErrSilence, blue.ErrDisconnected))
 			b.closeTelemetry()
 			return
 		}

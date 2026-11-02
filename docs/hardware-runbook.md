@@ -8,6 +8,8 @@ You must be on the bike or next to it. Pedal to wake it.
 
 - Level 0 is never sent. The lowest level is 1.
 - Ctrl-C (SIGINT/SIGTERM) stops the sweep and wattson then tries to return the bike to its minimum level. It has returned only when it prints `bike returned to level N`. If it prints `failed to return bike to level N` (or the bike disconnected), lower the resistance manually at the bike console.
+- A second Ctrl-C exits at once with `forced exit; bike may still be at level N`: lower the resistance at the console. Ctrl-C before the link is up exits 130 with `interrupted before connecting` (no level was set).
+- `drive` treats 5 s with no telemetry as a disconnect (`no telemetry for 5s — treating bike as disconnected at level N`, exit 1). It still tries the minimum-level write on the way out, but reports it as sent, not confirmed. Check the console.
 - Exit codes: 0 complete, 130 interrupted, 1 bike disconnected or command failure, 2 usage error.
 - The sweep goes min..max..min; resistance changes every 5 s, so keep a steady, light cadence.
 

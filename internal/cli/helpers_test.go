@@ -19,9 +19,19 @@ var testAddr = blue.Address{MAC: [6]byte{0xC0, 0xFF, 0xEE, 0x00, 0x00, 0x01}, Ty
 func fitPlusEcho() *bluetest.Fake { return newFitPlusFake(func(l int) int { return l }) }
 
 // newFitPlusFake builds a FitPlus fake reporting reportOf(level written); nil = never notifies.
-func newFitPlusFake(reportOf func(int) int) *bluetest.Fake {
+func newFitPlusFake(reportOf func(int) int) *bluetest.Fake { return newFitPlusFakeN(reportOf, 0) }
+
+// newFitPlusFakeN is newFitPlusFake that goes silent after limit notifications
+// (0 = unlimited), like a bike that was switched off.
+func newFitPlusFakeN(reportOf func(int) int, limit int32) *bluetest.Fake {
 	var f *bluetest.Fake
-	var level atomic.Int32
+	var level, sent atomic.Int32
+	notify := func(b []byte) {
+		if limit > 0 && sent.Add(1) > limit {
+			return
+		}
+		f.Notify(testAddr, bike.FitPlusNotify, b)
+	}
 	dev := &bluetest.Device{
 		Adv: blue.Advertisement{Addr: testAddr, Name: "MRK-S29R2", RSSI: -50, Services: []blue.UUID{bike.FitPlusService}},
 		Services: []blue.Service{
@@ -36,7 +46,7 @@ func newFitPlusFake(reportOf func(int) int) *bluetest.Fake {
 	dev.OnWrite = func(ch blue.UUID, data []byte) {
 		if ch != bike.FitPlusWrite || (len(data) > 0 && data[0] == 0xaa) { // init
 			if len(data) > 0 && data[0] == 0xaa {
-				f.Notify(testAddr, bike.FitPlusNotify, make([]byte, 15)) // handshake answer
+				notify(make([]byte, 15)) // handshake answer
 			}
 			return
 		}
@@ -47,7 +57,7 @@ func newFitPlusFake(reportOf func(int) int) *bluetest.Fake {
 			n := make([]byte, 15)
 			n[5], n[6] = byte(reportOf(int(l))), 60
 			binary.LittleEndian.PutUint16(n[9:], 800)
-			f.Notify(testAddr, bike.FitPlusNotify, n)
+			notify(n)
 		}
 	}
 	if reportOf == nil {

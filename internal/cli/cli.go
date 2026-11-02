@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,19 +32,54 @@ type deps struct {
 	tweakBike       func(*bike.Options) // optional: adjust bike options (keepalive etc.)
 	now             func() time.Time    // report timestamp
 	selftestTimeout time.Duration       // probe --selftest notification wait
+	connectTimeout  time.Duration       // bound on one BLE connect; 0 = 30s
 }
+
+// exitInterrupted is the conventional exit code after SIGINT.
+const exitInterrupted = 130
+
+// lastLevel is the level drive most recently set (0 = none yet); a forced exit
+// reports it so the rider can lower resistance by hand.
+var lastLevel atomic.Int32
 
 func defaultDeps() deps {
 	return deps{newTransport: newTransport, now: time.Now, selftestTimeout: 3 * time.Second}
 }
 
 // Run dispatches args (without the program name) and returns the exit code.
-// SIGINT/SIGTERM cancel the running command, which then drops the bike to its
-// minimum level before returning.
+// The first SIGINT/SIGTERM cancels the running command, which then drops the
+// bike to its minimum level before returning; a second one exits immediately.
 func Run(args []string, stdout, stderr io.Writer) int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigs)
+	done := make(chan struct{})
+	defer close(done)
+	go watchSignals(sigs, done, cancel, func() int { return int(lastLevel.Load()) }, stderr, os.Exit)
 	return run(ctx, defaultDeps(), args, stdout, stderr)
+}
+
+// watchSignals cancels on the first signal and force-exits on the second.
+func watchSignals(sigs <-chan os.Signal, done <-chan struct{}, cancel func(), level func() int, stderr io.Writer, exit func(int)) {
+	select {
+	case <-sigs:
+	case <-done:
+		return
+	}
+	cancel()
+	select {
+	case <-sigs:
+	case <-done:
+		return
+	}
+	if n := level(); n > 0 {
+		fmt.Fprintf(stderr, "forced exit; bike may still be at level %d — lower resistance at the console\n", n)
+	} else {
+		fmt.Fprintln(stderr, "forced exit; no resistance level had been set")
+	}
+	exit(exitInterrupted)
 }
 
 func run(ctx context.Context, d deps, args []string, stdout, stderr io.Writer) int {
@@ -94,14 +131,32 @@ func parseFlags(fs *flag.FlagSet, tf *transportFlags, args []string, stderr io.W
 	return 0, true
 }
 
-// openTransportCtx opens the transport with a bounded setup time.
-func openTransportCtx(ctx context.Context, d deps, tf *transportFlags, stderr io.Writer) (blue.Transport, bool) {
-	octx, cancel := context.WithTimeout(ctx, 15*time.Second)
+// openTransportCtx opens the transport with a bounded setup time. code is 0
+// on success, otherwise the exit code to return (130 when interrupted).
+func openTransportCtx(ctx context.Context, d deps, tf *transportFlags, stderr io.Writer) (tr blue.Transport, code int) {
+	octx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	tr, err := d.newTransport(octx, tf.via, tf.key)
 	if err != nil {
+		if interrupted(ctx) {
+			fmt.Fprintln(stderr, "wattson: interrupted before connecting")
+			return nil, exitInterrupted
+		}
 		fmt.Fprintf(stderr, "wattson: open transport %s: %v\n", tf.label(), err)
-		return nil, false
+		return nil, 1
 	}
-	return tr, true
+	return tr, 0
 }
+
+// connectHint explains a likely cause of a failed ESPHome connect: the device
+// was addressed as public but is advertising a random address.
+func connectHint(err error, tf *transportFlags, addr blue.Address) string {
+	if strings.HasPrefix(tf.via, esphomePrefix) && addr.Type == blue.AddrPublic && errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("\nhint: if the scan showed this device as random, pass --addr %s/random", macString(addr))
+	}
+	return ""
+}
+
+// interrupted reports whether ctx was cancelled (Ctrl-C), as opposed to
+// expiring on a deadline.
+func interrupted(ctx context.Context) bool { return errors.Is(ctx.Err(), context.Canceled) }

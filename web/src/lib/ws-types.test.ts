@@ -33,6 +33,7 @@ const sampleStatus: Required<BikeStatus> = {
   driver: '',
   floor_unconfirmed: false,
   hint: '',
+  hr: { bpm: 0, connected: false, error: '', last_at: '', source: 'ble', target: '' },
   last_error: '',
   protocol: '',
   rider_id: 0,

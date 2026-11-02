@@ -3,16 +3,21 @@ package ridectl
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/metril/wattson/internal/bike"
+	"github.com/metril/wattson/internal/bike/habike"
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/blue/bluetest"
 	"github.com/metril/wattson/internal/engine"
+	"github.com/metril/wattson/internal/hass"
+	"github.com/metril/wattson/internal/hass/hasstest"
 	"github.com/metril/wattson/internal/route"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -786,4 +791,97 @@ func TestStartRouteReleasedDuringLoad(t *testing.T) {
 			t.Fatalf("StartRoute = %v, want ErrNoBike", err)
 		}
 	})
+}
+
+const haToken = "tok"
+
+func haServer(t *testing.T) *hasstest.Server {
+	t.Helper()
+	s := hasstest.Start(t, haToken)
+	s.SetState("number.bike", "3", map[string]any{"min": 1.0, "max": 24.0})
+	s.SetState("sensor.power", "150", nil)
+	s.SetState("sensor.cadence", "80", nil)
+	return s
+}
+
+func haSettings(s *hasstest.Server, token string) func(*settings.Settings) {
+	return func(st *settings.Settings) {
+		st.Bike.Driver = "ha"
+		st.Bike.HAResistanceEntity, st.Bike.HAPowerEntity, st.Bike.HACadenceEntity = "number.bike", "sensor.power", "sensor.cadence"
+		st.HA.URL, st.HA.Token = s.URL(), token
+	}
+}
+
+func haValues(s *hasstest.Server) []float64 {
+	var out []float64
+	for _, c := range s.Calls() {
+		out = append(out, c.Data["value"].(float64))
+	}
+	return out
+}
+
+func TestHADriverRide(t *testing.T) {
+	t.Parallel()
+	s := haServer(t)
+	m := newMgr(nil, 20*time.Millisecond, haSettings(s, haToken), Deps{HAPeriod: 20 * time.Millisecond})
+	defer m.Close(context.Background())
+	if _, err := m.Connect(t.Context(), testRider); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, 2*time.Second, "ready", func() bool { return m.Status().State == "ready" })
+	if st := m.Status(); st.Protocol != "ha" || st.Driver != "ha" || !st.Connected {
+		t.Fatalf("status = %+v", st)
+	}
+	if err := m.Do(t.Context(), engine.Command{Kind: engine.CmdStart}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Do(t.Context(), engine.Command{Kind: engine.CmdSetLevel, Value: 9}); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, 2*time.Second, "level 9 sent to Home Assistant", func() bool { return slices.Contains(haValues(s), 9) })
+	if err := m.Release(t.Context()); err != nil {
+		t.Fatalf("Release = %v", err)
+	}
+	v := haValues(s)
+	if v[len(v)-1] != 1 {
+		t.Fatalf("values %v: the last must be the floor level 1", v)
+	}
+	for _, x := range v {
+		if x < 1 || x > float64(testRider.MaxLevel) {
+			t.Fatalf("value %v outside the rider range in %v", x, v)
+		}
+	}
+}
+
+func TestHAHintBadToken(t *testing.T) {
+	t.Parallel()
+	s := haServer(t)
+	m := newMgr(nil, 20*time.Millisecond, haSettings(s, "wrong"), Deps{HAPeriod: 20 * time.Millisecond})
+	defer m.Close(context.Background())
+	if _, err := m.Connect(t.Context(), testRider); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, 2*time.Second, "bad-token hint", func() bool {
+		return strings.HasPrefix(m.Status().Hint, "Home Assistant rejected the token")
+	})
+	if st := m.Status(); st.State != "connecting" || st.Connected {
+		t.Fatalf("status = %+v", st)
+	}
+}
+
+func TestHintForMore(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("x: %w", blue.ErrProxyHeld), "Another client (usually Home Assistant) holds this ESPHome proxy's Bluetooth."},
+		{fmt.Errorf("x: %w", hass.ErrAuth), "Home Assistant rejected the token."},
+		{fmt.Errorf("x: %w", habike.ErrEntityUnavailable), "Home Assistant reports the bike entity unavailable."},
+	}
+	for _, c := range cases {
+		if got := hintFor(c.err); !strings.HasPrefix(got, c.want) {
+			t.Errorf("hintFor(%v) = %q, want prefix %q", c.err, got, c.want)
+		}
+	}
 }

@@ -18,7 +18,9 @@ import (
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/engine"
+	"github.com/metril/wattson/internal/hass"
 	"github.com/metril/wattson/internal/route"
+	"github.com/metril/wattson/internal/sensors"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
 )
@@ -37,27 +39,40 @@ var (
 
 // Deps are the manager's collaborators; every func has a production default.
 type Deps struct {
-	Settings    func(context.Context) (settings.Settings, error)
-	OpenLocal   func() (blue.Transport, error)                                          // default blue.NewLocal
-	OpenESPHome func(ctx context.Context, hostport, key string) (blue.Transport, error) // default blue.NewESPHome
-	SimDial     func(sim.Config) bike.Dial                                              // default sim.Dial
-	LoadRoute   func(ctx context.Context, id int64) (*route.Profile, error)             // route for StartRoute; ErrRouteNotFound when missing; see StoreRoutes
-	TickEvery   time.Duration                                                           // engine tick period; default 1s
-	SimPeriod   time.Duration                                                           // simulator telemetry period; default 1s
-	Logger      *slog.Logger
+	Settings     func(context.Context) (settings.Settings, error)
+	OpenLocal    func() (blue.Transport, error)                                          // default blue.NewLocal
+	OpenESPHome  func(ctx context.Context, hostport, key string) (blue.Transport, error) // default blue.NewESPHome
+	SimDial      func(sim.Config) bike.Dial                                              // default sim.Dial
+	LoadRoute    func(ctx context.Context, id int64) (*route.Profile, error)             // route for StartRoute; ErrRouteNotFound when missing; see StoreRoutes
+	TickEvery    time.Duration                                                           // engine tick period; default 1s
+	SimPeriod    time.Duration                                                           // simulator telemetry period; default 1s
+	OpenHA       func(ctx context.Context, base, token string) (*hass.Client, error)     // default hass.Dial(Options{})
+	HAPeriod     time.Duration                                                           // Home Assistant bike telemetry period; default 1s
+	HRBackoffMin time.Duration                                                           // first heart rate reconnect delay; default 1s
+	Logger       *slog.Logger
 }
 
 // Status is the bike connection as the UI shows it.
 type Status struct {
-	State            string    `json:"state" doc:"idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished."`
-	RiderID          int64     `json:"rider_id,omitempty" doc:"Rider bound to the bike; absent when idle."`
-	Driver           string    `json:"driver,omitempty" doc:"Driver from settings in use: auto, fitplus, ftms or sim."`
-	Protocol         string    `json:"protocol,omitempty" doc:"Protocol of the live bike session: fitplus, ftms or sim."`
-	Connected        bool      `json:"connected" doc:"Whether a live link to the bike exists right now."`
-	LastError        string    `json:"last_error,omitempty" doc:"Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level."`
-	Hint             string    `json:"hint,omitempty" doc:"Advice for fixing LastError when it is a connection problem."`
-	FloorUnconfirmed bool      `json:"floor_unconfirmed" doc:"True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed."`
-	Since            time.Time `json:"since" doc:"When State last changed (RFC 3339)."`
+	State            string            `json:"state" doc:"idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished."`
+	RiderID          int64             `json:"rider_id,omitempty" doc:"Rider bound to the bike; absent when idle."`
+	Driver           string            `json:"driver,omitempty" doc:"Driver from settings in use: auto, fitplus, ftms, ha or sim."`
+	Protocol         string            `json:"protocol,omitempty" doc:"Protocol of the live bike session: fitplus, ftms, ha or sim."`
+	Connected        bool              `json:"connected" doc:"Whether a live link to the bike exists right now."`
+	LastError        string            `json:"last_error,omitempty" doc:"Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level."`
+	Hint             string            `json:"hint,omitempty" doc:"Advice for fixing LastError when it is a connection problem."`
+	FloorUnconfirmed bool              `json:"floor_unconfirmed" doc:"True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed."`
+	HR               *sensors.HRStatus `json:"hr,omitempty" doc:"Heart rate source state; absent when heart_rate.source is off. Its bpm and last_at stay empty here: the live reading is heart_rate_bpm in each tick."`
+	Since            time.Time         `json:"since" doc:"When State last changed (RFC 3339)."`
+}
+
+// statusEqual compares statuses (HR is a pointer).
+func statusEqual(a, b Status) bool {
+	if (a.HR == nil) != (b.HR == nil) || (a.HR != nil && *a.HR != *b.HR) {
+		return false
+	}
+	a.HR, b.HR = nil, nil
+	return a == b
 }
 
 // conn is one bike connection: a rider, one transport, and the sequence of
@@ -68,8 +83,14 @@ type conn struct {
 	plan   plan
 	ctx    context.Context
 	cancel context.CancelFunc
-	done   chan struct{} // closed after the connection is fully torn down
-	tr     blue.Transport
+	done   chan struct{}  // closed after the connection is fully torn down
+	tr     blue.Transport // shared Bluetooth transport; nil when nothing uses Bluetooth
+
+	// Heart rate source, set by startHR before the first engine and stopped by finish.
+	hrMon    sensors.Monitor
+	hrCancel context.CancelFunc
+	hrDone   chan struct{}
+	finished bool // finish has torn the connection down; guarded by Manager.mu
 
 	// Guarded by Manager.mu.
 	eng        *engine.Engine
@@ -126,6 +147,17 @@ func New(d Deps) *Manager {
 	if d.SimDial == nil {
 		d.SimDial = sim.Dial
 	}
+	if d.OpenHA == nil {
+		d.OpenHA = func(ctx context.Context, base, token string) (*hass.Client, error) {
+			return hass.Dial(ctx, base, token, hass.Options{})
+		}
+	}
+	if d.HAPeriod <= 0 {
+		d.HAPeriod = time.Second
+	}
+	if d.HRBackoffMin <= 0 {
+		d.HRBackoffMin = time.Second
+	}
 	if d.TickEvery <= 0 {
 		d.TickEvery = time.Second
 	}
@@ -170,7 +202,7 @@ func (m *Manager) Connect(ctx context.Context, r store.Rider) (Status, error) {
 		return Status{}, ErrBusy
 	}
 	cctx, cancel := context.WithCancel(m.root)
-	c := &conn{rider: r, plan: p, ctx: cctx, cancel: cancel, done: make(chan struct{}),
+	c := &conn{rider: r, plan: p, ctx: cctx, cancel: cancel, done: make(chan struct{}), tr: m.sharedFor(p),
 		state: engine.StateConnecting, lastActive: time.Now()}
 	m.cur = c
 	m.pushLocked(c)
@@ -380,7 +412,7 @@ func (m *Manager) pushLocked(c *conn) {
 	old := m.status
 	st := Status{
 		State: string(c.state), RiderID: c.rider.ID, Driver: c.plan.driver, Protocol: c.proto,
-		Connected: c.connected, LastError: c.lastError(), Hint: c.hint, FloorUnconfirmed: c.floorWarn != "", Since: old.Since,
+		Connected: c.connected, LastError: c.lastError(), Hint: c.hint, FloorUnconfirmed: c.floorWarn != "", HR: c.hrStatus(), Since: old.Since,
 	}
 	m.setStatusLocked(st)
 }
@@ -390,7 +422,7 @@ func (m *Manager) setStatusLocked(st Status) {
 	if st.State != old.State {
 		st.Since = time.Now()
 	}
-	if st == old {
+	if statusEqual(st, old) {
 		return
 	}
 	m.status = st
@@ -404,11 +436,9 @@ func (m *Manager) run(c *conn) {
 	defer m.wg.Done()
 	defer m.finish(c)
 
-	if !c.plan.isSim() {
-		if !m.openTransportRetry(c) {
-			return
-		}
-	}
+	m.mu.Lock()
+	m.startHR(c)
+	m.mu.Unlock()
 	for {
 		m.mu.Lock()
 		if c.releasing || c.ctx.Err() != nil {
@@ -418,8 +448,13 @@ func (m *Manager) run(c *conn) {
 		sup := bike.NewSupervisor(m.dialFor(c.plan, c.rider, c.tr),
 			bike.SupervisorOptions{MinLevel: c.rider.MinLevel, MaxLevel: c.rider.MaxLevel})
 		tp := newTap(sup, func(ev bike.Event) { m.onEvent(c, ev) })
+		var hr engine.HeartRate
+		if c.hrMon != nil {
+			hr = c.hrMon
+		}
 		eng := engine.New(engine.Config{
 			Driver:     tp,
+			HeartRate:  hr,
 			StartLevel: clamp(int(math.Round(c.rider.OffsetLevel)), c.rider.MinLevel, c.rider.MaxLevel),
 			Physics: engine.Physics{MassKg: c.rider.WeightKg + c.rider.BikeKg, CdA: c.rider.CdA,
 				Crr: c.rider.Crr, Rho: 1.225},
@@ -479,41 +514,16 @@ func (m *Manager) run(c *conn) {
 	}
 }
 
-// openTransportRetry opens the connection's shared transport, retrying with
-// backoff (and reporting why) until it works or the connection is released.
-func (m *Manager) openTransportRetry(c *conn) bool {
-	backoff := time.Second
-	for {
-		tr, err := m.openTransport(c.ctx, c.plan.transport, c.plan.host, c.plan.key)
-		if err == nil {
-			c.tr = tr
-			return true
-		}
-		if c.ctx.Err() != nil {
-			return false
-		}
-		m.log.Warn("bike transport unavailable", "err", err)
-		m.mu.Lock()
-		c.connErr, c.hint = err.Error(), hintFor(err)
-		m.pushLocked(c)
-		m.mu.Unlock()
-		t := time.NewTimer(backoff)
-		select {
-		case <-c.ctx.Done():
-			t.Stop()
-			return false
-		case <-t.C:
-		}
-		backoff = min(backoff*2, 30*time.Second)
-	}
-}
-
 // finish tears the connection down and publishes idle.
 func (m *Manager) finish(c *conn) {
+	// The ride is over and its bike closed: stop heart rate, then free the
+	// transport they shared.
+	c.stopHR()
 	if c.tr != nil {
 		_ = c.tr.Close()
 	}
 	m.mu.Lock()
+	c.finished = true
 	if m.cur == c {
 		m.cur = nil
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/sensors"
 )
 
 func advAddr(b byte) blue.Address { return blue.Address{MAC: [6]byte{0, 0, 0, 0, 0, b}} }
@@ -70,6 +71,34 @@ func TestScanDurationAndOverrides(t *testing.T) {
 		}
 		if d := time.Since(t0); d != 5*time.Second {
 			t.Errorf("default scan took %v, want 5 s", d)
+		}
+	})
+}
+
+func TestScanMarksHR(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		A, B, C, D := advAddr(1), advAddr(2), advAddr(3), advAddr(4)
+		tr := &advTransport{advs: []blue.Advertisement{
+			{Addr: A, Name: "HRM", RSSI: -30, Services: []blue.UUID{sensors.HRService}},
+			{Addr: B, RSSI: -80, Services: []blue.UUID{bike.FTMSService}},
+			{Addr: C, RSSI: -20},
+			{Addr: D, Name: "Combo", RSSI: -50, Services: []blue.UUID{sensors.HRService, bike.FitPlusService}},
+		}}
+		m := newMgr(nil, 0, nil, Deps{OpenLocal: func() (blue.Transport, error) { return tr, nil }})
+		defer m.Close(context.Background())
+		got, err := m.Scan(t.Context(), ScanRequest{DurationS: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []Device{
+			{Address: D.String(), Name: "Combo", RSSI: -50, Protocol: "fitplus"},
+			{Address: B.String(), RSSI: -80, Protocol: "ftms"},
+			{Address: A.String(), Name: "HRM", RSSI: -30, Protocol: "hr"},
+			{Address: C.String(), RSSI: -20},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %+v\nwant %+v", got, want)
 		}
 	})
 }

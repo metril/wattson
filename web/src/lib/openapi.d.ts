@@ -1282,7 +1282,7 @@ export interface components {
             address: string;
             /** @description Advertised local name, empty when none was seen. */
             name: string;
-            /** @description fitplus or ftms when the advertised services match a supported bike; empty otherwise. */
+            /** @description fitplus or ftms when the advertised services match a supported bike, hr for a heart rate monitor; empty otherwise. */
             protocol: string;
             /**
              * Format: int64
@@ -1368,6 +1368,26 @@ export interface components {
             token?: string;
             /** @description Home Assistant base URL (no user:pass@); empty clears it. */
             url?: string;
+        };
+        HRStatus: {
+            /**
+             * Format: int64
+             * @description Last reading in beats per minute; 0 when there has been none.
+             */
+            bpm: number;
+            /** @description True while the source is delivering or able to deliver readings. */
+            connected: boolean;
+            /** @description Last error from the source; absent when it is healthy. */
+            error?: string;
+            /**
+             * Format: date-time
+             * @description Time of the last reading; zero when there has been none.
+             */
+            last_at: string;
+            /** @description Heart rate source: ble (Bluetooth monitor) or ha (Home Assistant entity). */
+            source: string;
+            /** @description What the source reads: a Bluetooth address with optional monitor name, or a Home Assistant entity id. */
+            target: string;
         };
         HealthResponse: {
             /** @description Always "ok" while the process is serving. */
@@ -2176,15 +2196,17 @@ export interface components {
         Status: {
             /** @description Whether a live link to the bike exists right now. */
             connected: boolean;
-            /** @description Driver from settings in use: auto, fitplus, ftms or sim. */
+            /** @description Driver from settings in use: auto, fitplus, ftms, ha or sim. */
             driver?: string;
             /** @description True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed. */
             floor_unconfirmed: boolean;
             /** @description Advice for fixing LastError when it is a connection problem. */
             hint?: string;
+            /** @description Heart rate source state; absent when heart_rate.source is off. Its bpm and last_at stay empty here: the live reading is heart_rate_bpm in each tick. */
+            hr?: components["schemas"]["HRStatus"];
             /** @description Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level. */
             last_error?: string;
-            /** @description Protocol of the live bike session: fitplus, ftms or sim. */
+            /** @description Protocol of the live bike session: fitplus, ftms, ha or sim. */
             protocol?: string;
             /**
              * Format: int64

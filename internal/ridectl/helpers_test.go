@@ -12,6 +12,7 @@ import (
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/blue/bluetest"
+	"github.com/metril/wattson/internal/sensors"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
 )
@@ -101,7 +102,7 @@ func waitState(t *testing.T, m *Manager, state string) {
 var testAddr = blue.Address{MAC: [6]byte{0xC0, 0xFF, 0xEE, 0x00, 0x00, 0x01}, Type: blue.AddrRandom}
 
 // fitPlusEcho is a FitPlus bike whose notifications echo the last level written.
-func fitPlusEcho() *bluetest.Fake {
+func fitPlusEcho(extra ...*bluetest.Device) *bluetest.Fake {
 	var f *bluetest.Fake
 	var level atomic.Int32
 	dev := &bluetest.Device{
@@ -133,7 +134,7 @@ func fitPlusEcho() *bluetest.Fake {
 			f.Notify(testAddr, bike.FitPlusNotify, n)
 		}
 	}
-	f = bluetest.NewFake(dev)
+	f = bluetest.NewFake(append([]*bluetest.Device{dev}, extra...)...)
 	return f
 }
 
@@ -156,3 +157,74 @@ func (a *advTransport) Connect(context.Context, blue.Address) (blue.Conn, error)
 }
 
 func (a *advTransport) Close() error { a.closed.Store(true); return nil }
+
+var hrAddr = blue.Address{MAC: [6]byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01}}
+
+// hrDevice is a heart rate monitor at hrAddr.
+func hrDevice() *bluetest.Device {
+	return &bluetest.Device{
+		Adv: blue.Advertisement{Addr: hrAddr, Name: "HRM", RSSI: -55, Services: []blue.UUID{sensors.HRService}},
+		Services: []blue.Service{{UUID: sensors.HRService, Chars: []blue.Characteristic{
+			{UUID: sensors.HRMeasurement, Props: blue.PropNotify},
+		}}},
+	}
+}
+
+// bpmByte is a heart rate measurement notification for v bpm (8-bit format).
+func bpmFrame(v byte) []byte { return []byte{0x00, v} }
+
+// withHR enables a BLE heart rate source at hrAddr.
+func withHR(s *settings.Settings) {
+	s.HeartRate = settings.HeartRate{Source: "ble", Address: hrAddr.String()}
+}
+
+// spyTransport wraps a transport, recording connects, conns and closes.
+type spyTransport struct {
+	blue.Transport
+	mu       sync.Mutex
+	connects map[blue.Address]int
+	conns    map[blue.Address]*spyConn
+	closes   int
+	// hrClosedFirst: the heart rate conn was already closed when the transport closed.
+	hrClosedFirst bool
+}
+
+func newSpy(t blue.Transport) *spyTransport {
+	return &spyTransport{Transport: t, connects: map[blue.Address]int{}, conns: map[blue.Address]*spyConn{}}
+}
+
+type spyConn struct {
+	blue.Conn
+	closed atomic.Bool
+}
+
+func (c *spyConn) Close() error { c.closed.Store(true); return c.Conn.Close() }
+
+func (s *spyTransport) Connect(ctx context.Context, a blue.Address) (blue.Conn, error) {
+	c, err := s.Transport.Connect(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	sc := &spyConn{Conn: c}
+	s.mu.Lock()
+	s.connects[a]++
+	s.conns[a] = sc
+	s.mu.Unlock()
+	return sc, nil
+}
+
+func (s *spyTransport) Close() error {
+	s.mu.Lock()
+	s.closes++
+	if c := s.conns[hrAddr]; c != nil {
+		s.hrClosedFirst = c.closed.Load()
+	}
+	s.mu.Unlock()
+	return s.Transport.Close()
+}
+
+func (s *spyTransport) count(a blue.Address) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connects[a]
+}

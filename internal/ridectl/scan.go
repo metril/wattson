@@ -7,6 +7,7 @@ import (
 
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/sensors"
 )
 
 const (
@@ -27,7 +28,7 @@ type Device struct {
 	Address  string `json:"address" doc:"Bluetooth address, with a /random suffix for random addresses."`
 	Name     string `json:"name" doc:"Advertised local name, empty when none was seen."`
 	RSSI     int    `json:"rssi" doc:"Strongest signal strength seen, in dBm."`
-	Protocol string `json:"protocol" doc:"fitplus or ftms when the advertised services match a supported bike; empty otherwise."`
+	Protocol string `json:"protocol" doc:"fitplus or ftms when the advertised services match a supported bike, hr for a heart rate monitor; empty otherwise."`
 }
 
 // Scan lists nearby devices. It is refused (ErrBusy) unless the manager is
@@ -109,9 +110,9 @@ func (m *Manager) Scan(ctx context.Context, q ScanRequest) ([]Device, error) {
 		out = append(out, Device{Address: a.Addr.String(), Name: a.Name, RSSI: a.RSSI, Protocol: protocolOf(a.Services)})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		ki, kj := out[i].Protocol != "", out[j].Protocol != ""
+		ki, kj := protocolRank(out[i].Protocol), protocolRank(out[j].Protocol)
 		if ki != kj {
-			return ki
+			return ki < kj
 		}
 		if out[i].RSSI != out[j].RSSI {
 			return out[i].RSSI > out[j].RSSI
@@ -121,14 +122,33 @@ func (m *Manager) Scan(ctx context.Context, q ScanRequest) ([]Device, error) {
 	return out, nil
 }
 
+// protocolOf names what a device advertises: a bike protocol wins over the
+// heart rate service.
 func protocolOf(svcs []blue.UUID) string {
+	hr := false
 	for _, u := range svcs {
 		switch u {
 		case bike.FitPlusService:
 			return "fitplus"
 		case bike.FTMSService:
 			return "ftms"
+		case sensors.HRService:
+			hr = true
 		}
 	}
+	if hr {
+		return "hr"
+	}
 	return ""
+}
+
+// protocolRank orders bikes first, then heart rate monitors, then the rest.
+func protocolRank(p string) int {
+	switch p {
+	case "":
+		return 2
+	case "hr":
+		return 1
+	}
+	return 0
 }

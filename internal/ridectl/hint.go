@@ -4,12 +4,20 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/metril/wattson/internal/bike/habike"
 	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/hass"
 )
 
 // hintFor turns a connection error into advice the rider can act on.
 func hintFor(err error) string {
 	switch {
+	case errors.Is(err, blue.ErrProxyHeld):
+		return "Another client (usually Home Assistant) holds this ESPHome proxy's Bluetooth. Remove this ESP32 from Home Assistant's ESPHome integration so it is dedicated to Wattson, then reconnect."
+	case errors.Is(err, hass.ErrAuth):
+		return "Home Assistant rejected the token. Create a long-lived access token in your HA profile and save it in Settings → Integrations."
+	case errors.Is(err, habike.ErrEntityUnavailable):
+		return "Home Assistant reports the bike entity unavailable. Its FTMS integration must be connected to the bike (FTMS bikes only), and nothing else may hold the bike's Bluetooth."
 	case errors.Is(err, blue.ErrNotFound):
 		return "Bike not found. Pedal to wake it, check the address, and close the Merach app or the Home Assistant integration that may be holding the connection."
 	case errors.Is(err, blue.ErrNoSlots):

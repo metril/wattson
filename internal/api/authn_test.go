@@ -186,6 +186,31 @@ func TestChangePassword(t *testing.T) {
 	}
 }
 
+func TestChangePasswordStartSessionFailureRevokesSessions(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	bob := ts.addUser(t, "bob", "bob-password-1", false)
+	old := ts.loginAs(t, "bob", "bob-password-1")
+	other := ts.loginAs(t, "bob", "bob-password-1")
+	// A corrupt auth section makes Settings.Get, and so startSession, fail
+	// after the password has already been replaced.
+	if err := ts.Store.PutSettings(context.Background(), map[string]string{"auth": "{"}); err != nil {
+		t.Fatal(err)
+	}
+	resp, b := ts.do(t, old, "POST", "/api/auth/password", map[string]any{"current_password": "bob-password-1", "new_password": "new-password-22"})
+	if resp.StatusCode != 500 {
+		t.Fatalf("change: %d %s, want 500", resp.StatusCode, b)
+	}
+	for name, c := range map[string]*http.Client{"requesting": old, "other": other} {
+		if r, _ := ts.do(t, c, "GET", "/api/auth/me", nil); r.StatusCode != 401 {
+			t.Errorf("%s session after failed change: %d, want 401", name, r.StatusCode)
+		}
+	}
+	if u, err := ts.Store.UserByUsername(context.Background(), "bob"); err != nil || u.PasswordHash == bob.PasswordHash {
+		t.Errorf("password hash unchanged (%v); the test must exercise the post-SetPassword path", err)
+	}
+}
+
 func TestChangePasswordTokenRefused(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)

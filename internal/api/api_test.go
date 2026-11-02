@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/metril/wattson/internal/auth"
 )
@@ -252,6 +253,34 @@ func TestHandlerErrorsAreLoggedAndSanitised(t *testing.T) {
 	}
 	if ts.Log.String() != before {
 		t.Errorf("4xx apiErr was logged: %s", strings.TrimPrefix(ts.Log.String(), before))
+	}
+}
+
+func TestClientGoneErrorLoggedAtDebug(t *testing.T) {
+	t.Parallel()
+	run := func(ctx context.Context) string {
+		var logs syncBuf
+		r := chi.NewRouter()
+		r.Use(withLogger(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))))
+		register(newHumaAPI(r), route{Method: http.MethodGet, Path: "/api/t", ID: "testGone", Tag: "test",
+			Summary: "Gone", Description: "Test-only op that fails."},
+			func(context.Context, *noBodyIn) (*noBodyOut, error) {
+				return nil, errors.New("context canceled mid-query")
+			})
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/api/t", nil).WithContext(ctx))
+		if rec.Code != 500 {
+			t.Fatalf("status %d, want 500", rec.Code)
+		}
+		return logs.String()
+	}
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := run(gone); strings.Contains(got, "level=ERROR") || !strings.Contains(got, "level=DEBUG") {
+		t.Errorf("client gone: log %q, want Debug and no ERROR", got)
+	}
+	if got := run(context.Background()); !strings.Contains(got, "level=ERROR") {
+		t.Errorf("live client: log %q, want ERROR", got)
 	}
 }
 

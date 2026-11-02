@@ -175,7 +175,11 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 		if ae := (*APIError)(nil); errors.As(err, &ae) && ae.expose {
 			return nil, err
 		}
-		loggerFrom(ctx).Error("handler failed", "op", rt.ID, "err", err)
+		if ctx.Err() != nil { // the client went away mid-request: not a server fault
+			loggerFrom(ctx).Debug("handler aborted, client gone", "op", rt.ID, "err", err)
+		} else {
+			loggerFrom(ctx).Error("handler failed", "op", rt.ID, "err", err)
+		}
 		return nil, apiErr(http.StatusInternalServerError, "internal_error", "internal error")
 	})
 }

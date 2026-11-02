@@ -271,6 +271,11 @@ func (d Deps) registerAuthn(api huma.API) {
 			// session opened concurrently with the change does not survive it.
 			cookie, err := d.startSession(ctx, httpRequest(ctx), id.User.ID)
 			if err != nil {
+				// The password has changed but no replacement session exists:
+				// lock out every old session rather than leave them valid.
+				if _, derr := d.Store.DeleteUserSessions(context.WithoutCancel(ctx), id.User.ID); derr != nil {
+					loggerFrom(ctx).Error("revoke sessions after failed password change", "err", derr)
+				}
 				return nil, err
 			}
 			if _, err := d.Store.DeleteOtherSessions(ctx, id.User.ID, auth.HashSecret(cookie.Value)); err != nil {

@@ -7,7 +7,8 @@ You must be on the bike or next to it. Pedal to wake it.
 ## Safety
 
 - Level 0 is never sent. The lowest level is 1.
-- Ctrl-C (SIGINT/SIGTERM) stops the sweep and returns the bike to its minimum level before exiting.
+- Ctrl-C (SIGINT/SIGTERM) stops the sweep and wattson then tries to return the bike to its minimum level. It has returned only when it prints `bike returned to level N`. If it prints `failed to return bike to level N` (or the bike disconnected), lower the resistance manually at the bike console.
+- Exit codes: 0 complete, 130 interrupted, 1 bike disconnected or command failure, 2 usage error.
 - The sweep goes min..max..min; resistance changes every 5 s, so keep a steady, light cadence.
 
 ## Prerequisites
@@ -36,7 +37,7 @@ Build: `make build`. Add `--via esphome://HOST --key "$KEY"` to each command for
    ```
    ./wattson scan --name-prefix MRK- --duration 15s
    ```
-   Output columns: `ADDR TYPE RSSI NAME SERVICES`. Use the address with `/random` appended when TYPE is `random`, e.g. `AA:BB:CC:DD:EE:FF/random`.
+   Output columns: `ADDR TYPE RSSI NAME SERVICES`. Pass the ADDR column to `--addr` exactly as shown (it already includes `/random` for random addresses).
 
 2. **Probe with selftest** while pedalling gently.
    ```

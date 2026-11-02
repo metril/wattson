@@ -25,14 +25,15 @@ Scan for the bike, probe the protocol, then sweep resistance levels:
 ./wattson drive --via esphome://192.0.2.10 --key "$KEY" --addr AA:BB:CC:DD:EE:FF --report docs/s29r2.md
 ```
 
-Append `/random` to the address when `scan` shows TYPE `random`. Every command has `-h`.
+Pass the ADDR column from `scan` to `--addr` exactly as shown (random addresses already include `/random`). Every command has `-h`.
 
 Docs: [hardware runbook](docs/hardware-runbook.md), [ESPHome proxy](docs/esphome-proxy.md), [S29R2 report](docs/s29r2.md). The proxy config is in [`esphome/`](esphome/).
 
 ## Safety
 
 - Level 0 is never sent; the lowest level is 1.
-- Ctrl-C returns the bike to its minimum level before wattson exits.
+- Ctrl-C stops the sweep and wattson tries to return the bike to its minimum level. It is back only when wattson prints `bike returned to level N`; on `failed to return bike to level N` lower the resistance manually at the console.
+- Exit codes: 130 interrupted, 1 bike disconnected or failure.
 - Sweeps change real pedal resistance. Be on the bike or next to it.
 
 ## Development

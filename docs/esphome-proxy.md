@@ -22,12 +22,12 @@ Needs ESPHome >= 2026.9.
 cd esphome
 cp secrets.example.yaml secrets.yaml        # gitignored
 openssl rand -base64 32                     # paste as wattson_proxy_api_key
-# fill wifi_ssid, wifi_password, ap_password, wattson_proxy_static_ip
+# fill every entry (wifi, ap_password, static IP, gateway, DNS, NTP, syslog host)
 esphome config wattson-proxy.yaml           # validate
 esphome run wattson-proxy.yaml              # first flash over USB, later OTA
 ```
 
-Edit `esp32.board` in the YAML if your board is not an ESP32-S3 devkit. The static IP is yours to choose (reserve it on your router); `gateway`, `dns`, `ntp_server` and `syslog_*` default to the author's network and live in `substitutions:`; change them for yours (or remove the `time`, `udp` and `syslog` blocks).
+Edit `esp32.board` in the YAML if your board is not an ESP32-S3 devkit. The static IP is yours to choose (reserve it on your router). Gateway, DNS, NTP and syslog host are also secrets (`wattson_proxy_*`); remove the `time`, `udp` and `syslog` blocks if you do not want SNTP or remote logs.
 
 OTA is encrypted with the API key (`ota: encryption: {}`).
 

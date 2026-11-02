@@ -1,8 +1,8 @@
 # Dedicated ESPHome Bluetooth proxy for Wattson (ESP32 placed next to the bike).
 #
 # Standalone on purpose: this repo is public, so it cannot pull the private
-# fleet package (esphome/common). The fleet defaults (SNTP, syslog, gateway)
-# are inlined below. Values come from esphome/secrets.yaml (gitignored; copy
+# fleet package (esphome/common). Network values (static IP, gateway, DNS, NTP,
+# syslog host) are all secrets, so no LAN details are committed. Values come from esphome/secrets.yaml (gitignored; copy
 # secrets.example.yaml). See docs/esphome-proxy.md.
 #
 # DEDICATED: the proxy accepts ONE Bluetooth subscriber. Wattson is that
@@ -11,11 +11,11 @@ substitutions:
   name: wattson-proxy
   friendly_name: Wattson Proxy
   static_ip: !secret wattson_proxy_static_ip
-  gateway: 10.10.76.1
+  gateway: !secret wattson_proxy_gateway
   subnet: 255.255.255.0
-  dns: 10.10.76.1
-  ntp_server: 10.10.76.1
-  syslog_host: 10.10.76.3
+  dns: !secret wattson_proxy_dns
+  ntp_server: !secret wattson_proxy_ntp_server
+  syslog_host: !secret wattson_proxy_syslog_host
   syslog_port: "1514"
 
 esphome:

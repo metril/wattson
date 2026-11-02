@@ -139,6 +139,35 @@ func TestPrepareElevationFillerError(t *testing.T) {
 	}
 }
 
+func TestOpenTopoDataStationary(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := len(strings.Split(r.URL.Query().Get("locations"), "|"))
+		parts := make([]string, n)
+		for i := range parts {
+			parts[i] = `{"elevation":42}`
+		}
+		fmt.Fprintf(w, `{"status":"OK","results":[%s]}`, strings.Join(parts, ","))
+	}))
+	defer srv.Close()
+	o := OpenTopoData{BaseURL: srv.URL}
+	// Duplicate trailing points.
+	pts := northTrack(5, 10, 10)
+	pts = append(pts, pts[4], pts[4], pts[4])
+	// Fully stationary track.
+	still := []Point{{10, 10, math.NaN()}, {10, 10, math.NaN()}, {10, 10, math.NaN()}}
+	for name, p := range map[string][]Point{"trailing": pts, "still": still} {
+		if err := PrepareElevation(context.Background(), p, o); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for i, q := range p {
+			if q.Ele != 42 {
+				t.Fatalf("%s: pt %d ele=%v", name, i, q.Ele)
+			}
+		}
+	}
+}
+
 func TestOpenTopoDataError(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

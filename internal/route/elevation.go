@@ -82,7 +82,11 @@ func (o OpenTopoData) Fill(ctx context.Context, pts []Point) error {
 	}
 	ele := make([]float64, 0, len(idx))
 	for from := 0; from < len(idx); from += otdBatch {
-		if err := limiterFor(o.BaseURL).wait(ctx, o.Interval); err != nil {
+		if o.Interval > 0 {
+			if err := limiterFor(o.BaseURL).wait(ctx, o.Interval); err != nil {
+				return err
+			}
+		} else if err := ctx.Err(); err != nil {
 			return err
 		}
 		to := min(from+otdBatch, len(idx))
@@ -112,6 +116,8 @@ func (o OpenTopoData) Fill(ctx context.Context, pts []Point) error {
 			pts[i].Ele = eh
 		case math.IsNaN(el) || math.IsNaN(eh):
 			pts[i].Ele = math.NaN()
+		case !(dist[hi] > dist[lo]): // stationary span: no distance to interpolate over
+			pts[i].Ele = el
 		default:
 			t := (dist[i] - dist[lo]) / (dist[hi] - dist[lo])
 			pts[i].Ele = el + (eh-el)*t

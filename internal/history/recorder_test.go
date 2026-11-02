@@ -1,9 +1,12 @@
 package history_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -23,6 +26,8 @@ type memStore struct {
 	samples     map[int64][]store.Sample
 	nextID      int64
 	appendFails int // next N AppendSamples calls fail
+	appendHangs int // next N AppendSamples calls block until their context ends
+	createFails int // next N CreateRide calls fail
 	created     []store.Ride
 	finishes    []finishCall
 	deletes     int
@@ -45,6 +50,10 @@ func (m *memStore) CreateRide(ctx context.Context, r store.Ride) (store.Ride, er
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.createFails > 0 {
+		m.createFails--
+		return store.Ride{}, errors.New("db locked")
+	}
 	m.nextID++
 	r.ID = m.nextID
 	m.rides[r.ID] = r
@@ -57,6 +66,12 @@ func (m *memStore) AppendSamples(ctx context.Context, id int64, ss []store.Sampl
 		return err
 	}
 	m.mu.Lock()
+	if m.appendHangs > 0 {
+		m.appendHangs--
+		m.mu.Unlock()
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	defer m.mu.Unlock()
 	if m.appendFails > 0 {
 		m.appendFails--
@@ -412,6 +427,45 @@ func TestRecorderFlushErrorRetries(t *testing.T) {
 		synctest.Wait()
 		if n := h.mem.count(1); n != 20 {
 			t.Errorf("samples at 20.1 s = %d, want 20", n)
+		}
+	})
+}
+
+func TestRecorderFlushTimesOut(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		h := start(history.RecorderDeps{})
+		defer h.stop()
+		h.mem.appendHangs = 1
+		h.ride(12) // flush at 10 s hangs until its 5 s timeout, then retries at 20 s
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		if n := h.mem.count(1); n != 12 {
+			t.Errorf("samples after hung flush = %d, want 12", n)
+		}
+	})
+}
+
+func TestRecorderRouteWarningOncePerAttempt(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		var buf bytes.Buffer
+		h := start(history.RecorderDeps{Logger: slog.New(slog.NewTextHandler(&buf, nil)),
+			RouteInfo: func(context.Context, int64) (string, *route.Profile, error) { return "", nil, errors.New("gone") }})
+		defer h.stop()
+		h.mem.createFails = 3
+		h.status(1, "ready")
+		for i := range 4 {
+			tk := riding(i)
+			tk.Mode, tk.RouteID = "route", 9
+			h.tick(tk)
+		}
+		synctest.Wait()
+		if n := strings.Count(buf.String(), "route unavailable"); n != 1 {
+			t.Errorf("route warnings = %d, want 1:\n%s", n, buf.String())
+		}
+		if len(h.mem.created) != 1 {
+			t.Errorf("created = %d, want 1", len(h.mem.created))
 		}
 	})
 }

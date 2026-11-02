@@ -18,6 +18,7 @@ const (
 	defaultMinSamples = 10
 	maxBuffered       = 600 // samples kept across failed flushes
 	finalizeTimeout   = 5 * time.Second
+	storeCallTimeout  = 5 * time.Second // per CreateRide / AppendSamples call
 )
 
 // RideStore is the part of *store.Store the recorder writes to.
@@ -47,13 +48,14 @@ type Recorder struct {
 	d     RecorderDeps
 	rider int64
 
-	cur     *store.Ride
-	prof    *route.Profile
-	buf     []store.Sample
-	nextSeq int
-	lastSec int
-	last    store.Sample // newest recorded sample
-	warned  bool         // begin already warned for this attempt
+	cur         *store.Ride
+	prof        *route.Profile
+	buf         []store.Sample
+	nextSeq     int
+	lastSec     int
+	last        store.Sample // newest recorded sample
+	warned      bool         // begin already warned for this attempt
+	routeWarned bool         // route-unavailable already warned for this attempt
 }
 
 // NewRecorder returns a recorder with defaults applied.
@@ -138,7 +140,7 @@ func (r *Recorder) tick(ctx context.Context, tk engine.Tick) {
 		}
 		r.record(tk)
 	default:
-		r.warned = false
+		r.warned, r.routeWarned = false, false
 		if r.cur != nil {
 			r.record(tk)
 			r.finalize(ctx)
@@ -157,18 +159,23 @@ func (r *Recorder) begin(ctx context.Context, tk engine.Tick) bool {
 	if tk.RouteID != 0 && r.d.RouteInfo != nil {
 		name, p, err := r.d.RouteInfo(ctx, tk.RouteID)
 		if err != nil || p == nil {
-			r.d.Logger.Warn("route unavailable; recording without position", "route", tk.RouteID, "err", err)
+			if !r.routeWarned {
+				r.routeWarned = true
+				r.d.Logger.Warn("route unavailable; recording without position", "route", tk.RouteID, "err", err)
+			}
 			nr.RouteID = 0
 		} else {
 			nr.RouteName, prof = name, p
 		}
 	}
-	created, err := r.d.Store.CreateRide(ctx, nr)
+	cctx, cancel := context.WithTimeout(ctx, storeCallTimeout)
+	created, err := r.d.Store.CreateRide(cctx, nr)
+	cancel()
 	if err != nil {
 		r.warn("create ride", "err", err)
 		return false
 	}
-	r.warned = false
+	r.warned, r.routeWarned = false, false
 	r.cur, r.prof = &created, prof
 	r.buf, r.nextSeq, r.lastSec = nil, 0, -1
 	return true
@@ -207,7 +214,9 @@ func (r *Recorder) flush(ctx context.Context) bool {
 	if r.cur == nil || len(r.buf) == 0 {
 		return true
 	}
-	if err := r.d.Store.AppendSamples(ctx, r.cur.ID, r.buf); err != nil {
+	fctx, cancel := context.WithTimeout(ctx, storeCallTimeout)
+	defer cancel()
+	if err := r.d.Store.AppendSamples(fctx, r.cur.ID, r.buf); err != nil {
 		r.d.Logger.Warn("flush samples; will retry", "ride", r.cur.ID, "buffered", len(r.buf), "err", err)
 		if over := len(r.buf) - maxBuffered; over > 0 {
 			r.d.Logger.Warn("sample buffer full; dropping oldest", "ride", r.cur.ID, "dropped", over)

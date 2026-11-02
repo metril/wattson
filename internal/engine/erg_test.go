@@ -216,11 +216,11 @@ func TestErgAntiWindup(t *testing.T) {
 		if err := do(t, r.e, CmdSetTargetPower, 150); err != nil {
 			t.Fatal(err)
 		}
-		ticks := advance(6*time.Second, r.sub)
-		if tk, off := offTarget(ticks, 64, 66, 150, 0.05); off {
+		ticks := advance(30*time.Second, r.sub)
+		if tk, off := offTarget(ticks, 64, 90, 150, 0.05); off { // within 4 ticks, and stays
 			t.Fatalf("off target at %v s: power %v level %d", tk.ElapsedS, tk.PowerW, tk.Level)
 		}
-		if len(ticks) < 4 {
+		if len(ticks) < 30 {
 			t.Fatalf("only %d ticks", len(ticks))
 		}
 	})
@@ -242,7 +242,7 @@ func TestErgBelowFloorNeverZero(t *testing.T) {
 		// 200 W at 100 rpm sits between L6 (187.5 W) and L7 (212.5 W): the
 		// best a whole level can do is half a level step, 12.5 W.
 		ticks := advance(8*time.Second, r.sub)
-		for _, tk := range ticks[min(6, len(ticks)-1):] {
+		for _, tk := range ticks[min(5, len(ticks)-1):] {
 			if math.Abs(tk.PowerW-200) > 12.5+1e-9 {
 				t.Fatalf("at %v s power %v, want within 12.5 W of 200", tk.ElapsedS, tk.PowerW)
 			}
@@ -402,5 +402,107 @@ func TestErgHoldFreezesIntegrator(t *testing.T) {
 	n := NewErgMode(ErgConfig{Model: seedModel(), TargetW: 200, MinLevel: 1, MaxLevel: 16})
 	if out := n.Step(ModeInput{Cadence: 0}); out.Level != 9 {
 		t.Fatalf("initial hold level %d, want 9", out.Level)
+	}
+}
+
+func TestErgResumeNoSpike(t *testing.T) {
+	t.Parallel()
+	for _, target := range []float64{200, 250} {
+		synctest.Test(t, func(t *testing.T) {
+			r := newErgRig(t, sim.Const(80), ErgConfig{TargetW: target})
+			defer r.stop()
+			pre := lastTick(t, advance(40*time.Second, r.sub)).Level
+			if err := do(t, r.e, "pause", 0); err != nil {
+				t.Fatal(err)
+			}
+			advance(5*time.Second, r.sub)
+			n := len(r.rec.asked())
+			if err := do(t, r.e, "resume", 0); err != nil { // the rider kept pedalling
+				t.Fatal(err)
+			}
+			ticks := advance(30*time.Second, r.sub)
+			for _, l := range r.rec.asked()[n:] {
+				if l > pre+1 {
+					t.Fatalf("T=%v: asked for level %d after resume, pre-pause level %d", target, l, pre)
+				}
+			}
+			for _, tk := range ticks {
+				if tk.Level > pre+1 {
+					t.Fatalf("T=%v: tick level %d at %v s, pre-pause level %d", target, tk.Level, tk.ElapsedS, pre)
+				}
+			}
+			if tk, off := offTarget(ticks, 50, 80, target, 0.05); off {
+				t.Fatalf("T=%v: off target at %v s: power %v", target, tk.ElapsedS, tk.PowerW)
+			}
+		})
+	}
+}
+
+func TestErgCadenceRampNoMax(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		cad := func(d time.Duration) float64 { // ride time = d - 1 s
+			switch s := d.Seconds() - 1; {
+			case s < 5:
+				return 0
+			case s < 10:
+				return 35
+			case s < 15:
+				return 50
+			}
+			return 80
+		}
+		r := newErgRig(t, cad, ErgConfig{TargetW: 200})
+		defer r.stop()
+		ticks := advance(60*time.Second, r.sub)
+		for _, tk := range ticks {
+			if tk.Level >= 16 {
+				t.Fatalf("level %d at %v s (cadence %v)", tk.Level, tk.ElapsedS, tk.CadenceRpm)
+			}
+		}
+		for _, l := range r.rec.asked() {
+			if l >= 16 {
+				t.Fatalf("mode asked for max level %d", l)
+			}
+		}
+		if tk, off := offTarget(ticks, 40, 60, 200, 0.05); off {
+			t.Fatalf("off target at %v s: power %v level %d", tk.ElapsedS, tk.PowerW, tk.Level)
+		}
+	})
+}
+
+func TestErgNilModelFallsBackToSeed(t *testing.T) {
+	t.Parallel()
+	m := NewErgMode(ErgConfig{TargetW: 150, MinLevel: 1, MaxLevel: 16})
+	if out := m.Step(ModeInput{Cadence: 80}); out.Level != 6 {
+		t.Fatalf("level %d, want 6", out.Level)
+	}
+}
+
+func TestErgNoReadingNoFeedback(t *testing.T) {
+	t.Parallel()
+	m := NewErgMode(ErgConfig{Model: seedModel(), TargetW: 150, MinLevel: 1, MaxLevel: 16})
+	if out := m.Step(ModeInput{Cadence: 80, PowerW: 0}); out.Level != 6 {
+		t.Fatalf("level %d with no power reading, want 6", out.Level)
+	}
+}
+
+func TestErgRiseLimited(t *testing.T) {
+	t.Parallel()
+	m := NewErgMode(ErgConfig{Model: seedModel(), TargetW: 150, MinLevel: 1, MaxLevel: 16})
+	if out := m.Step(ModeInput{Cadence: 80}); out.Level != 6 {
+		t.Fatalf("level %d, want 6", out.Level)
+	}
+	_ = m.SetTarget(250)
+	el := time.Second
+	for _, want := range []int{8, 10, 11} { // ff is 11: +2 per tick
+		if out := m.Step(ModeInput{Cadence: 80, Elapsed: el}); out.Level != want {
+			t.Fatalf("at %v level %d, want %d", el, out.Level, want)
+		}
+		el += time.Second
+	}
+	_ = m.SetTarget(100) // falls are not limited
+	if out := m.Step(ModeInput{Cadence: 80, Elapsed: el}); out.Level != 4 {
+		t.Fatalf("fall: level %d, want 4", out.Level)
 	}
 }

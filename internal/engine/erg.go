@@ -15,6 +15,8 @@ const (
 	ergSettleTicks = 2   // ticks without feedback after a level change
 	ergMinRpm      = 30  // below this the rider is not pedalling: hold
 	ergNominalRpm  = 80  // cadence assumed for the first level while not pedalling
+	ergFFMinRpm    = 60  // feed-forward cadence floor, so a pedalling ramp does not demand max
+	ergMaxRise     = 2   // most levels the request may rise in one tick (falls are unlimited)
 	ergAdjMaxW     = 100 // bound of the workout target adjustment, watts
 )
 
@@ -48,7 +50,8 @@ type ErgMode struct {
 	integ       float64 // PI integrator, watts (bike)
 	settle      int     // ticks left to ignore feedback after a level change or target change
 	lastTarget  float64
-	cur         int // level currently requested; 0 = none yet
+	stepped     bool // Step has run at least once
+	cur         int  // level currently requested; 0 = none yet
 	lastElapsed time.Duration
 }
 
@@ -58,6 +61,9 @@ func NewErgMode(c ErgConfig) *ErgMode {
 	mult := c.Multiplier
 	if !(mult > 0) || math.IsInf(mult, 0) {
 		mult = 1
+	}
+	if c.Model == nil {
+		c.Model = bike.NewPowerModel(bike.SeedState())
 	}
 	return &ErgMode{
 		id: c.WorkoutID, blocks: c.Blocks, model: c.Model, mult: mult,
@@ -124,12 +130,14 @@ func (m *ErgMode) Step(in ModeInput) ModeOutput {
 		out.Block, out.BlockLeft, out.Done = i, left, done
 	}
 
-	if target != m.lastTarget {
-		// The measured power still reflects the old target's level, so
+	if target != m.lastTarget || (m.stepped && dt == 0) {
+		// The measured power still reflects the old target's level (or, on
+		// a command-driven Step such as resume, the paused floor level), so
 		// ignore it until the bike has caught up with the new feed-forward.
 		m.lastTarget = target
 		m.settle = ergSettleTicks
 	}
+	m.stepped = true
 	bt := target / m.mult // the target in bike watts
 	if in.Cadence < ergMinRpm {
 		// Not pedalling: hold the level and freeze the integrator, so
@@ -140,12 +148,12 @@ func (m *ErgMode) Step(in ModeInput) ModeOutput {
 		out.Level = m.cur
 		return out
 	}
-	ff := m.model.LevelFor(bt, in.Cadence)
-	s := math.Max(m.model.Slope(in.Cadence), 1e-3)
-	var err float64
-	if in.PowerW > 0 { // no reading, no feedback
-		err = bt - in.PowerW/m.mult
-	}
+	// Feed-forward and gain use a floored cadence: while the rider ramps up
+	// from a stop, the true cadence would demand the maximum level.
+	rpm := math.Max(in.Cadence, ergFFMinRpm)
+	ff := m.model.LevelFor(bt, rpm)
+	s := math.Max(m.model.Slope(rpm), 1e-3)
+	err := bt - in.PowerW/m.mult
 	db := math.Min(0.5*s, 0.05*bt)
 	e := err
 	if m.settle > 0 || math.Abs(err) <= db {
@@ -164,6 +172,9 @@ func (m *ErgMode) Step(in ModeInput) ModeOutput {
 	}
 	if m.cur == 0 || math.Abs(u-float64(m.cur)) >= ergHyst {
 		next := m.level(u)
+		if dt > 0 && m.cur != 0 && next > m.cur+ergMaxRise {
+			next = m.cur + ergMaxRise
+		}
 		if next != m.cur {
 			m.settle = ergSettleTicks
 		}

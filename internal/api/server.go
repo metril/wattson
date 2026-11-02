@@ -57,6 +57,8 @@ type Deps struct {
 	// zero means 60 s.
 	WSRecheck time.Duration
 
+	drawTimeout time.Duration // BRouter draw call limit; zero means 30 s (tests shorten it)
+
 	ws        *wsGate              // open WebSocket count; set by newRouter
 	oidcState *oidcauth.StateCodec // signs the OIDC state cookie; derived from Box
 }

@@ -362,6 +362,133 @@ func TestAvailableError(t *testing.T) {
 	}
 }
 
+func TestAvailableErrorCached(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	m, _, _ := newMgr(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "no", http.StatusBadGateway)
+	}))
+	for i := 0; i < 3; i++ {
+		if _, err := m.Available(context.Background()); err == nil {
+			t.Fatal("want error")
+		}
+	}
+	if hits.Load() != 1 {
+		t.Errorf("hits = %d, want 1 within a minute", hits.Load())
+	}
+	m.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	_, _ = m.Available(context.Background())
+	if hits.Load() != 2 {
+		t.Errorf("hits = %d after the error expired, want 2", hits.Load())
+	}
+}
+
+func TestSweepStalePartFiles(t *testing.T) {
+	t.Parallel()
+	m, dir, _ := newMgr(t, serveBytes(10))
+	for _, f := range []string{".E5_N45.rd5.part", ".junk.part", "E10_N45.rd5", ".W5_N50.rd5.part"} {
+		if err := os.WriteFile(filepath.Join(dir, f), body(3), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := m.List(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ents, _ := os.ReadDir(dir)
+	var left []string
+	for _, e := range ents {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, ",") != ".junk.part,E10_N45.rd5" {
+		t.Errorf("left = %v", left)
+	}
+}
+
+func TestEmptySegmentsDir(t *testing.T) {
+	t.Parallel()
+	m := New(func(context.Context) (settings.Settings, error) {
+		s := settings.Defaults()
+		s.BRouter.SegmentsDir = ""
+		return s, nil
+	}, nil)
+	t.Cleanup(m.Close)
+	ctx := context.Background()
+	if _, err := m.Enqueue(ctx, "E5_N45"); !errors.Is(err, ErrNoLocalRegions) {
+		t.Errorf("Enqueue = %v", err)
+	}
+	if _, _, err := m.List(ctx); !errors.Is(err, ErrNoLocalRegions) {
+		t.Errorf("List = %v", err)
+	}
+	if err := m.Remove(ctx, "E5_N45"); !errors.Is(err, ErrNoLocalRegions) {
+		t.Errorf("Remove = %v", err)
+	}
+	if ok, exists, err := m.Has(ctx, "E5_N45"); ok || exists || err != nil {
+		t.Errorf("Has = %v %v %v", ok, exists, err)
+	}
+	if miss, exists, err := m.Missing(ctx, []string{"E5_N45"}); miss != nil || exists || err != nil {
+		t.Errorf("Missing = %v %v %v", miss, exists, err)
+	}
+}
+
+func TestMissing(t *testing.T) {
+	t.Parallel()
+	m, dir, _ := newMgr(t, serveBytes(10))
+	if err := os.WriteFile(filepath.Join(dir, "E5_N45.rd5"), body(3), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	miss, exists, err := m.Missing(context.Background(), []string{"E5_N45", "E10_N45", "W5_N50"})
+	if err != nil || !exists || strings.Join(miss, ",") != "E10_N45,W5_N50" {
+		t.Errorf("Missing = %v %v %v", miss, exists, err)
+	}
+	if _, _, err := m.Missing(context.Background(), []string{"../x"}); !errors.Is(err, route.ErrBadTileName) {
+		t.Errorf("bad name = %v", err)
+	}
+}
+
+func TestRedirectPolicy(t *testing.T) {
+	t.Parallel()
+	// Plain-http redirects (even to the same host) are refused.
+	m, dir, _ := newMgr(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/other", http.StatusFound)
+	}))
+	if _, err := m.Enqueue(context.Background(), "E5_N45"); err != nil {
+		t.Fatal(err)
+	}
+	if tile := waitStatus(t, m, "E5_N45", StatusError); !strings.Contains(tile.Error, "redirect") {
+		t.Errorf("error = %q", tile.Error)
+	}
+	noPartFiles(t, dir)
+
+	// https to the same host is followed; to another host it is not.
+	var tls *httptest.Server
+	tls = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/E5_N45.rd5":
+			http.Redirect(w, r, "/real", http.StatusFound)
+		case "/E10_N45.rd5":
+			http.Redirect(w, r, "https://other.invalid/x", http.StatusFound)
+		default:
+			_, _ = w.Write(body(10))
+		}
+	}))
+	t.Cleanup(tls.Close)
+	dir2 := t.TempDir()
+	m2 := New(func(context.Context) (settings.Settings, error) {
+		s := settings.Defaults()
+		s.BRouter.SegmentsDir, s.BRouter.SegmentsURL = dir2, tls.URL+"/"
+		return s, nil
+	}, tls.Client())
+	t.Cleanup(m2.Close)
+	for _, n := range []string{"E5_N45", "E10_N45"} {
+		if _, err := m2.Enqueue(context.Background(), n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitStatus(t, m2, "E5_N45", StatusPresent)
+	waitStatus(t, m2, "E10_N45", StatusError)
+}
+
 // Not parallel: goleak inspects every goroutine of the process.
 func TestCloseStopsWorker(t *testing.T) {
 	defer goleak.VerifyNone(t)

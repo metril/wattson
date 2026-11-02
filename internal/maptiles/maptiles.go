@@ -51,6 +51,9 @@ type DirInfo struct {
 var (
 	// ErrDirUnavailable means the segments directory is missing or not writable.
 	ErrDirUnavailable = errors.New("maptiles: segments directory unavailable")
+	// ErrNoLocalRegions means segments_dir is empty: BRouter is remote and
+	// this server manages no map regions.
+	ErrNoLocalRegions = errors.New("maptiles: no local map regions (segments_dir is empty)")
 	// ErrClosed is returned after Close.
 	ErrClosed = errors.New("maptiles: closed")
 )
@@ -60,6 +63,7 @@ const (
 	maxIndexBytes = 8 << 20 // the remote directory listing
 	indexTTL      = 24 * time.Hour
 	indexTimeout  = 30 * time.Second
+	indexErrTTL   = time.Minute      // a failed index fetch is not retried sooner
 	idleTimeout   = 60 * time.Second // abort a download that receives nothing for this long
 	writeProbe    = ".wattson-write-test"
 )
@@ -84,15 +88,18 @@ type Manager struct {
 	queue   []string
 	started bool
 	closed  bool
+	swept   bool // stale .part files removed
 	wake    chan struct{}
 	ctx     context.Context
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 
-	idxMu  sync.Mutex
-	idxURL string
-	idx    []string
-	idxAt  time.Time
+	idxMu    sync.Mutex // guards the cache only, never held across a fetch
+	idxURL   string
+	idx      []string
+	idxAt    time.Time
+	idxErr   string // last failed fetch of idxURL, for indexErrTTL
+	idxErrAt time.Time
 }
 
 // New returns a Manager reading its directory and server from cfg on every
@@ -102,9 +109,23 @@ func New(cfg func(context.Context) (settings.Settings, error), client *http.Clie
 	if client == nil {
 		client = &http.Client{}
 	}
+	c := *client
+	c.CheckRedirect = sameHostHTTPS
+	client = &c
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{cfg: cfg, client: client, idle: idleTimeout, now: time.Now,
 		jobs: map[string]*job{}, wake: make(chan struct{}, 1), ctx: ctx, cancel: cancel}
+}
+
+// sameHostHTTPS follows a redirect only to https on the host first asked.
+func sameHostHTTPS(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("too many redirects")
+	}
+	if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Host, via[0].URL.Host) {
+		return errors.New("redirect to another host or to plain http refused")
+	}
+	return nil
 }
 
 func dirInfo(dir string) DirInfo {
@@ -130,7 +151,41 @@ func (m *Manager) dir(ctx context.Context) (string, settings.Settings, error) {
 	if err != nil {
 		return "", s, err
 	}
+	if s.BRouter.SegmentsDir == "" {
+		return "", s, ErrNoLocalRegions
+	}
 	return s.BRouter.SegmentsDir, s, nil
+}
+
+// sweepParts removes .part files left by an interrupted run, once per
+// Manager and only for tiles that are not downloading right now.
+func (m *Manager) sweepParts(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.swept {
+		return
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return // directory missing: try again later
+	}
+	m.swept = true
+	for _, e := range ents {
+		name, ok := strings.CutPrefix(e.Name(), ".")
+		if !ok {
+			continue
+		}
+		if name, ok = strings.CutSuffix(name, ".rd5.part"); !ok {
+			continue
+		}
+		if _, _, err := route.ParseTile(name); err != nil {
+			continue
+		}
+		if j := m.jobs[name]; j != nil && j.Status == StatusDownloading {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
 }
 
 // onDisk reports whether dir holds the finished tile.
@@ -152,6 +207,7 @@ func (m *Manager) List(ctx context.Context) (DirInfo, []Tile, error) {
 	di := dirInfo(dir)
 	byName := map[string]Tile{}
 	if di.Exists {
+		m.sweepParts(dir)
 		ents, err := os.ReadDir(dir)
 		if err != nil {
 			return di, nil, err
@@ -184,21 +240,38 @@ func (m *Manager) List(ctx context.Context) (DirInfo, []Tile, error) {
 	return di, out, nil
 }
 
-// Has reports whether the tile file is present and whether the directory exists.
+// Has reports whether the tile file is present and whether the directory
+// exists (false, false when there are no local map regions).
 func (m *Manager) Has(ctx context.Context, name string) (present, dirExists bool, err error) {
-	if _, _, err := route.ParseTile(name); err != nil {
-		return false, false, err
+	missing, dirExists, err := m.Missing(ctx, []string{name})
+	return dirExists && len(missing) == 0, dirExists, err
+}
+
+// Missing returns those of names whose files are not on disk, reading the
+// settings once. dirExists is false (and missing nil) when the segments
+// directory is unset or does not exist.
+func (m *Manager) Missing(ctx context.Context, names []string) (missing []string, dirExists bool, err error) {
+	for _, n := range names {
+		if _, _, err := route.ParseTile(n); err != nil {
+			return nil, false, err
+		}
 	}
 	dir, _, err := m.dir(ctx)
+	if errors.Is(err, ErrNoLocalRegions) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return false, false, err
+		return nil, false, err
 	}
-	st, err := os.Stat(dir)
-	if err != nil || !st.IsDir() {
-		return false, false, nil
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return nil, false, nil
 	}
-	_, ok := onDisk(dir, name)
-	return ok, true, nil
+	for _, n := range names {
+		if _, ok := onDisk(dir, n); !ok {
+			missing = append(missing, n)
+		}
+	}
+	return missing, true, nil
 }
 
 // Enqueue queues name for download. A present or already queued tile returns
@@ -285,6 +358,9 @@ func (m *Manager) Close() {
 
 func (m *Manager) run() {
 	defer m.wg.Done()
+	if dir, _, err := m.dir(m.ctx); err == nil {
+		m.sweepParts(dir)
+	}
 	for {
 		j, ctx := m.next()
 		if j == nil {
@@ -345,7 +421,7 @@ func (m *Manager) progress(j *job, n, total int64) {
 func (m *Manager) fetch(ctx context.Context, j *job) (err error) {
 	dir, s, err := m.dir(ctx)
 	if err != nil {
-		return errors.New("settings unavailable")
+		return errors.New("segments directory unavailable")
 	}
 	if di := dirInfo(dir); !di.Exists || !di.Writable {
 		return errors.New("segments directory unavailable")
@@ -454,18 +530,42 @@ func (m *Manager) fetch(ctx context.Context, j *job) (err error) {
 }
 
 // Available lists the tile names the segments server offers, parsed from its
-// index page and cached for 24 hours.
+// index page. A good answer is cached for 24 hours, a failure for a minute.
 func (m *Manager) Available(ctx context.Context) ([]string, error) {
-	_, s, err := m.dir(ctx)
+	s, err := m.cfg(ctx)
 	if err != nil {
 		return nil, err
 	}
 	base := s.BRouter.SegmentsURL
 	m.idxMu.Lock()
-	defer m.idxMu.Unlock()
-	if m.idx != nil && m.idxURL == base && m.now().Sub(m.idxAt) < indexTTL {
-		return append([]string(nil), m.idx...), nil
+	if m.idxURL == base {
+		if m.idx != nil && m.now().Sub(m.idxAt) < indexTTL {
+			out := append([]string(nil), m.idx...)
+			m.idxMu.Unlock()
+			return out, nil
+		}
+		if m.idxErr != "" && m.now().Sub(m.idxErrAt) < indexErrTTL {
+			e := m.idxErr
+			m.idxMu.Unlock()
+			return nil, errors.New(e)
+		}
 	}
+	m.idxMu.Unlock()
+
+	names, err := m.fetchIndex(ctx, base)
+	m.idxMu.Lock()
+	defer m.idxMu.Unlock()
+	if err != nil {
+		if ctx.Err() == nil { // a cancelled caller says nothing about the server
+			m.idxURL, m.idx, m.idxErr, m.idxErrAt = base, nil, err.Error(), m.now()
+		}
+		return nil, err
+	}
+	m.idx, m.idxURL, m.idxAt, m.idxErr = names, base, m.now(), ""
+	return append([]string(nil), names...), nil
+}
+
+func (m *Manager) fetchIndex(ctx context.Context, base string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, indexTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base, nil)
@@ -497,6 +597,5 @@ func (m *Manager) Available(ctx context.Context) ([]string, error) {
 		}
 	}
 	sort.Strings(names)
-	m.idx, m.idxURL, m.idxAt = names, base, m.now()
-	return append([]string(nil), names...), nil
+	return names, nil
 }

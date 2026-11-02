@@ -70,7 +70,11 @@ type tsConfig struct {
 	wsRecheck  time.Duration
 	simDial    func(sim.Config) bike.Dial
 	noBike     bool
+	drawLimit  time.Duration
 }
+
+// withDrawTimeout shortens the BRouter draw call limit.
+func withDrawTimeout(d time.Duration) tsOpt { return func(c *tsConfig) { c.drawLimit = d } }
 
 // withSimDial injects the simulator dial the bike manager uses.
 func withSimDial(f func(sim.Config) bike.Dial) tsOpt {
@@ -131,7 +135,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	tiles := maptiles.New(svc.Get, http.DefaultClient)
 	t.Cleanup(tiles.Close)
 	d := Deps{Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
-		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck}
+		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit}
 	if cfg.noBike {
 		d.Bike = nil
 	}

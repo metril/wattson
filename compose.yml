@@ -25,18 +25,26 @@ services:
   # Docker Hub; the official image is ghcr.io/abrensch/brouter. Bump by re-inspecting the tag.
   # Verified in the image: BRouter listens on 17777 (fixed in /bin/server.sh), reads segments
   # from /segments4, and runs with a fixed heap (-Xmx128M, JAVA_OPTS is not read; plenty for
-  # drawing). It is amd64 only at this tag; on arm64 use the multi-arch :master image
-  # (not pinned) or run BRouter elsewhere and set its URL in Settings.
+  # drawing). It is amd64 only at this tag (see platform below).
   # The port is not published: wattson reaches it as http://brouter:17777 (the default
   # BRouter URL in Settings).
   brouter:
     image: ghcr.io/abrensch/brouter:v1.7.8@sha256:3c6c8a616f054f9237c900760add5fec6b88fc17108348fb2733a1dd62444165
+    # The pinned tag has no arm64 image; on arm64 hosts this runs under emulation
+    # (needs qemu-user-static / binfmt registered) and is slow. See the README.
+    platform: linux/amd64
     volumes:
       - brouter-segments:/segments4:ro
     # Start after wattson so the volume is first created from wattson's /segments,
     # which is owned by uid 65532 and therefore writable by wattson.
     depends_on: [wattson]
     restart: unless-stopped
+    # Hardening: no capabilities, no privilege gain, read-only root (the JVM
+    # needs a writable /tmp).
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
 
 volumes:
   wattson-data:

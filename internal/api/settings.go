@@ -59,7 +59,7 @@ type MQTTOut struct {
 type BRouterOut struct {
 	URL            string `json:"url" doc:"BRouter base URL."`
 	Profile        string `json:"profile" doc:"Routing profile: trekking, fastbike, safety or shortest."`
-	SegmentsDir    string `json:"segments_dir" doc:"Absolute directory where BRouter routing segments (.rd5 files) are stored."`
+	SegmentsDir    string `json:"segments_dir" doc:"Absolute directory where BRouter routing segments (.rd5 files) are stored. Leave empty when using a remote BRouter: map regions are then not managed here and drawing skips the local tile check."`
 	SegmentsURL    string `json:"segments_url" doc:"Base URL segments are downloaded from (http or https, ends with /)."`
 	PublicURL      string `json:"public_url" doc:"Base URL of the public BRouter service used as a fallback (http or https)."`
 	PublicFallback bool   `json:"public_fallback" doc:"Whether route requests may be sent to the public BRouter service when the local one cannot answer. Off by default: nothing leaves this host unless enabled."`
@@ -147,7 +147,7 @@ type MQTTPatch struct {
 type BRouterPatch struct {
 	URL            *string `json:"url,omitempty" doc:"BRouter base URL; empty clears it."`
 	Profile        *string `json:"profile,omitempty" doc:"Routing profile: trekking, fastbike, safety or shortest."`
-	SegmentsDir    *string `json:"segments_dir,omitempty" doc:"Absolute, clean directory for BRouter segments, such as /segments."`
+	SegmentsDir    *string `json:"segments_dir,omitempty" doc:"Absolute, clean directory for BRouter segments, such as /segments. Empty (leave empty when using a remote BRouter) means no local map regions."`
 	SegmentsURL    *string `json:"segments_url,omitempty" doc:"Segment download base URL (http or https, must end with /)."`
 	PublicURL      *string `json:"public_url,omitempty" doc:"Public BRouter base URL (http or https) used as the fallback."`
 	PublicFallback *bool   `json:"public_fallback,omitempty" doc:"Allow route requests to go to the public BRouter service when the local one cannot answer."`

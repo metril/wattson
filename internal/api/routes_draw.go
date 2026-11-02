@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,24 +70,32 @@ func (d Deps) brouterClient() *http.Client {
 }
 
 // localMissing returns the tiles of the line that the local segments
-// directory lacks. It returns nil when the directory does not exist (a remote
-// BRouter keeps its own segments) or no tile manager is configured.
+// directory lacks. It returns nil when segments_dir is empty or does not
+// exist (a remote BRouter keeps its own segments) or no tile manager is
+// configured. Tiles the segments server does not offer (open sea) are not
+// missing; when its index cannot be read, every absent tile counts.
 func (d Deps) localMissing(ctx context.Context, wps []wroute.LonLat) ([]string, error) {
 	if d.Tiles == nil {
 		return nil, nil
 	}
-	var missing []string
-	for _, t := range wroute.TilesForLine(wps) {
-		have, dirExists, err := d.Tiles.Has(ctx, t)
-		if err != nil {
-			return nil, err
+	missing, dirExists, err := d.Tiles.Missing(ctx, wroute.TilesForLine(wps))
+	if err != nil || !dirExists || len(missing) == 0 {
+		return nil, err
+	}
+	actx, cancel := context.WithTimeout(ctx, availableTimeout)
+	defer cancel()
+	if avail, err := d.Tiles.Available(actx); err == nil && len(avail) > 0 {
+		offered := make(map[string]bool, len(avail))
+		for _, a := range avail {
+			offered[a] = true
 		}
-		if !dirExists {
-			return nil, nil
+		kept := missing[:0]
+		for _, t := range missing {
+			if offered[t] {
+				kept = append(kept, t)
+			}
 		}
-		if !have {
-			missing = append(missing, t)
-		}
+		missing = kept
 	}
 	return missing, nil
 }
@@ -110,7 +119,7 @@ func isTransport(err error) bool {
 
 // brouterFailure maps a failed BRouter call at base to an API error. The
 // cause of anything not shown is logged.
-func brouterFailure(ctx context.Context, base string, err error) error {
+func brouterFailure(ctx context.Context, base string, limit time.Duration, err error) error {
 	if ctx.Err() != nil { // the client went away
 		return ctx.Err()
 	}
@@ -119,6 +128,10 @@ func brouterFailure(ctx context.Context, base string, err error) error {
 		return apiErrPublic(http.StatusBadGateway, "brouter_error", "BRouter could not route this: "+be.Message)
 	}
 	loggerFrom(ctx).Warn("brouter call failed", "server", serverLabel(base), "err", err)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return apiErrPublic(http.StatusBadGateway, "brouter_unavailable",
+			"BRouter at "+serverLabel(base)+" did not answer within "+strconv.FormatFloat(limit.Seconds(), 'f', -1, 64)+" s")
+	}
 	if isTransport(err) {
 		return apiErrPublic(http.StatusBadGateway, "brouter_unavailable", "BRouter is not reachable at "+serverLabel(base))
 	}
@@ -157,6 +170,10 @@ func (d Deps) registerDraw(api huma.API) {
 				wps[i] = wroute.LonLat(w)
 			}
 
+			limit := d.drawTimeout
+			if limit == 0 {
+				limit = brouterDrawTimeout
+			}
 			base, fellBack := st.BRouter.URL, false
 			missing, err := d.localMissing(ctx, wps)
 			if err != nil {
@@ -170,7 +187,7 @@ func (d Deps) registerDraw(api huma.API) {
 			}
 			var pts []wroute.Point
 			for {
-				cctx, cancel := context.WithTimeout(ctx, brouterDrawTimeout)
+				cctx, cancel := context.WithTimeout(ctx, limit)
 				pts, err = wroute.BRouter{BaseURL: base, Client: d.brouterClient()}.Route(cctx, wps, profile)
 				cancel()
 				if err == nil {
@@ -184,7 +201,7 @@ func (d Deps) registerDraw(api huma.API) {
 					base, fellBack = st.BRouter.PublicURL, true
 					continue
 				}
-				return nil, brouterFailure(ctx, base, err)
+				return nil, brouterFailure(ctx, base, limit, err)
 			}
 
 			p, err := d.buildRoute(ctx, pts)

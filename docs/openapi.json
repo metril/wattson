@@ -66,7 +66,7 @@
             "type": "string"
           },
           "segments_dir": {
-            "description": "Absolute directory where BRouter routing segments (.rd5 files) are stored.",
+            "description": "Absolute directory where BRouter routing segments (.rd5 files) are stored. Leave empty when using a remote BRouter: map regions are then not managed here and drawing skips the local tile check.",
             "type": "string"
           },
           "segments_url": {
@@ -104,7 +104,7 @@
             "type": "string"
           },
           "segments_dir": {
-            "description": "Absolute, clean directory for BRouter segments, such as /segments.",
+            "description": "Absolute, clean directory for BRouter segments, such as /segments. Empty (leave empty when using a remote BRouter) means no local map regions.",
             "type": "string"
           },
           "segments_url": {
@@ -3770,7 +3770,7 @@
     },
     "/api/maps/tiles": {
       "get": {
-        "description": "Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the tiles a route crosses; each covers 5 by 5 degrees. Requires the `admin` scope.",
+        "description": "Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the tiles a route crosses; each covers 5 by 5 degrees. 409 `no_local_regions` when the segments directory setting is empty. Requires the `admin` scope.",
         "operationId": "listMapTiles",
         "responses": {
           "200": {
@@ -3802,6 +3802,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {
@@ -3840,7 +3850,7 @@
     },
     "/api/maps/tiles/{name}": {
       "delete": {
-        "description": "Cancels the tile's download if one is running and deletes the tile and any partial file from the segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name. Requires the `admin` scope.",
+        "description": "Cancels the tile's download if one is running and deletes the tile and any partial file from the segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name; 409 `no_local_regions` when the segments directory setting is empty. Requires the `admin` scope.",
         "operationId": "deleteMapTile",
         "parameters": [
           {
@@ -3898,6 +3908,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -3933,7 +3953,7 @@
         ]
       },
       "post": {
-        "description": "Queues the tile for download from the segments server; tiles download one at a time. A tile already on disk or queued is returned as it is. Poll the list for progress. Errors: 400 `bad_tile_name`; 409 `segments_dir_unavailable` (the directory is missing or not writable). Requires the `admin` scope.",
+        "description": "Queues the tile for download from the segments server; tiles download one at a time. A tile already on disk or queued is returned as it is. Poll the list for progress. Errors: 400 `bad_tile_name`; 409 `segments_dir_unavailable` (the directory is missing or not writable) or `no_local_regions` (the segments directory setting is empty). Requires the `admin` scope.",
         "operationId": "downloadMapTile",
         "parameters": [
           {

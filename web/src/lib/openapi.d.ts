@@ -325,7 +325,7 @@ export interface paths {
         };
         /**
          * List map regions
-         * @description Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the tiles a route crosses; each covers 5 by 5 degrees. Requires the `admin` scope.
+         * @description Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the tiles a route crosses; each covers 5 by 5 degrees. 409 `no_local_regions` when the segments directory setting is empty. Requires the `admin` scope.
          */
         get: operations["listMapTiles"];
         put?: never;
@@ -347,12 +347,12 @@ export interface paths {
         put?: never;
         /**
          * Download a map region
-         * @description Queues the tile for download from the segments server; tiles download one at a time. A tile already on disk or queued is returned as it is. Poll the list for progress. Errors: 400 `bad_tile_name`; 409 `segments_dir_unavailable` (the directory is missing or not writable). Requires the `admin` scope.
+         * @description Queues the tile for download from the segments server; tiles download one at a time. A tile already on disk or queued is returned as it is. Poll the list for progress. Errors: 400 `bad_tile_name`; 409 `segments_dir_unavailable` (the directory is missing or not writable) or `no_local_regions` (the segments directory setting is empty). Requires the `admin` scope.
          */
         post: operations["downloadMapTile"];
         /**
          * Delete a map region
-         * @description Cancels the tile's download if one is running and deletes the tile and any partial file from the segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name. Requires the `admin` scope.
+         * @description Cancels the tile's download if one is running and deletes the tile and any partial file from the segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name; 409 `no_local_regions` when the segments directory setting is empty. Requires the `admin` scope.
          */
         delete: operations["deleteMapTile"];
         options?: never;
@@ -881,7 +881,7 @@ export interface components {
             public_fallback: boolean;
             /** @description Base URL of the public BRouter service used as a fallback (http or https). */
             public_url: string;
-            /** @description Absolute directory where BRouter routing segments (.rd5 files) are stored. */
+            /** @description Absolute directory where BRouter routing segments (.rd5 files) are stored. Leave empty when using a remote BRouter: map regions are then not managed here and drawing skips the local tile check. */
             segments_dir: string;
             /** @description Base URL segments are downloaded from (http or https, ends with /). */
             segments_url: string;
@@ -895,7 +895,7 @@ export interface components {
             public_fallback?: boolean;
             /** @description Public BRouter base URL (http or https) used as the fallback. */
             public_url?: string;
-            /** @description Absolute, clean directory for BRouter segments, such as /segments. */
+            /** @description Absolute, clean directory for BRouter segments, such as /segments. Empty (leave empty when using a remote BRouter) means no local map regions. */
             segments_dir?: string;
             /** @description Segment download base URL (http or https, must end with /). */
             segments_url?: string;
@@ -3087,6 +3087,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -3241,6 +3250,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

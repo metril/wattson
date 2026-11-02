@@ -68,6 +68,9 @@ func tileNameErr(err error) error {
 	case errors.Is(err, maptiles.ErrDirUnavailable):
 		return apiErr(http.StatusConflict, "segments_dir_unavailable",
 			"The segments directory does not exist or is not writable. Check the segments directory in Settings → Integrations.")
+	case errors.Is(err, maptiles.ErrNoLocalRegions):
+		return apiErr(http.StatusConflict, "no_local_regions",
+			"No segments directory is set, so map regions are not managed here. Set one in Settings → Integrations, or leave it empty when using a remote BRouter.")
 	case errors.Is(err, maptiles.ErrClosed):
 		return apiErrPublic(http.StatusServiceUnavailable, "shutting_down", "the server is shutting down")
 	}
@@ -79,8 +82,8 @@ func (d Deps) registerMaps(api huma.API) {
 		Summary: "List map regions",
 		Description: "Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the " +
 			"segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the " +
-			"tiles a route crosses; each covers 5 by 5 degrees.",
-		Scope: auth.ScopeAdmin, Errors: []int{http.StatusServiceUnavailable}},
+			"tiles a route crosses; each covers 5 by 5 degrees. 409 `no_local_regions` when the segments directory setting is empty.",
+		Scope: auth.ScopeAdmin, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, _ *struct{}) (*tilesBody, error) {
 			m, err := d.tiles()
 			if err != nil {
@@ -88,7 +91,7 @@ func (d Deps) registerMaps(api huma.API) {
 			}
 			dir, ts, err := m.List(ctx)
 			if err != nil {
-				return nil, err
+				return nil, tileNameErr(err)
 			}
 			out := TilesOut{Dir: DirOut{Path: dir.Path, Exists: dir.Exists, Writable: dir.Writable},
 				Tiles: make([]TileOut, 0, len(ts)), Available: []string{}}
@@ -112,7 +115,7 @@ func (d Deps) registerMaps(api huma.API) {
 		Summary: "Download a map region",
 		Description: "Queues the tile for download from the segments server; tiles download one at a time. A tile already on " +
 			"disk or queued is returned as it is. Poll the list for progress. Errors: 400 `bad_tile_name`; " +
-			"409 `segments_dir_unavailable` (the directory is missing or not writable).",
+			"409 `segments_dir_unavailable` (the directory is missing or not writable) or `no_local_regions` (the segments directory setting is empty).",
 		Scope: auth.ScopeAdmin, Status: http.StatusAccepted, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *tileNameIn) (*tileBody, error) {
 			m, err := d.tiles()
@@ -129,8 +132,8 @@ func (d Deps) registerMaps(api huma.API) {
 	register(api, route{Method: http.MethodDelete, Path: "/api/maps/tiles/{name}", ID: "deleteMapTile", Tag: "maps",
 		Summary: "Delete a map region",
 		Description: "Cancels the tile's download if one is running and deletes the tile and any partial file from the " +
-			"segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name.",
-		Scope: auth.ScopeAdmin, Status: http.StatusNoContent, Errors: []int{http.StatusServiceUnavailable}},
+			"segments directory. Succeeds when the tile is not there. 400 `bad_tile_name` for an invalid name; 409 `no_local_regions` when the segments directory setting is empty.",
+		Scope: auth.ScopeAdmin, Status: http.StatusNoContent, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *tileNameIn) (*noContent, error) {
 			m, err := d.tiles()
 			if err != nil {

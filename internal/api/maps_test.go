@@ -86,6 +86,24 @@ func TestMapsTiles(t *testing.T) {
 	}
 }
 
+func TestMapsNoLocalRegions(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.setBRouter(t, func(b *settings.BRouter) { b.SegmentsDir = "" })
+	for _, m := range [][2]string{{"GET", "/api/maps/tiles"}, {"POST", "/api/maps/tiles/E5_N45"}, {"DELETE", "/api/maps/tiles/E5_N45"}} {
+		resp, b := ts.do(t, admin, m[0], m[1], nil)
+		if resp.StatusCode != 409 || decode[errEnvelope](t, b).Error.Code != "no_local_regions" {
+			t.Errorf("%s %s: %d %s", m[0], m[1], resp.StatusCode, b)
+		}
+	}
+	// An empty directory is accepted by the settings API.
+	resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"brouter": map[string]any{"segments_dir": ""}})
+	if resp.StatusCode != 200 {
+		t.Errorf("patch: %d %s", resp.StatusCode, b)
+	}
+}
+
 func TestMapsAvailableError(t *testing.T) {
 	t.Parallel()
 	seg := httptest.NewServer(http.NotFoundHandler())

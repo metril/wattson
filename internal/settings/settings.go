@@ -84,7 +84,7 @@ type MQTT struct {
 type BRouter struct {
 	URL            string `json:"url"`
 	Profile        string `json:"profile"`
-	SegmentsDir    string `json:"segments_dir"`
+	SegmentsDir    string `json:"segments_dir"` // empty: no local map regions (a remote BRouter)
 	SegmentsURL    string `json:"segments_url"`
 	PublicURL      string `json:"public_url"`
 	PublicFallback bool   `json:"public_fallback"`
@@ -197,8 +197,8 @@ func (s Settings) Validate() error {
 	default:
 		return bad("brouter.profile", "must be one of trekking, fastbike, safety, shortest")
 	}
-	if v := s.BRouter.SegmentsDir; !path.IsAbs(v) || path.Clean(v) != v {
-		return bad("brouter.segments_dir", "must be an absolute, clean path such as /segments")
+	if v := s.BRouter.SegmentsDir; v != "" && (!path.IsAbs(v) || path.Clean(v) != v) {
+		return bad("brouter.segments_dir", "must be an absolute, clean path such as /segments, or empty when using a remote BRouter")
 	}
 	if v := s.BRouter.SegmentsURL; !strings.HasSuffix(v, "/") {
 		return bad("brouter.segments_url", "must be an absolute http(s) URL ending in /")

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/metril/wattson/internal/settings"
 )
@@ -68,6 +69,18 @@ func segDir(t testing.TB, tiles ...string) string {
 		}
 	}
 	return dir
+}
+
+// indexServer serves a segments index listing tiles and returns its base URL.
+func indexServer(t testing.TB, tiles ...string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, n := range tiles {
+			fmt.Fprintf(w, `<a href="%s.rd5">%s.rd5</a>`+"\n", n, n)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/"
 }
 
 func (ts *testServer) setBRouter(t testing.TB, f func(*settings.BRouter)) {
@@ -152,7 +165,8 @@ func TestDrawMissingTiles(t *testing.T) {
 	fb := newFakeBRouter(t, 200, drawGeoJSON)
 	ts := newTS(t)
 	admin := ts.setupAdmin(t)
-	ts.setBRouter(t, func(b *settings.BRouter) { b.URL, b.SegmentsDir = fb.URL, segDir(t) })
+	idx := indexServer(t, "E5_N45", "W5_N50")
+	ts.setBRouter(t, func(b *settings.BRouter) { b.URL, b.SegmentsDir, b.SegmentsURL = fb.URL, segDir(t), idx })
 	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
 	e := decode[errEnvelope](t, b)
 	if resp.StatusCode != 422 || e.Error.Code != "missing_tiles" || !contains(e.Error.Message, "E5_N45") ||
@@ -170,8 +184,9 @@ func TestDrawPublicFallback(t *testing.T) {
 	public := newFakeBRouter(t, 200, drawGeoJSON)
 	ts := newTS(t)
 	admin := ts.setupAdmin(t)
+	idx := indexServer(t, "E5_N45")
 	ts.setBRouter(t, func(b *settings.BRouter) {
-		b.URL, b.SegmentsDir, b.PublicURL, b.PublicFallback = local.URL, segDir(t), public.URL, true
+		b.URL, b.SegmentsDir, b.SegmentsURL, b.PublicURL, b.PublicFallback = local.URL, segDir(t), idx, public.URL, true
 	})
 	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
 	if resp.StatusCode != 201 {
@@ -187,7 +202,8 @@ func TestDrawPublicFallbackOffByDefault(t *testing.T) {
 	public := newFakeBRouter(t, 200, drawGeoJSON)
 	ts := newTS(t)
 	admin := ts.setupAdmin(t)
-	ts.setBRouter(t, func(b *settings.BRouter) { b.SegmentsDir, b.PublicURL = segDir(t), public.URL })
+	idx := indexServer(t, "E5_N45")
+	ts.setBRouter(t, func(b *settings.BRouter) { b.SegmentsDir, b.SegmentsURL, b.PublicURL = segDir(t), idx, public.URL })
 	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
 	if resp.StatusCode != 422 || public.calls.Load() != 0 {
 		t.Fatalf("draw: %d %s (public calls %d)", resp.StatusCode, b, public.calls.Load())
@@ -203,6 +219,46 @@ func TestDrawSkipsTileCheckWithoutDir(t *testing.T) {
 	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
 	if resp.StatusCode != 201 {
 		t.Fatalf("draw: %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestDrawRemoteBRouterWithoutSegmentsDir(t *testing.T) {
+	t.Parallel()
+	fb := newFakeBRouter(t, 200, drawGeoJSON)
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.setBRouter(t, func(b *settings.BRouter) { b.URL, b.SegmentsDir = fb.URL, "" })
+	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
+	if resp.StatusCode != 201 || fb.calls.Load() != 1 {
+		t.Fatalf("draw: %d %s (%d calls)", resp.StatusCode, b, fb.calls.Load())
+	}
+}
+
+// Tiles the segments server does not offer (open sea) do not block drawing.
+func TestDrawIgnoresTilesNotOffered(t *testing.T) {
+	t.Parallel()
+	fb := newFakeBRouter(t, 200, drawGeoJSON)
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	idx := indexServer(t, "W5_N50")
+	ts.setBRouter(t, func(b *settings.BRouter) { b.URL, b.SegmentsDir, b.SegmentsURL = fb.URL, segDir(t), idx })
+	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
+	if resp.StatusCode != 201 || fb.calls.Load() != 1 {
+		t.Fatalf("draw: %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestDrawBRouterTimeout(t *testing.T) {
+	t.Parallel()
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(slow.Close)
+	ts := newTS(t, withDrawTimeout(100*time.Millisecond))
+	admin := ts.setupAdmin(t)
+	ts.setBRouter(t, func(b *settings.BRouter) { b.URL, b.SegmentsDir = slow.URL, "" })
+	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
+	e := decode[errEnvelope](t, b)
+	if resp.StatusCode != 502 || e.Error.Code != "brouter_unavailable" || !contains(e.Error.Message, "did not answer within 0.1 s") {
+		t.Fatalf("timeout: %d %s", resp.StatusCode, b)
 	}
 }
 
@@ -314,6 +370,10 @@ func TestBRouterTestButton(t *testing.T) {
 	}
 	if r := post(map[string]any{"url": closedURL(t)}); r.OK {
 		t.Errorf("no tiles, closed = %+v", r)
+	}
+	ts.setBRouter(t, func(b *settings.BRouter) { b.SegmentsDir = "" })
+	if r := post(map[string]any{"url": nf.URL}); !r.OK || r.Message != "BRouter reachable (no map regions downloaded)" {
+		t.Errorf("empty segments dir = %+v", r)
 	}
 	if r := post(map[string]any{"url": "ftp://x"}); r.OK {
 		t.Errorf("bad scheme = %+v", r)

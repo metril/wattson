@@ -320,6 +320,7 @@ func TestBRouterSettingsValidation(t *testing.T) {
 		{"profile fastbike", func(s *settings.Settings) { s.BRouter.Profile = "fastbike" }, ""},
 		{"segments dir relative", func(s *settings.Settings) { s.BRouter.SegmentsDir = "rel/dir" }, "brouter.segments_dir"},
 		{"segments dir unclean", func(s *settings.Settings) { s.BRouter.SegmentsDir = "/a/../b" }, "brouter.segments_dir"},
+		{"segments dir empty (remote BRouter)", func(s *settings.Settings) { s.BRouter.SegmentsDir = "" }, ""},
 		{"segments dir ok", func(s *settings.Settings) { s.BRouter.SegmentsDir = "/data/segments" }, ""},
 		{"segments url no slash", func(s *settings.Settings) { s.BRouter.SegmentsURL = "https://x/segs" }, "brouter.segments_url"},
 		{"segments url ftp", func(s *settings.Settings) { s.BRouter.SegmentsURL = "ftp://x/" }, "brouter.segments_url"},

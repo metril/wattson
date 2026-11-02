@@ -19,6 +19,7 @@ import (
 
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/integrations/strava"
+	"github.com/metril/wattson/internal/mapillary"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
@@ -63,6 +64,12 @@ type Deps struct {
 	// MQTT is the Home Assistant MQTT bridge. Nil disables /api/mqtt/status
 	// (503) and the reload on settings changes.
 	MQTT MQTTBridge
+	// Photos builds and caches the street photos along routes. Nil disables
+	// GET /api/routes/{id}/mapillary (503).
+	Photos *mapillary.Builder
+	// Mapillary serves the image proxy. Nil disables
+	// GET /api/mapillary/images/{id} (503).
+	Mapillary *mapillary.Client
 	// WSRecheck is how often an open WebSocket re-validates its credential;
 	// zero means 60 s.
 	WSRecheck time.Duration
@@ -119,6 +126,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	r.Get("/ws", d.serveWS)
 	d.registerOIDCFlow(r)
 	d.registerStravaFlow(r)
+	d.registerMapillaryImages(r)
 
 	spa := web.Handler()
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
@@ -139,8 +147,10 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	return r, nil
 }
 
-const csp = "default-src 'self'; connect-src 'self' https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; " +
-	"worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+const csp = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org https://s3.amazonaws.com; " +
+	"img-src 'self' data: blob: https://tiles.openfreemap.org https://s3.amazonaws.com; " +
+	"worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
+	"object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

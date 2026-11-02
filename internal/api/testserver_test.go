@@ -25,6 +25,8 @@ import (
 	"github.com/metril/wattson/internal/history"
 	"github.com/metril/wattson/internal/integrations/strava"
 	"github.com/metril/wattson/internal/integrations/strava/stravatest"
+	"github.com/metril/wattson/internal/mapillary"
+	"github.com/metril/wattson/internal/mapillary/mapillarytest"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth/oidctest"
 	"github.com/metril/wattson/internal/ridectl"
@@ -46,6 +48,7 @@ type testServer struct {
 	Tiles    *maptiles.Manager // reads its directory and server from the settings
 	Strava   *strava.Service   // set by withStrava
 	Fake     *stravatest.Fake  // the fake Strava behind Strava
+	Photos   *mapillary.Builder
 }
 
 // syncBuf is a goroutine-safe log sink.
@@ -80,7 +83,12 @@ type tsConfig struct {
 	drawLimit    time.Duration
 	strava       bool
 	mqtt         MQTTBridge
+	mly          *mapillarytest.Fake
 }
+
+// withMapillary points the Mapillary client (tiles, Graph, photo hosts) at fake.
+// Without it the client reaches nothing.
+func withMapillary(f *mapillarytest.Fake) tsOpt { return func(c *tsConfig) { c.mly = f } }
 
 // withMQTT sets Deps.MQTT.
 func withMQTT(b MQTTBridge) tsOpt { return func(c *tsConfig) { c.mqtt = b } }
@@ -154,7 +162,20 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
 	tiles := maptiles.New(svc.Get, http.DefaultClient)
 	t.Cleanup(tiles.Close)
-	d := Deps{Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
+	mly := &mapillary.Client{HTTP: &http.Client{Timeout: 10 * time.Second},
+		URLs: func(context.Context) (string, string) { return "http://127.0.0.1:1", "http://127.0.0.1:1" },
+		Token: func(ctx context.Context) (string, error) {
+			s, err := svc.Get(ctx)
+			return s.Mapillary.Token, err
+		}}
+	if cfg.mly != nil {
+		mly.URLs = func(context.Context) (string, string) { return cfg.mly.GraphURL(), cfg.mly.TilesURL() }
+		mly.ImageHostOK = func(h string) bool { return h == cfg.mly.Host() }
+	}
+	photos := mapillary.NewBuilder(mly, st, ridectl.StoreRoutes(st), mapillary.NewFingerprint(box.Derive("mapillary-fp")), time.Now)
+	photos.Logger = logger
+	t.Cleanup(func() { _ = photos.Close(context.Background()) }) // before the store closes
+	d := Deps{Photos: photos, Mapillary: mly, Tiles: tiles, Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
 		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, RouteInUse: cfg.routeInUse, WorkoutInUse: cfg.workoutInUse, Bike: mgr, WSRecheck: cfg.wsRecheck, drawTimeout: cfg.drawLimit, MQTT: cfg.mqtt}
 	if cfg.noBike {
 		d.Bike = nil
@@ -173,7 +194,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { _ = mgr.Close(context.Background()) }) // runs first: ends WebSocket handlers
-	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles, Strava: d.Strava, Fake: fake}
+	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr, Tiles: tiles, Strava: d.Strava, Fake: fake, Photos: photos}
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.

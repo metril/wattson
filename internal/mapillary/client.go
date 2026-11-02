@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/paulmach/orb"
@@ -46,13 +47,29 @@ const (
 // and Token (HTTP defaults to http.DefaultClient).
 type Client struct {
 	GraphURL, TilesURL string
-	HTTP               *http.Client
-	Token              func(ctx context.Context) (string, error) // reads sealed settings; "" -> ErrNoToken
+	// URLs, if set, supplies the Graph and tile base URLs per call (so a
+	// settings change applies at once) and replaces GraphURL and TilesURL.
+	URLs  func(ctx context.Context) (graph, tiles string)
+	HTTP  *http.Client
+	Token func(ctx context.Context) (string, error) // reads sealed settings; "" -> ErrNoToken
 	// ImageHostOK reports whether an image URL host may be fetched. Default:
 	// the Graph host, *.fbcdn.net or *.mapillary.com.
 	ImageHostOK func(host string) bool
 
 	sleep func(time.Duration) // tests only; default waits on a timer or ctx
+	now   func() time.Time    // tests only; default time.Now
+
+	metaMu    sync.Mutex
+	meta      map[string]metaEntry // image id -> thumbnail location (see cache.go)
+	thumbSem  chan struct{}        // bounds concurrent thumbnail downloads
+	thumbOnce sync.Once
+}
+
+func (c *Client) urls(ctx context.Context) (graph, tiles string) {
+	if c.URLs != nil {
+		return c.URLs(ctx)
+	}
+	return c.GraphURL, c.TilesURL
 }
 
 // Candidate is one image found in a coverage tile.
@@ -246,7 +263,8 @@ func (c *Client) Coverage(ctx context.Context, z, x, y int) ([]Candidate, error)
 	if err != nil {
 		return nil, err
 	}
-	u, err := endpoint(c.TilesURL, fmt.Sprintf("/%d/%d/%d", z, x, y), url.Values{"access_token": {tok}})
+	_, tiles := c.urls(ctx)
+	u, err := endpoint(tiles, fmt.Sprintf("/%d/%d/%d", z, x, y), url.Values{"access_token": {tok}})
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +388,8 @@ func (c *Client) Image(ctx context.Context, id string) (ImageMeta, error) {
 	if id == "" || strings.Trim(id, "0123456789") != "" {
 		return ImageMeta{}, errors.New("mapillary: bad image id")
 	}
-	u, err := endpoint(c.GraphURL, "/"+id, url.Values{"fields": {"thumb_2048_url,creator"}})
+	graph, _ := c.urls(ctx)
+	u, err := endpoint(graph, "/"+id, url.Values{"fields": {"thumb_2048_url,creator"}})
 	if err != nil {
 		return ImageMeta{}, err
 	}
@@ -394,13 +413,13 @@ func (c *Client) Image(ctx context.Context, id string) (ImageMeta, error) {
 	if v.URL == "" {
 		return ImageMeta{}, fmt.Errorf("mapillary: image %s has no thumbnail", id)
 	}
-	if !c.imageHostOK(v.URL) {
+	if !c.imageHostOK(ctx, v.URL) {
 		return ImageMeta{}, ErrBadImageHost
 	}
 	return ImageMeta{URL: v.URL, Creator: v.Creator.Username}, nil
 }
 
-func (c *Client) imageHostOK(raw string) bool {
+func (c *Client) imageHostOK(ctx context.Context, raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 		return false
@@ -408,7 +427,8 @@ func (c *Client) imageHostOK(raw string) bool {
 	if c.ImageHostOK != nil {
 		return c.ImageHostOK(u.Host)
 	}
-	if g, err := url.Parse(c.GraphURL); err == nil && g.Host != "" && strings.EqualFold(u.Host, g.Host) {
+	graph, _ := c.urls(ctx)
+	if g, err := url.Parse(graph); err == nil && g.Host != "" && strings.EqualFold(u.Host, g.Host) {
 		return true
 	}
 	h := strings.ToLower(u.Hostname())
@@ -421,7 +441,8 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	u, err := endpoint(c.GraphURL, "/images", url.Values{"fields": {"id"}, "limit": {"1"}, "bbox": {"13.40,52.51,13.41,52.52"}})
+	graph, _ := c.urls(ctx)
+	u, err := endpoint(graph, "/images", url.Values{"fields": {"id"}, "limit": {"1"}, "bbox": {"13.40,52.51,13.41,52.52"}})
 	if err != nil {
 		return err
 	}

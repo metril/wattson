@@ -59,8 +59,13 @@ func handlerFor(fsys fs.FS) http.Handler {
 			serveIndex(w, index)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/assets/") {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/assets/"):
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		case upath == "sw.js":
+			// The service worker script is not hashed: the browser must
+			// revalidate it on every check so an update is picked up.
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		files.ServeHTTP(w, r)
 	})

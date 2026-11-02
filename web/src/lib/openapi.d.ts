@@ -380,6 +380,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mapillary/images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a street photo
+         * @description Streams the 2048 px JPEG of a Mapillary image through the server, so the browser never talks to Mapillary and never sees the token. `id` is a photo id from `GET /api/routes/{id}/mapillary` (digits only, else 400 `bad_id`). The response is `image/jpeg` of at most 5 MiB, cacheable by the browser for a day, with the photographer's Mapillary username in `X-Photo-Creator` (percent-encoded when not plain ASCII). Any upstream failure is 502 `photo_unavailable`; 503 `mapillary_unavailable` when the server has no photo support. Requires the `read` scope.
+         */
+        get: operations["getMapillaryImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/maps/tiles": {
         parameters: {
             query?: never;
@@ -794,6 +814,26 @@ export interface paths {
          * @description Changes the route's name. Only the route's owner or an admin may do this; anyone else gets 403 `not_owner`. Requires the `control` scope.
          */
         patch: operations["renameRoute"];
+        trace?: never;
+    };
+    "/api/routes/{id}/mapillary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the street photos along a route
+         * @description Returns the Mapillary street photos selected along the route: at most one per 15 m, each with its distance along the route and camera heading. The list is built in the background the first time it is asked for (`status` `building`; poll every few seconds), cached for 30 days and rebuilt when the Mapillary token changes. Fetch a photo's image from `GET /api/mapillary/images/{id}`. The token is never returned. Requires the `read` scope.
+         */
+        get: operations["getRoutePhotos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/routes/{id}/profile": {
@@ -1873,6 +1913,37 @@ export interface components {
             /** @description Grant or revoke the admin scope. */
             is_admin?: boolean;
         };
+        Photo: {
+            /**
+             * Format: double
+             * @description Camera heading, degrees clockwise from north
+             */
+            bearing_deg: number;
+            /**
+             * Format: int64
+             * @description Capture time, Unix milliseconds
+             */
+            captured_at: number;
+            /**
+             * Format: double
+             * @description Distance along the route, metres
+             */
+            d_m: number;
+            /** @description Mapillary image id */
+            id: string;
+            /**
+             * Format: double
+             * @description Latitude, degrees
+             */
+            lat: number;
+            /**
+             * Format: double
+             * @description Longitude, degrees
+             */
+            lon: number;
+            /** @description 360° panorama */
+            pano: boolean;
+        };
         PowerModelInfo: {
             /**
              * Format: double
@@ -2430,6 +2501,22 @@ export interface components {
              * @enum {string}
              */
             source: "gpx" | "tcx" | "fit" | "draw" | "synthetic";
+        };
+        RoutePhotosOut: {
+            /**
+             * Format: date-time
+             * @description When the photo list was built, UTC; absent until a build finished.
+             */
+            built_at?: string;
+            /** @description Plain-language reason for unavailable and error. */
+            message?: string;
+            /** @description Up to one photo per 15 m of route, sorted by d_m. Empty unless status is ready. */
+            photos: components["schemas"]["Photo"][];
+            /**
+             * @description disabled: no Mapillary token is set. unavailable: this route cannot have photos (see message). building: the photo list is being prepared, ask again shortly. ready: photos holds the list (possibly empty when Mapillary has no coverage). error: the last build failed (see message); it retries after 10 minutes.
+             * @enum {string}
+             */
+            status: "disabled" | "unavailable" | "building" | "ready" | "error";
         };
         RouteSpec: {
             /** @description Routing profile used to draw the route (drawn routes). */
@@ -4269,6 +4356,83 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMapillaryImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Mapillary image id, digits only. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6356,6 +6520,83 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRoutePhotos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutePhotosOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

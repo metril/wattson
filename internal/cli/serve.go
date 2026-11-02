@@ -24,6 +24,7 @@ import (
 	"github.com/metril/wattson/internal/history"
 	"github.com/metril/wattson/internal/integrations"
 	"github.com/metril/wattson/internal/integrations/strava"
+	"github.com/metril/wattson/internal/mapillary"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth"
 	"github.com/metril/wattson/internal/ridectl"
@@ -235,7 +236,33 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	// aborts a stalled transfer itself) and cancelled on shutdown below.
 	tiles := maptiles.New(svc.Get, &http.Client{})
 	defer tiles.Close()
-	h, err := api.NewServer(api.Deps{Store: st, Settings: svc, Box: box, Auth: au,
+	// Street photos: the client reads the token and URLs from the settings on
+	// every call; one background worker builds each route's list. Closed
+	// before the store (see the shutdown below and the deferred call).
+	mly := &mapillary.Client{HTTP: &http.Client{Timeout: 30 * time.Second},
+		URLs: func(ctx context.Context) (string, string) {
+			s, err := svc.Get(ctx)
+			if err != nil {
+				return mapillary.DefaultGraphURL, mapillary.DefaultTilesURL
+			}
+			return s.Mapillary.GraphURL, s.Mapillary.TilesURL
+		},
+		Token: func(ctx context.Context) (string, error) {
+			s, err := svc.Get(ctx)
+			return s.Mapillary.Token, err
+		}}
+	photos := mapillary.NewBuilder(mly, st, ridectl.StoreRoutes(st),
+		mapillary.NewFingerprint(box.Derive("mapillary-fp")), time.Now)
+	photos.Logger = logger
+	closePhotos := func() {
+		pctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := photos.Close(pctx); err != nil {
+			logger.Warn("street photo builder did not stop in time", "err", err)
+		}
+	}
+	defer closePhotos()
+	h, err := api.NewServer(api.Deps{Photos: photos, Mapillary: mly, Store: st, Settings: svc, Box: box, Auth: au,
 		OIDC: oidcauth.NewRegistry(client), HTTPClient: client, Logger: logger, Version: Version, Bike: mgr, Tiles: tiles,
 		Strava: stravaSvc, MQTT: mqttBridge})
 	if err != nil {
@@ -274,6 +301,7 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	releaseBike()
 	stravaSvc.Close() // after the recorder finalized its last ride, before the store closes
 	tiles.Close()     // cancel any map download so its requests end before HTTP drains
+	closePhotos()     // likewise a photo build, before the store closes
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(sctx); err != nil {

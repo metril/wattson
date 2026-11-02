@@ -62,3 +62,18 @@ func TestEmbeddedHandler(t *testing.T) {
 		t.Errorf("Handler /: %d, want %d", rec.Code, want)
 	}
 }
+
+func TestSWNoCache(t *testing.T) {
+	t.Parallel()
+	h := handlerFor(fstest.MapFS{
+		"index.html": {Data: []byte("<html>app</html>")},
+		"sw.js":      {Data: []byte("self.skipWaiting()")},
+	})
+	rec := get(h, "/sw.js")
+	if rec.Code != http.StatusOK || rec.Body.String() != "self.skipWaiting()" {
+		t.Fatalf("/sw.js: %d %q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", got)
+	}
+}

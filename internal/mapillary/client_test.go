@@ -312,7 +312,7 @@ func TestDefaultImageHosts(t *testing.T) {
 		"https://fbcdn.net.evil.example/x":           false,
 		"ftp://scontent.fbcdn.net/x":                 false,
 	} {
-		if got := c.imageHostOK(u); got != want {
+		if got := c.imageHostOK(context.Background(), u); got != want {
 			t.Errorf("%s = %v, want %v", u, got, want)
 		}
 	}

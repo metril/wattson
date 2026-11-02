@@ -44,10 +44,11 @@ openapi: web-deps
 e2e: build
 	cd web && npm run e2e
 
-## lint: gofmt check plus go vet
+## lint: gofmt check, go vet, the street photo selection budget and the web lint
 lint: web-deps
 	test -z "$$(gofmt -l .)"
 	go vet ./...
+	go test -run Budget -count=1 ./internal/mapillary/
 	cd web && npm run lint
 
 clean:

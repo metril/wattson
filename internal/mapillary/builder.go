@@ -1,0 +1,330 @@
+package mapillary
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/metril/wattson/internal/route"
+	"github.com/metril/wattson/internal/store"
+)
+
+const (
+	photosMaxAge  = 30 * 24 * time.Hour // a ready build older than this is rebuilt
+	errorRetry    = 10 * time.Minute    // a failed build is retried after this
+	buildTimeout  = 10 * time.Minute
+	coverageZoom  = 14
+	coverageBufM  = 25
+	coverageFetch = 4 // concurrent tile requests within one build
+)
+
+// Status is what the photo endpoint reports for a route.
+type Status struct {
+	State   string // disabled, unavailable, building, ready or error
+	Message string // plain-language reason for unavailable and error
+	BuiltAt time.Time
+	Photos  []Photo // set when ready; never nil then
+}
+
+// Messages shown to the user. None carries upstream text.
+const (
+	msgSynthetic   = "Synthetic routes have no street photos"
+	msgRejected    = "Mapillary rejected the token. Check it in Settings → Integrations."
+	msgRateLimited = "Mapillary is rate limiting requests. Try again in a few minutes."
+	msgUnreachable = "Mapillary could not be reached. Try again in a few minutes."
+	msgRouteBroken = "The route could not be read."
+)
+
+// ErrBuilderClosed is returned by Get after Close.
+var ErrBuilderClosed = errors.New("mapillary: builder closed")
+
+// Builder keeps one cached photo list per route, built in the background by
+// a single worker goroutine from a deduplicated queue.
+type Builder struct {
+	// Logger receives build failures (errors never carry the token). Set
+	// before the first Get; defaults to slog.Default().
+	Logger *slog.Logger
+
+	c    *Client
+	st   *store.Store
+	load func(ctx context.Context, routeID int64) (*route.Profile, error)
+	fp   func(token string) string
+	now  func() time.Time
+
+	mu      sync.Mutex
+	queue   []int64
+	pending map[int64]struct{} // queued or being built
+	closed  bool
+
+	wake   chan struct{}
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// NewBuilder starts the worker. fp turns a token into the fingerprint kept
+// with the cached rows (see NewFingerprint); a changed token rebuilds.
+func NewBuilder(c *Client, st *store.Store, load func(ctx context.Context, routeID int64) (*route.Profile, error),
+	fp func(token string) string, now func() time.Time) *Builder {
+	if now == nil {
+		now = time.Now
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b := &Builder{c: c, st: st, load: load, fp: fp, now: now, pending: map[int64]struct{}{},
+		wake: make(chan struct{}, 1), ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	go b.run()
+	return b
+}
+
+// NewFingerprint returns a token fingerprint function: the first 16 hex
+// characters of HMAC-SHA256 under key.
+func NewFingerprint(key []byte) func(token string) string {
+	return func(token string) string {
+		m := hmac.New(sha256.New, key)
+		m.Write([]byte(token))
+		return hex.EncodeToString(m.Sum(nil))[:16]
+	}
+}
+
+func (b *Builder) logger() *slog.Logger {
+	if b.Logger != nil {
+		return b.Logger
+	}
+	return slog.Default()
+}
+
+// Get reports the photo state of a route. A missing, stale (over 30 days) or
+// token-mismatched cache, and an error row older than 10 minutes, queue a
+// build and answer building. store.ErrNotFound for an unknown route.
+func (b *Builder) Get(ctx context.Context, routeID int64) (Status, error) {
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if closed {
+		return Status{}, ErrBuilderClosed
+	}
+	src, err := b.st.RouteSource(ctx, routeID)
+	if err != nil {
+		return Status{}, err
+	}
+	tok, err := b.c.token(ctx)
+	if errors.Is(err, ErrNoToken) {
+		return Status{State: "disabled"}, nil
+	}
+	if err != nil {
+		return Status{}, err
+	}
+	if src == "synthetic" {
+		return Status{State: "unavailable", Message: msgSynthetic}, nil
+	}
+	building := Status{State: "building"}
+	row, err := b.st.GetRoutePhotos(ctx, routeID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return b.enqueue(routeID, building)
+	case err != nil:
+		return Status{}, err
+	case row.TokenFP != b.fp(tok):
+		return b.enqueue(routeID, building)
+	}
+	age := b.now().Sub(row.BuiltAt)
+	switch row.Status {
+	case "ready":
+		if age > photosMaxAge {
+			return b.enqueue(routeID, building)
+		}
+		ps, err := DecodePhotos(row.Photos)
+		if err != nil {
+			b.logger().Warn("discarding unreadable cached photos", "route", routeID, "err", err)
+			return b.enqueue(routeID, building)
+		}
+		return Status{State: "ready", BuiltAt: row.BuiltAt, Photos: ps}, nil
+	case "error":
+		if age >= errorRetry {
+			return b.enqueue(routeID, building)
+		}
+		return Status{State: "error", Message: row.Error, BuiltAt: row.BuiltAt}, nil
+	}
+	return b.enqueue(routeID, building)
+}
+
+// enqueue queues routeID once and returns st.
+func (b *Builder) enqueue(routeID int64, st Status) (Status, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return Status{}, ErrBuilderClosed
+	}
+	if _, ok := b.pending[routeID]; !ok {
+		b.pending[routeID] = struct{}{}
+		b.queue = append(b.queue, routeID)
+		select {
+		case b.wake <- struct{}{}:
+		default:
+		}
+	}
+	return st, nil
+}
+
+// Close stops the worker, cancelling a build in progress (its result is
+// discarded), and waits for it or for ctx.
+func (b *Builder) Close(ctx context.Context) error {
+	b.mu.Lock()
+	b.closed = true
+	b.mu.Unlock()
+	b.cancel()
+	select {
+	case <-b.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (b *Builder) run() {
+	defer close(b.done)
+	for {
+		id, ok := b.next()
+		if !ok {
+			return
+		}
+		b.build(id)
+		b.mu.Lock()
+		delete(b.pending, id)
+		b.mu.Unlock()
+	}
+}
+
+func (b *Builder) next() (int64, bool) {
+	for {
+		b.mu.Lock()
+		if b.closed {
+			b.mu.Unlock()
+			return 0, false
+		}
+		if len(b.queue) > 0 {
+			id := b.queue[0]
+			b.queue = b.queue[1:]
+			b.mu.Unlock()
+			return id, true
+		}
+		b.mu.Unlock()
+		select {
+		case <-b.wake:
+		case <-b.ctx.Done():
+			return 0, false
+		}
+	}
+}
+
+func (b *Builder) build(id int64) {
+	ctx, cancel := context.WithTimeout(b.ctx, buildTimeout)
+	defer cancel()
+	tok, err := b.c.token(ctx)
+	if err != nil {
+		return // token removed since the request; the next Get reports disabled
+	}
+	row := store.RoutePhotos{RouteID: id, TokenFP: b.fp(tok)}
+	var photos []Photo
+	p, err := b.load(ctx, id)
+	if err == nil {
+		photos, err = b.fetch(ctx, p)
+	} else {
+		err = errors.Join(errRouteUnreadable, err)
+	}
+	if b.ctx.Err() != nil {
+		return // shutting down: store nothing
+	}
+	if err == nil {
+		row.Status = "ready"
+		if row.Photos, err = EncodePhotos(photos); err != nil {
+			row.Photos = nil
+		}
+	}
+	if err != nil {
+		b.logger().Warn("street photo build failed", "route", id, "err", err)
+		row.Status = "error"
+		switch {
+		case errors.Is(err, ErrTokenRejected):
+			row.Error = msgRejected
+		case errors.Is(err, ErrRateLimited):
+			row.Error = msgRateLimited
+		case errors.Is(err, errRouteUnreadable):
+			row.Error = msgRouteBroken
+		default:
+			row.Error = msgUnreachable
+		}
+	}
+	row.BuiltAt = b.now()
+	sctx, scancel := context.WithTimeout(b.ctx, 10*time.Second)
+	defer scancel()
+	if err := b.st.PutRoutePhotos(sctx, row); err != nil && !errors.Is(err, store.ErrNotFound) && b.ctx.Err() == nil {
+		b.logger().Warn("storing street photos failed", "route", id, "err", err)
+	}
+}
+
+var errRouteUnreadable = errors.New("route unreadable")
+
+// fetch reads the coverage tiles along p (coverageFetch at a time) and
+// selects the photos. Any tile failure fails the whole build.
+func (b *Builder) fetch(ctx context.Context, p *route.Profile) ([]Photo, error) {
+	tiles := Tiles(p, coverageZoom, coverageBufM)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan [3]int, len(tiles))
+	for _, t := range tiles {
+		jobs <- t
+	}
+	close(jobs)
+
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		firstErr error
+		seen     = map[string]bool{}
+		cands    []Candidate
+	)
+	for range min(coverageFetch, len(tiles)) {
+		wg.Go(func() {
+			for t := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				cs, err := b.c.Coverage(ctx, t[0], t[1], t[2])
+				mu.Lock()
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+						cancel()
+					}
+					mu.Unlock()
+					return
+				}
+				for _, c := range cs {
+					if !seen[c.ID] { // an image near a tile edge appears in both tiles
+						seen[c.ID] = true
+						cands = append(cands, c)
+					}
+				}
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	out := Select(p, cands, SelectOpts{})
+	if out == nil {
+		out = []Photo{}
+	}
+	return out, nil
+}

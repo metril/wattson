@@ -1540,6 +1540,54 @@
         },
         "type": "object"
       },
+      "Photo": {
+        "additionalProperties": false,
+        "properties": {
+          "bearing_deg": {
+            "description": "Camera heading, degrees clockwise from north",
+            "format": "double",
+            "type": "number"
+          },
+          "captured_at": {
+            "description": "Capture time, Unix milliseconds",
+            "format": "int64",
+            "type": "integer"
+          },
+          "d_m": {
+            "description": "Distance along the route, metres",
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "description": "Mapillary image id",
+            "type": "string"
+          },
+          "lat": {
+            "description": "Latitude, degrees",
+            "format": "double",
+            "type": "number"
+          },
+          "lon": {
+            "description": "Longitude, degrees",
+            "format": "double",
+            "type": "number"
+          },
+          "pano": {
+            "description": "360° panorama",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "d_m",
+          "lat",
+          "lon",
+          "bearing_deg",
+          "captured_at",
+          "pano"
+        ],
+        "type": "object"
+      },
       "PowerModelInfo": {
         "additionalProperties": false,
         "properties": {
@@ -2476,6 +2524,43 @@
           "min_grade_pct",
           "max_grade_pct",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "RoutePhotosOut": {
+        "additionalProperties": false,
+        "properties": {
+          "built_at": {
+            "description": "When the photo list was built, UTC; absent until a build finished.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "description": "Plain-language reason for unavailable and error.",
+            "type": "string"
+          },
+          "photos": {
+            "description": "Up to one photo per 15 m of route, sorted by d_m. Empty unless status is ready.",
+            "items": {
+              "$ref": "#/components/schemas/Photo"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "disabled: no Mapillary token is set. unavailable: this route cannot have photos (see message). building: the photo list is being prepared, ask again shortly. ready: photos holds the list (possibly empty when Mapillary has no coverage). error: the last build failed (see message); it retries after 10 minutes.",
+            "enum": [
+              "disabled",
+              "unavailable",
+              "building",
+              "ready",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "photos"
         ],
         "type": "object"
       },
@@ -5346,6 +5431,108 @@
         ]
       }
     },
+    "/api/mapillary/images/{id}": {
+      "get": {
+        "description": "Streams the 2048 px JPEG of a Mapillary image through the server, so the browser never talks to Mapillary and never sees the token. `id` is a photo id from `GET /api/routes/{id}/mapillary` (digits only, else 400 `bad_id`). The response is `image/jpeg` of at most 5 MiB, cacheable by the browser for a day, with the photographer's Mapillary username in `X-Photo-Creator` (percent-encoded when not plain ASCII). Any upstream failure is 502 `photo_unavailable`; 503 `mapillary_unavailable` when the server has no photo support. Requires the `read` scope.",
+        "operationId": "getMapillaryImage",
+        "parameters": [
+          {
+            "description": "Mapillary image id, digits only.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "contentEncoding": "base64",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a street photo",
+        "tags": [
+          "mapillary"
+        ]
+      }
+    },
     "/api/maps/tiles": {
       "get": {
         "description": "Returns the segments directory state, the tiles on disk and in the download queue, and the tiles the segments server offers (cached for 24 hours; `available_error` explains an unreadable index). Routing needs the tiles a route crosses; each covers 5 by 5 degrees. 409 `no_local_regions` when the segments directory setting is empty. Requires the `admin` scope.",
@@ -8126,6 +8313,109 @@
         "summary": "Rename a route",
         "tags": [
           "routes"
+        ]
+      }
+    },
+    "/api/routes/{id}/mapillary": {
+      "get": {
+        "description": "Returns the Mapillary street photos selected along the route: at most one per 15 m, each with its distance along the route and camera heading. The list is built in the background the first time it is asked for (`status` `building`; poll every few seconds), cached for 30 days and rebuilt when the Mapillary token changes. Fetch a photo's image from `GET /api/mapillary/images/{id}`. The token is never returned. Requires the `read` scope.",
+        "operationId": "getRoutePhotos",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutePhotosOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get the street photos along a route",
+        "tags": [
+          "mapillary"
         ]
       }
     },

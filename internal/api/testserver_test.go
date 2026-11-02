@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -27,6 +28,25 @@ type testServer struct {
 	Settings *settings.Service
 	Box      *secretbox.Box
 	Auth     *auth.Authenticator
+	Log      *syncBuf // everything the server logged
+}
+
+// syncBuf is a goroutine-safe log sink.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 type tsOpt func(*tsConfig)
@@ -36,8 +56,8 @@ type tsConfig struct {
 }
 
 // withOps registers extra (test-only) operations on the server's huma API.
-func withOps(f func(huma.API)) tsOpt {
-	return func(c *tsConfig) { c.extra = append(c.extra, f) }
+func withOps(fs ...func(huma.API)) tsOpt {
+	return func(c *tsConfig) { c.extra = append(c.extra, fs...) }
 }
 
 func newTS(t *testing.T, opts ...tsOpt) *testServer {
@@ -52,7 +72,8 @@ func newTS(t *testing.T, opts ...tsOpt) *testServer {
 		t.Fatal(err)
 	}
 	svc := settings.NewService(st, box)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logs := &syncBuf{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
 	au := auth.NewAuthenticator(st, func(ctx context.Context) string {
 		s, err := svc.Get(ctx)
 		if err != nil {
@@ -64,7 +85,7 @@ func newTS(t *testing.T, opts ...tsOpt) *testServer {
 		Logger: logger, Version: "test"}
 	srv := httptest.NewServer(newRouter(d, cfg.extra...))
 	t.Cleanup(srv.Close)
-	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au}
+	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs}
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.

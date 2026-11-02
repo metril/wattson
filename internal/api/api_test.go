@@ -3,7 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -141,19 +146,173 @@ func TestDocsServed(t *testing.T) {
 	}
 }
 
-func TestSPAServedForUnknownPaths(t *testing.T) {
+// uiBuilt reports whether the embedded web build exists, so SPA tests pick
+// their expectation explicitly.
+func uiBuilt() bool {
+	_, err := os.Stat("../web/dist/index.html")
+	return err == nil
+}
+
+func TestSPAFallbackMethods(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)
-	// dist is unbuilt in tests: the web handler answers (503) rather than JSON 404.
-	resp, _ := ts.do(t, nil, "GET", "/riders", nil)
-	if resp.StatusCode != 503 && resp.StatusCode != 200 {
-		t.Errorf("/riders: %d", resp.StatusCode)
+	want := 503
+	if uiBuilt() {
+		want = 200
+	}
+	if resp, _ := ts.do(t, nil, "GET", "/riders", nil); resp.StatusCode != want {
+		t.Errorf("GET /riders: %d, want %d", resp.StatusCode, want)
+	}
+	resp, b := ts.do(t, nil, "POST", "/riders", nil)
+	if resp.StatusCode != 405 || errCode(t, b) != "method_not_allowed" || resp.Header.Get("Allow") != "GET, HEAD" {
+		t.Errorf("POST /riders: %d %s allow=%q, want 405", resp.StatusCode, b, resp.Header.Get("Allow"))
+	}
+}
+
+func TestAPIPrefixIsJSON404(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	for _, path := range []string{"/api", "/api/", "/api/nope/deeper"} {
+		resp, b := ts.do(t, nil, "GET", path, nil)
+		if resp.StatusCode != 404 || errCode(t, b) != "not_found" {
+			t.Errorf("GET %s: %d %s, want 404 not_found", path, resp.StatusCode, b)
+		}
+	}
+}
+
+func TestContentSecurityPolicy(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	const strict = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+	for _, path := range []string{"/healthz", "/riders", "/api/nope", "/openapi.json"} {
+		resp, _ := ts.do(t, nil, "GET", path, nil)
+		if got := resp.Header.Get("Content-Security-Policy"); got != strict {
+			t.Errorf("%s: CSP = %q, want the strict policy", path, got)
+		}
+	}
+	resp, _ := ts.do(t, nil, "GET", "/docs", nil)
+	got := resp.Header.Get("Content-Security-Policy")
+	if got == strict || !strings.Contains(got, "script-src https://unpkg.com/") || !strings.Contains(got, "default-src 'none'") {
+		t.Errorf("/docs: CSP = %q, want huma's own policy allowing only the pinned unpkg files", got)
+	}
+}
+
+type noBodyIn struct{}
+
+type noBodyOut struct {
+	Body struct {
+		Boom string `json:"boom" doc:"Unused."`
+	}
+}
+
+func registerBoom(api huma.API) {
+	register(api, route{Method: http.MethodPost, Path: "/api/test/nobody", ID: "testNoBody", Tag: "test",
+		Summary: "No body", Description: "Test-only op with no request body.", Scope: auth.ScopeRead},
+		func(context.Context, *noBodyIn) (*noBodyOut, error) {
+			return nil, errors.New("db password=hunter2 leaked")
+		})
+	register(api, route{Method: http.MethodGet, Path: "/api/test/conflict", ID: "testConflict", Tag: "test",
+		Summary: "Conflict", Description: "Test-only op returning a 409.", Scope: auth.ScopeRead, Errors: []int{409}},
+		func(context.Context, *noBodyIn) (*noBodyOut, error) {
+			return nil, apiErr(409, "conflict", "already there")
+		})
+	register(api, route{Method: http.MethodGet, Path: "/api/test/apierr500", ID: "testAPIErr500", Tag: "test",
+		Summary: "500", Description: "Test-only op returning a 500 apiErr.", Scope: auth.ScopeRead},
+		func(context.Context, *noBodyIn) (*noBodyOut, error) {
+			return nil, apiErr(503, "unavailable", "secret detail")
+		})
+}
+
+func TestHandlerErrorsAreLoggedAndSanitised(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withOps(registerBoom))
+	tok := "Bearer " + ts.mintToken(t, "reader", false, "read")
+
+	resp, b := ts.do(t, nil, "POST", "/api/test/nobody", nil, "Authorization", tok)
+	if resp.StatusCode != 500 || errCode(t, b) != "internal_error" || strings.Contains(string(b), "hunter2") {
+		t.Errorf("plain error: %d %s, want sanitised 500 internal_error", resp.StatusCode, b)
+	}
+	logs := ts.Log.String()
+	if !strings.Contains(logs, "op=testNoBody") || !strings.Contains(logs, "hunter2") || !strings.Contains(logs, "level=ERROR") {
+		t.Errorf("log missing op ID / error: %s", logs)
+	}
+
+	resp, b = ts.do(t, nil, "GET", "/api/test/apierr500", nil, "Authorization", tok)
+	if resp.StatusCode != 500 || strings.Contains(string(b), "secret detail") {
+		t.Errorf("apiErr 5xx: %d %s, want sanitised 500", resp.StatusCode, b)
+	}
+	if !strings.Contains(ts.Log.String(), "op=testAPIErr500") {
+		t.Errorf("5xx apiErr not logged: %s", ts.Log.String())
+	}
+
+	before := ts.Log.String()
+	resp, b = ts.do(t, nil, "GET", "/api/test/conflict", nil, "Authorization", tok)
+	if resp.StatusCode != 409 || errCode(t, b) != "conflict" {
+		t.Errorf("4xx apiErr: %d %s, want 409 conflict", resp.StatusCode, b)
+	}
+	if ts.Log.String() != before {
+		t.Errorf("4xx apiErr was logged: %s", strings.TrimPrefix(ts.Log.String(), before))
+	}
+}
+
+func TestBodyWithoutContentTypeRefused(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t, withOps(registerPing))
+	tok := "Bearer " + ts.mintToken(t, "driver", false, "control")
+	do := func(body io.Reader, chunked bool) *http.Response {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/test/ping", body)
+		if chunked {
+			req.ContentLength = -1
+		}
+		req.Header.Set("Authorization", tok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	if r := do(strings.NewReader(`{"msg":"x"}`), false); r.StatusCode != 415 {
+		t.Errorf("body, no Content-Type: %d, want 415", r.StatusCode)
+	}
+	if r := do(io.NopCloser(strings.NewReader(`{"msg":"x"}`)), true); r.StatusCode != 415 {
+		t.Errorf("chunked body, no Content-Type: %d, want 415", r.StatusCode)
+	}
+	if r := do(nil, false); r.StatusCode == 415 {
+		t.Errorf("empty request: %d, want a non-415 (validation) status", r.StatusCode)
+	}
+}
+
+func TestRecovererKeepsStartedResponse(t *testing.T) {
+	t.Parallel()
+	var logs syncBuf
+	d := Deps{Logger: slog.New(slog.NewTextHandler(&logs, nil))}
+
+	before := d.recoverer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
+	rec := httptest.NewRecorder()
+	before.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "internal_error") {
+		t.Errorf("panic before write: %d %s", rec.Code, rec.Body.String())
+	}
+
+	after := d.recoverer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("partial"))
+		panic("late")
+	}))
+	rec = httptest.NewRecorder()
+	after.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "partial" {
+		t.Errorf("panic after write: %d %q, want 202 \"partial\" untouched", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(logs.String(), "late") {
+		t.Errorf("late panic not logged: %s", logs.String())
 	}
 }
 
 func TestTypedOperationSpec(t *testing.T) {
 	t.Parallel()
-	ts := newTS(t, withOps(registerPing))
+	ts := newTS(t, withOps(registerPing, registerBoom))
 	_, b := ts.do(t, nil, "GET", "/openapi.json", nil)
 	var spec struct {
 		Paths map[string]map[string]struct {
@@ -179,6 +338,9 @@ func TestTypedOperationSpec(t *testing.T) {
 		if _, ok := op.Responses[c]; ok {
 			t.Errorf("response %s should be stripped", c)
 		}
+	}
+	if _, ok := spec.Paths["/api/test/nobody"]["post"].Responses["415"]; ok {
+		t.Error("415 documented for an op without a request body")
 	}
 	if sec := spec.Paths["/healthz"]["get"].Security; sec == nil || len(sec) != 0 {
 		t.Errorf("public op security = %v, want []", sec)

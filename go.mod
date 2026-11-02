@@ -3,7 +3,9 @@ module github.com/metril/wattson
 go 1.26.0
 
 require (
+	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/flynn/noise v1.1.0
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/godbus/dbus/v5 v5.1.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.58.0
@@ -13,9 +15,7 @@ require (
 )
 
 require (
-	github.com/danielgtaylor/huma/v2 v2.40.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-chi/chi/v5 v5.5.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

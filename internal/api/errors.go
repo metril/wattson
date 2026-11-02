@@ -8,7 +8,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// ErrorResponse is the JSON body of every non-2xx response.
+// ErrorResponse is the JSON body of every non-2xx response. Handlers must
+// not use it as a Go type for responses or errors: return apiErr values,
+// and use APIError wherever a type is needed (for example in docs-only
+// specs), so the schema is registered once under this name.
 type ErrorResponse struct {
 	Error ErrorBody `json:"error" doc:"Error details."`
 }

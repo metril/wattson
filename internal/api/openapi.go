@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"sort"
@@ -45,6 +46,9 @@ var specGroups []func() []opSpec
 func registerSpec(f func() []opSpec) { specGroups = append(specGroups, f) }
 
 func (s opSpec) operation(reg huma.Registry) *huma.Operation {
+	if s.ID == "" || s.Summary == "" || s.Description == "" || s.Tag == "" {
+		panic(fmt.Sprintf("api: %s %s must have ID, Summary, Description and Tag", s.Method, s.Path))
+	}
 	op := &huma.Operation{
 		OperationID: s.ID,
 		Method:      s.Method,

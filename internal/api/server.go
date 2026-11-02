@@ -3,8 +3,10 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -47,7 +49,7 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 		d.Now = time.Now
 	}
 	r := chi.NewRouter()
-	r.Use(d.recoverer, securityHeaders)
+	r.Use(d.recoverer, securityHeaders, withLogger(d.Logger))
 	if d.Auth != nil {
 		r.Use(d.Auth.Middleware)
 	}
@@ -62,8 +64,13 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 
 	spa := web.Handler()
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/api/") {
+		if req.URL.Path == "/api" || strings.HasPrefix(req.URL.Path, "/api/") {
 			writeEnvelope(w, http.StatusNotFound, "not_found", "no such endpoint")
+			return
+		}
+		if req.Method != http.MethodGet && req.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			writeEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 			return
 		}
 		spa.ServeHTTP(w, req)
@@ -76,30 +83,53 @@ func newRouter(d Deps, extra ...func(huma.API)) http.Handler {
 
 const csp = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
 
-// docsCSP additionally lets the interactive API docs page load its viewer
-// from unpkg.com; it applies to /docs only.
-const docsCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; " +
-	"style-src 'self' 'unsafe-inline' https://unpkg.com; script-src 'self' 'unsafe-inline' https://unpkg.com; " +
-	"font-src 'self' data: https://unpkg.com"
-
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Frame-Options", "DENY")
-		if r.URL.Path == "/docs" {
-			h.Set("Content-Security-Policy", docsCSP)
-		} else {
-			h.Set("Content-Security-Policy", csp)
-		}
+		// huma's /docs handler replaces this with its own CSP, which allows
+		// only the pinned Stoplight Elements files from unpkg.com.
+		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }
 
-// recoverer turns a handler panic into a logged 500 error envelope.
+// trackingWriter records whether the response has started, so the
+// recoverer never writes a second status line or envelope.
+type trackingWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (t *trackingWriter) WriteHeader(code int) {
+	t.started = true
+	t.ResponseWriter.WriteHeader(code)
+}
+
+func (t *trackingWriter) Write(b []byte) (int, error) {
+	t.started = true
+	return t.ResponseWriter.Write(b)
+}
+
+func (t *trackingWriter) Flush() {
+	t.started = true
+	http.NewResponseController(t.ResponseWriter).Flush()
+}
+
+func (t *trackingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	t.started = true
+	return http.NewResponseController(t.ResponseWriter).Hijack()
+}
+
+func (t *trackingWriter) Unwrap() http.ResponseWriter { return t.ResponseWriter }
+
+// recoverer turns a handler panic into a logged 500 error envelope, unless
+// the response has already started.
 func (d Deps) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tw := &trackingWriter{ResponseWriter: w}
 		defer func() {
 			rec := recover()
 			if rec == nil {
@@ -110,9 +140,11 @@ func (d Deps) recoverer(next http.Handler) http.Handler {
 			}
 			d.Logger.Error("panic serving request", "method", r.Method, "path", r.URL.Path,
 				"panic", rec, "stack", string(debug.Stack()))
-			writeEnvelope(w, http.StatusInternalServerError, "internal_error", "internal error")
+			if !tw.started {
+				writeEnvelope(w, http.StatusInternalServerError, "internal_error", "internal error")
+			}
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(tw, r)
 	})
 }
 

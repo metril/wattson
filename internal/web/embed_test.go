@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"testing/fstest"
 )
@@ -49,10 +50,15 @@ func TestUINotBuilt(t *testing.T) {
 	}
 }
 
-func TestEmbeddedHandlerWithoutBuild(t *testing.T) {
+func TestEmbeddedHandler(t *testing.T) {
 	t.Parallel()
-	// A clean checkout only has dist/.gitkeep, so Handler answers 503.
-	if rec := get(Handler(), "/"); rec.Code != http.StatusServiceUnavailable && rec.Code != http.StatusOK {
-		t.Errorf("Handler /: %d", rec.Code)
+	// A clean checkout only has dist/.gitkeep (503); after a UI build the
+	// embedded index.html is served (200).
+	want := http.StatusServiceUnavailable
+	if _, err := os.Stat("dist/index.html"); err == nil {
+		want = http.StatusOK
+	}
+	if rec := get(Handler(), "/"); rec.Code != want {
+		t.Errorf("Handler /: %d, want %d", rec.Code, want)
 	}
 }

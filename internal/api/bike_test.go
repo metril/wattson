@@ -15,7 +15,7 @@ import (
 )
 
 // riderOf returns the first rider ID of the client's user.
-func (ts *testServer) riderOf(t *testing.T, c *http.Client) int64 {
+func (ts *testServer) riderOf(t testing.TB, c *http.Client) int64 {
 	t.Helper()
 	resp, b := ts.do(t, c, "GET", "/api/riders", nil)
 	if resp.StatusCode != 200 {
@@ -29,7 +29,7 @@ func (ts *testServer) riderOf(t *testing.T, c *http.Client) int64 {
 }
 
 // connectSim connects the client's rider to the simulator and waits for ready.
-func (ts *testServer) connectSim(t *testing.T, c *http.Client) int64 {
+func (ts *testServer) connectSim(t testing.TB, c *http.Client) int64 {
 	t.Helper()
 	rid := ts.riderOf(t, c)
 	resp, b := ts.do(t, c, "POST", "/api/bike/connect", map[string]any{"rider_id": rid})
@@ -40,7 +40,7 @@ func (ts *testServer) connectSim(t *testing.T, c *http.Client) int64 {
 	return rid
 }
 
-func poll(t *testing.T, what string, cond func() bool) {
+func poll(t testing.TB, what string, cond func() bool) {
 	t.Helper()
 	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
 		if cond() {
@@ -52,7 +52,7 @@ func poll(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-func (ts *testServer) bikeStatus(t *testing.T, c *http.Client) ridectl.Status {
+func (ts *testServer) bikeStatus(t testing.TB, c *http.Client) ridectl.Status {
 	t.Helper()
 	resp, b := ts.do(t, c, "GET", "/api/bike", nil)
 	if resp.StatusCode != 200 {
@@ -61,14 +61,14 @@ func (ts *testServer) bikeStatus(t *testing.T, c *http.Client) ridectl.Status {
 	return decode[ridectl.Status](t, b)
 }
 
-func (ts *testServer) waitBike(t *testing.T, c *http.Client, state string) ridectl.Status {
+func (ts *testServer) waitBike(t testing.TB, c *http.Client, state string) ridectl.Status {
 	t.Helper()
 	var st ridectl.Status
 	poll(t, "bike state "+state, func() bool { st = ts.bikeStatus(t, c); return st.State == state })
 	return st
 }
 
-func (ts *testServer) ride(t *testing.T, c *http.Client) engine.Tick {
+func (ts *testServer) ride(t testing.TB, c *http.Client) engine.Tick {
 	t.Helper()
 	resp, b := ts.do(t, c, "GET", "/api/ride", nil)
 	if resp.StatusCode != 200 {
@@ -77,7 +77,7 @@ func (ts *testServer) ride(t *testing.T, c *http.Client) engine.Tick {
 	return decode[engine.Tick](t, b)
 }
 
-func (ts *testServer) command(t *testing.T, c *http.Client, cmd string, value int) (*http.Response, []byte) {
+func (ts *testServer) command(t testing.TB, c *http.Client, cmd string, value int) (*http.Response, []byte) {
 	t.Helper()
 	body := map[string]any{"command": cmd}
 	if value != 0 {

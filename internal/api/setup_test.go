@@ -18,7 +18,7 @@ const testPW = "correct-horse-1"
 
 // setupAdmin runs the setup wizard on ts and returns a client holding the
 // admin session.
-func (ts *testServer) setupAdmin(t *testing.T) *http.Client {
+func (ts *testServer) setupAdmin(t testing.TB) *http.Client {
 	t.Helper()
 	c := ts.client(t)
 	resp, b := ts.do(t, c, "POST", "/api/setup", map[string]any{"username": "admin", "password": testPW})
@@ -29,7 +29,7 @@ func (ts *testServer) setupAdmin(t *testing.T) *http.Client {
 }
 
 // addUser creates a local user with a password directly in the store.
-func (ts *testServer) addUser(t *testing.T, name, pw string, admin bool) store.User {
+func (ts *testServer) addUser(t testing.TB, name, pw string, admin bool) store.User {
 	t.Helper()
 	h, err := auth.HashPassword(context.Background(), pw)
 	if err != nil {
@@ -43,7 +43,7 @@ func (ts *testServer) addUser(t *testing.T, name, pw string, admin bool) store.U
 }
 
 // loginAs signs in and returns a client holding the session.
-func (ts *testServer) loginAs(t *testing.T, name, pw string) *http.Client {
+func (ts *testServer) loginAs(t testing.TB, name, pw string) *http.Client {
 	t.Helper()
 	c := ts.client(t)
 	resp, b := ts.do(t, c, "POST", "/api/auth/login", map[string]any{"username": name, "password": pw})
@@ -53,7 +53,7 @@ func (ts *testServer) loginAs(t *testing.T, name, pw string) *http.Client {
 	return c
 }
 
-func decode[T any](t *testing.T, b []byte) T {
+func decode[T any](t testing.TB, b []byte) T {
 	t.Helper()
 	var v T
 	if err := json.Unmarshal(b, &v); err != nil {

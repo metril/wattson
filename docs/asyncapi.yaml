@@ -1,0 +1,474 @@
+{
+  "asyncapi": "3.0.0",
+  "channels": {
+    "ride": {
+      "address": "/ws",
+      "bindings": {
+        "ws": {
+          "bindingVersion": "0.1.0",
+          "method": "GET"
+        }
+      },
+      "description": "The one channel: ride events flow to the client, commands flow to the server.",
+      "messages": {
+        "ack": {
+          "$ref": "#/components/messages/ack"
+        },
+        "bike": {
+          "$ref": "#/components/messages/bike"
+        },
+        "command": {
+          "$ref": "#/components/messages/command"
+        },
+        "error": {
+          "$ref": "#/components/messages/error"
+        },
+        "state": {
+          "$ref": "#/components/messages/state"
+        },
+        "tick": {
+          "$ref": "#/components/messages/tick"
+        }
+      },
+      "title": "Ride"
+    }
+  },
+  "components": {
+    "messages": {
+      "ack": {
+        "contentType": "application/json",
+        "description": "The command with this id was accepted by the ride engine.",
+        "name": "ack",
+        "payload": {
+          "$ref": "#/components/schemas/WSAck"
+        },
+        "summary": "Command accepted",
+        "title": "Ack"
+      },
+      "bike": {
+        "contentType": "application/json",
+        "description": "The bike connection changed state, rider, protocol or error.",
+        "name": "bike",
+        "payload": {
+          "$ref": "#/components/schemas/WSBike"
+        },
+        "summary": "Bike status changed",
+        "title": "Bike"
+      },
+      "command": {
+        "contentType": "application/json",
+        "description": "Starts, pauses, resumes or stops the ride, or changes the resistance level. Needs the control scope.",
+        "name": "command",
+        "payload": {
+          "$ref": "#/components/schemas/WSCommand"
+        },
+        "summary": "Ride command",
+        "title": "Command"
+      },
+      "error": {
+        "contentType": "application/json",
+        "description": "A command failed or a message could not be understood. The connection stays open.",
+        "name": "error",
+        "payload": {
+          "$ref": "#/components/schemas/WSError"
+        },
+        "summary": "Command or message rejected",
+        "title": "Error"
+      },
+      "state": {
+        "contentType": "application/json",
+        "description": "The first message after the handshake: the current bike status and the latest ride snapshot.",
+        "name": "state",
+        "payload": {
+          "$ref": "#/components/schemas/WSState"
+        },
+        "summary": "Full state, sent once on connect",
+        "title": "State"
+      },
+      "tick": {
+        "contentType": "application/json",
+        "description": "A ride snapshot, sent about once per second while a bike is connected.",
+        "name": "tick",
+        "payload": {
+          "$ref": "#/components/schemas/WSTick"
+        },
+        "summary": "Ride snapshot",
+        "title": "Tick"
+      }
+    },
+    "schemas": {
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Machine-readable error code",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable explanation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "Status": {
+        "additionalProperties": false,
+        "properties": {
+          "connected": {
+            "description": "Whether a live link to the bike exists right now.",
+            "type": "boolean"
+          },
+          "driver": {
+            "description": "Driver from settings in use: auto, fitplus, ftms or sim.",
+            "type": "string"
+          },
+          "hint": {
+            "description": "Advice for fixing LastError when it is a connection problem.",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level.",
+            "type": "string"
+          },
+          "protocol": {
+            "description": "Protocol of the live bike session: fitplus, ftms or sim.",
+            "type": "string"
+          },
+          "rider_id": {
+            "description": "Rider bound to the bike; absent when idle.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "since": {
+            "description": "When State last changed (RFC 3339).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "description": "idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "connected",
+          "since"
+        ],
+        "type": "object"
+      },
+      "Tick": {
+        "additionalProperties": false,
+        "properties": {
+          "alert": {
+            "description": "Warning for the rider, for example a stale reading; absent when none.",
+            "type": "string"
+          },
+          "at": {
+            "description": "When this snapshot was taken (RFC 3339).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "cadence_rpm": {
+            "description": "Pedalling cadence in revolutions per minute.",
+            "format": "double",
+            "type": "number"
+          },
+          "connected": {
+            "description": "Whether the link to the bike is up right now.",
+            "type": "boolean"
+          },
+          "distance_m": {
+            "description": "Simulated distance covered, in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "elapsed_s": {
+            "description": "Riding time in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "grade_pct": {
+            "description": "Road grade of the current mode, in percent.",
+            "format": "double",
+            "type": "number"
+          },
+          "level": {
+            "description": "Resistance level (1 to 32) the engine last asked the bike for.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "Ride mode name, for example free.",
+            "type": "string"
+          },
+          "power_w": {
+            "description": "Rider power in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "reported_level": {
+            "description": "Resistance level (1 to 32) the bike last reported; 0 when unknown.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "speed_kmh": {
+            "description": "Simulated speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "state": {
+            "description": "Ride state: idle, connecting, ready, riding, paused or finished.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "state",
+          "mode",
+          "elapsed_s",
+          "distance_m",
+          "speed_kmh",
+          "power_w",
+          "cadence_rpm",
+          "grade_pct",
+          "level",
+          "reported_level",
+          "connected"
+        ],
+        "type": "object"
+      },
+      "WSAck": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The id of the command being confirmed, as the client sent it.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Message kind: always ack.",
+            "enum": [
+              "ack"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "WSBike": {
+        "additionalProperties": false,
+        "properties": {
+          "bike": {
+            "$ref": "#/components/schemas/Status",
+            "description": "New bike connection status."
+          },
+          "type": {
+            "description": "Message kind: always bike.",
+            "enum": [
+              "bike"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "bike"
+        ],
+        "type": "object"
+      },
+      "WSCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "What to do: start, pause, resume or stop the ride, set_level (to value), level_delta (by value) or set_target_power (not supported yet).",
+            "enum": [
+              "start",
+              "pause",
+              "resume",
+              "stop",
+              "set_level",
+              "level_delta",
+              "set_target_power"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "Client-chosen identifier, echoed in the ack or error that answers this command.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Message kind: always command.",
+            "enum": [
+              "command"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "Resistance level for set_level, change in levels for level_delta; ignored by the other commands.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "command"
+        ],
+        "type": "object"
+      },
+      "WSError": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody",
+            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state."
+          },
+          "id": {
+            "description": "The id of the failed command; absent when the message could not be parsed.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Message kind: always error.",
+            "enum": [
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "error"
+        ],
+        "type": "object"
+      },
+      "WSState": {
+        "additionalProperties": false,
+        "properties": {
+          "bike": {
+            "$ref": "#/components/schemas/Status",
+            "description": "Bike connection status right now."
+          },
+          "tick": {
+            "$ref": "#/components/schemas/Tick",
+            "description": "Latest ride snapshot right now."
+          },
+          "type": {
+            "description": "Message kind: always state.",
+            "enum": [
+              "state"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "bike",
+          "tick"
+        ],
+        "type": "object"
+      },
+      "WSTick": {
+        "additionalProperties": false,
+        "properties": {
+          "tick": {
+            "$ref": "#/components/schemas/Tick",
+            "description": "Ride snapshot; sent about once per second while a bike is connected."
+          },
+          "type": {
+            "description": "Message kind: always tick.",
+            "enum": [
+              "tick"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "tick"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "An API token. A browser cannot set the Authorization header on a WebSocket, so offer it as a second subprotocol next to `wattson.v1`: `Sec-WebSocket-Protocol: wattson.v1, bearer.\u003ctoken\u003e`.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "cookie": {
+        "description": "The session cookie set by the login flow. The Origin header must name this server or the configured public URL.",
+        "in": "cookie",
+        "name": "wattson_session",
+        "type": "httpApiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Live ride feed and commands for the single bike a Wattson server controls. Open `/ws` offering the `wattson.v1` subprotocol. The server sends the full state first, then ride ticks and bike status changes. Commands need the `control` scope; the `read` scope only watches. The server pings every 30 seconds and re-checks the credential about once a minute, closing with status 4401 `unauthorized` when it is revoked or expired. Inbound messages are limited to 4096 bytes.",
+    "title": "Wattson ride WebSocket",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "handleCommand": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/ride"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ride/messages/command"
+        }
+      ],
+      "summary": "The client sends commands",
+      "title": "Send a ride command"
+    },
+    "publishRideEvents": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/ride"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/ride/messages/state"
+        },
+        {
+          "$ref": "#/channels/ride/messages/tick"
+        },
+        {
+          "$ref": "#/channels/ride/messages/bike"
+        },
+        {
+          "$ref": "#/channels/ride/messages/ack"
+        },
+        {
+          "$ref": "#/channels/ride/messages/error"
+        }
+      ],
+      "summary": "The server sends state, ticks, bike changes, acks and errors",
+      "title": "Receive ride events"
+    }
+  },
+  "servers": {
+    "local": {
+      "description": "A Wattson server; use wss when it is served over TLS.",
+      "host": "localhost:8080",
+      "pathname": "/ws",
+      "protocol": "ws",
+      "security": [
+        {
+          "$ref": "#/components/securitySchemes/bearer"
+        },
+        {
+          "$ref": "#/components/securitySchemes/cookie"
+        }
+      ]
+    }
+  }
+}

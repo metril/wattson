@@ -85,7 +85,7 @@ func withOps(fs ...func(huma.API)) tsOpt {
 	return func(c *tsConfig) { c.extra = append(c.extra, fs...) }
 }
 
-func newTS(t *testing.T, opts ...tsOpt) *testServer {
+func newTS(t testing.TB, opts ...tsOpt) *testServer {
 	t.Helper()
 	var cfg tsConfig
 	for _, o := range opts {
@@ -121,7 +121,7 @@ func newTS(t *testing.T, opts ...tsOpt) *testServer {
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.
-func (ts *testServer) client(t *testing.T) *http.Client {
+func (ts *testServer) client(t testing.TB) *http.Client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -134,7 +134,7 @@ func (ts *testServer) client(t *testing.T) *http.Client {
 
 // do sends method path with an optional JSON body and extra header
 // key/value pairs, returning the response and its body.
-func (ts *testServer) do(t *testing.T, c *http.Client, method, path string, body any, hdr ...string) (*http.Response, []byte) {
+func (ts *testServer) do(t testing.TB, c *http.Client, method, path string, body any, hdr ...string) (*http.Response, []byte) {
 	t.Helper()
 	var rd io.Reader
 	if body != nil {
@@ -171,7 +171,7 @@ func (ts *testServer) do(t *testing.T, c *http.Client, method, path string, body
 
 // mintToken creates an API token for a fresh user holding scopes and
 // returns the bearer secret.
-func (ts *testServer) mintToken(t *testing.T, username string, admin bool, scopes ...string) string {
+func (ts *testServer) mintToken(t testing.TB, username string, admin bool, scopes ...string) string {
 	t.Helper()
 	ctx := context.Background()
 	u, err := ts.Store.CreateUser(ctx, store.User{Username: username, IsAdmin: admin})
@@ -188,7 +188,7 @@ func (ts *testServer) mintToken(t *testing.T, username string, admin bool, scope
 // oidcStart begins a login at slug, queues claims at the fake IdP and walks
 // the redirects up to, not including, the callback. It returns the callback
 // URL (on the test server) the IdP redirected to.
-func (ts *testServer) oidcStart(t *testing.T, c *http.Client, idp *oidctest.IDP, slug, returnTo string, claims map[string]any) string {
+func (ts *testServer) oidcStart(t testing.TB, c *http.Client, idp *oidctest.IDP, slug, returnTo string, claims map[string]any) string {
 	t.Helper()
 	path := "/api/auth/oidc/" + slug + "/login"
 	if returnTo != "" {
@@ -217,7 +217,7 @@ func (ts *testServer) oidcStart(t *testing.T, c *http.Client, idp *oidctest.IDP,
 
 // oidcLogin follows login → IdP /authorize → callback and returns the final
 // callback response (a redirect; its session cookie is in c's jar).
-func (ts *testServer) oidcLogin(t *testing.T, c *http.Client, idp *oidctest.IDP, slug, returnTo string, claims map[string]any) *http.Response {
+func (ts *testServer) oidcLogin(t testing.TB, c *http.Client, idp *oidctest.IDP, slug, returnTo string, claims map[string]any) *http.Response {
 	t.Helper()
 	cb := ts.oidcStart(t, c, idp, slug, returnTo, claims)
 	resp, err := c.Get(cb)

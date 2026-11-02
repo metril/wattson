@@ -3,6 +3,7 @@ module github.com/metril/wattson
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/flynn/noise v1.1.0

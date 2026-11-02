@@ -4598,6 +4598,69 @@
           "system"
         ]
       }
+    },
+    "/ws": {
+      "get": {
+        "description": "Upgrades to a WebSocket that streams the bike status and ride ticks and accepts ride commands. Offer the `wattson.v1` subprotocol (400 without it); authenticate with the session cookie (the Origin header must name this server or the public URL, else 403) or by also offering the subprotocol `bearer.\u003ctoken\u003e`. At most 32 connections are open at once (503 beyond that). The message formats are in the AsyncAPI document, docs/asyncapi.yaml. Requires the `read` scope.",
+        "operationId": "connectRideSocket",
+        "responses": {
+          "101": {
+            "description": "Switching Protocols"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Open the ride WebSocket",
+        "tags": [
+          "ride"
+        ]
+      }
     }
   },
   "security": [

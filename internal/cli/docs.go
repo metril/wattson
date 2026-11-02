@@ -21,3 +21,18 @@ func cmdOpenAPI(stdout, stderr io.Writer) int {
 	}
 	return 0
 }
+
+// cmdAsyncAPI prints the AsyncAPI document of the WebSocket (what
+// `make openapi` stores in docs/asyncapi.yaml).
+func cmdAsyncAPI(stdout, stderr io.Writer) int {
+	b, err := api.AsyncAPIDoc()
+	if err != nil {
+		fmt.Fprintf(stderr, "wattson asyncapi: %v\n", err)
+		return 1
+	}
+	if _, err := stdout.Write(b); err != nil {
+		fmt.Fprintf(stderr, "wattson asyncapi: %v\n", err)
+		return 1
+	}
+	return 0
+}

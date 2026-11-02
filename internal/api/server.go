@@ -48,6 +48,7 @@ type Deps struct {
 	// zero means 60 s.
 	WSRecheck time.Duration
 
+	ws        *wsGate              // open WebSocket count; set by newRouter
 	oidcState *oidcauth.StateCodec // signs the OIDC state cookie; derived from Box
 }
 
@@ -73,6 +74,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	if d.RiderInUse == nil && d.Bike != nil {
 		d.RiderInUse = d.Bike.RiderInUse
 	}
+	d.ws = &wsGate{}
 	d.oidcState = newStateCodec(d)
 	r := chi.NewRouter()
 	r.Use(d.recoverer, securityHeaders, withLogger(d.Logger))
@@ -87,6 +89,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	addDocsOnly(api)
 	finalizeSpec(api)
 	r.Get("/healthz", d.healthz)
+	r.Get("/ws", d.serveWS)
 	d.registerOIDCFlow(r)
 
 	spa := web.Handler()

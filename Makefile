@@ -19,9 +19,10 @@ go-test:
 	go vet ./...
 	go test ./... -race
 
-## openapi: regenerate docs/openapi.json from the Go API
+## openapi: regenerate docs/openapi.json and docs/asyncapi.yaml from the Go API
 openapi:
 	go run ./cmd/wattson openapi > docs/openapi.json
+	go run ./cmd/wattson asyncapi > docs/asyncapi.yaml
 
 ## lint: gofmt check plus go vet
 lint:

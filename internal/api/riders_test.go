@@ -221,3 +221,23 @@ func TestRiderDeleteInUse(t *testing.T) {
 		t.Errorf("delete after release: %d %s", resp.StatusCode, b)
 	}
 }
+
+func TestRiderLeadSField(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	resp, b := ts.do(t, admin, "GET", "/api/riders", nil)
+	rs := decode[[]RiderOut](t, b)
+	if resp.StatusCode != 200 || len(rs) != 1 || rs[0].LeadS != 4 {
+		t.Fatalf("list: %d %s", resp.StatusCode, b)
+	}
+	path := fmt.Sprintf("/api/riders/%d", rs[0].ID)
+	resp, b = ts.do(t, admin, "PATCH", path, map[string]any{"lead_s": 20})
+	if resp.StatusCode != 400 || !strings.Contains(string(b), "lead_s") {
+		t.Errorf("lead_s 20: %d %s", resp.StatusCode, b)
+	}
+	resp, b = ts.do(t, admin, "PATCH", path, map[string]any{"lead_s": 7.5})
+	if resp.StatusCode != 200 || decode[RiderOut](t, b).LeadS != 7.5 {
+		t.Errorf("lead_s 7.5: %d %s", resp.StatusCode, b)
+	}
+}

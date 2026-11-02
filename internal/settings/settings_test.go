@@ -292,3 +292,74 @@ func TestSealedValueBoundToField(t *testing.T) {
 		t.Fatalf("err = %v, want ErrDecrypt", err)
 	}
 }
+
+func TestBRouterSettingsDefaults(t *testing.T) {
+	t.Parallel()
+	d := settings.Defaults()
+	b, e := d.BRouter, d.Elevation
+	if b.URL != "http://brouter:17777" || b.Profile != "trekking" || b.SegmentsDir != "/segments" ||
+		b.SegmentsURL != "https://brouter.de/brouter/segments4/" || b.PublicURL != "https://brouter.de" || b.PublicFallback {
+		t.Errorf("brouter defaults = %+v", b)
+	}
+	if e.OpenTopoData || e.OpenTopoDataURL != "https://api.opentopodata.org/v1/mapzen" {
+		t.Errorf("elevation defaults = %+v", e)
+	}
+	if err := d.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBRouterSettingsValidation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		mod   func(*settings.Settings)
+		field string
+	}{
+		{"profile car", func(s *settings.Settings) { s.BRouter.Profile = "car" }, "brouter.profile"},
+		{"profile fastbike", func(s *settings.Settings) { s.BRouter.Profile = "fastbike" }, ""},
+		{"segments dir relative", func(s *settings.Settings) { s.BRouter.SegmentsDir = "rel/dir" }, "brouter.segments_dir"},
+		{"segments dir unclean", func(s *settings.Settings) { s.BRouter.SegmentsDir = "/a/../b" }, "brouter.segments_dir"},
+		{"segments dir ok", func(s *settings.Settings) { s.BRouter.SegmentsDir = "/data/segments" }, ""},
+		{"segments url no slash", func(s *settings.Settings) { s.BRouter.SegmentsURL = "https://x/segs" }, "brouter.segments_url"},
+		{"segments url ftp", func(s *settings.Settings) { s.BRouter.SegmentsURL = "ftp://x/" }, "brouter.segments_url"},
+		{"public url ftp", func(s *settings.Settings) { s.BRouter.PublicURL = "ftp://x" }, "brouter.public_url"},
+		{"otd url ftp", func(s *settings.Settings) { s.Elevation.OpenTopoDataURL = "ftp://x" }, "elevation.opentopodata_url"},
+		{"otd url ok", func(s *settings.Settings) { s.Elevation.OpenTopoDataURL = "http://otd.local/v1/x" }, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := settings.Defaults()
+			tc.mod(&s)
+			err := s.Validate()
+			if tc.field == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			var ve *settings.ValidationError
+			if !errors.As(err, &ve) || ve.Field != tc.field || !strings.HasPrefix(err.Error(), tc.field+": ") {
+				t.Fatalf("err = %v, want field %s", err, tc.field)
+			}
+		})
+	}
+}
+
+func TestElevationSectionRoundTrip(t *testing.T) {
+	t.Parallel()
+	svc, _ := newSvc(t)
+	ctx := context.Background()
+	if _, err := svc.Update(ctx, func(s *settings.Settings) error {
+		s.Elevation.OpenTopoData = true
+		s.BRouter.PublicFallback = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Get(ctx)
+	if err != nil || !got.Elevation.OpenTopoData || !got.BRouter.PublicFallback || got.BRouter.Profile != "trekking" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}

@@ -27,7 +27,7 @@ func TestOpenCreatesSchema(t *testing.T) {
 		}
 		got = append(got, n)
 	}
-	want := []string{"api_tokens", "oidc_providers", "riders", "schema_migrations", "sessions", "settings", "users"}
+	want := []string{"api_tokens", "oidc_providers", "riders", "routes", "schema_migrations", "sessions", "settings", "users"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("tables = %v, want %v", got, want)
 	}
@@ -52,8 +52,8 @@ func TestOpenIdempotent(t *testing.T) {
 	if err := s.Read.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("migrations = %d, want 1", n)
+	if n != 2 {
+		t.Fatalf("migrations = %d, want 2", n)
 	}
 	if err := s.Ping(context.Background()); err != nil {
 		t.Fatal(err)

@@ -73,7 +73,8 @@ func (s Settings) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.Any("general", s.General), slog.Any("auth", s.Auth),
 		slog.Any("bike", s.Bike), slog.Any("ha", s.HA), slog.Any("mqtt", s.MQTT),
-		slog.Any("brouter", s.BRouter), slog.Any("mapillary", s.Mapillary),
+		slog.Any("brouter", s.BRouter), slog.Any("elevation", s.Elevation),
+		slog.Any("mapillary", s.Mapillary),
 		slog.Any("strava", s.Strava),
 	)
 }

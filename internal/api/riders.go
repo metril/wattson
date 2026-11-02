@@ -29,6 +29,7 @@ type RiderOut struct {
 	CdA             float64   `json:"cda" doc:"Drag area (drag coefficient times frontal area) in square metres."`
 	Crr             float64   `json:"crr" doc:"Rolling resistance coefficient, dimensionless."`
 	PowerMultiplier float64   `json:"power_multiplier" doc:"Factor applied to the bike's measured power, dimensionless."`
+	LeadS           float64   `json:"lead_s" doc:"Lookahead for route grade, in seconds: on a route the resistance follows the grade this many seconds of riding ahead. 0 to 15."`
 	CreatedAt       time.Time `json:"created_at" doc:"Creation time, UTC."`
 	UpdatedAt       time.Time `json:"updated_at" doc:"Last change time, UTC."`
 }
@@ -36,7 +37,7 @@ type RiderOut struct {
 func riderOut(r store.Rider) RiderOut {
 	return RiderOut{ID: r.ID, UserID: r.UserID, Name: r.Name, WeightKg: r.WeightKg, BikeKg: r.BikeKg,
 		FTPW: r.FTPW, MinLevel: r.MinLevel, MaxLevel: r.MaxLevel, Gain: r.Gain, OffsetLevel: r.OffsetLevel,
-		DownhillScale: r.DownhillScale, CdA: r.CdA, Crr: r.Crr, PowerMultiplier: r.PowerMultiplier,
+		DownhillScale: r.DownhillScale, CdA: r.CdA, Crr: r.Crr, PowerMultiplier: r.PowerMultiplier, LeadS: r.LeadS,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 
@@ -53,6 +54,7 @@ type RiderParams struct {
 	CdA             *float64 `json:"cda,omitempty" minimum:"0.15" maximum:"0.8" doc:"Drag area in square metres, 0.15 to 0.8. Default 0.32."`
 	Crr             *float64 `json:"crr,omitempty" minimum:"0.001" maximum:"0.02" doc:"Rolling resistance coefficient, 0.001 to 0.02. Default 0.004."`
 	PowerMultiplier *float64 `json:"power_multiplier,omitempty" minimum:"0.5" maximum:"2" doc:"Factor on measured power, 0.5 to 2.0. Default 1.0."`
+	LeadS           *float64 `json:"lead_s,omitempty" minimum:"0" maximum:"15" doc:"Lookahead for route grade, seconds, 0 to 15. Default 4."`
 }
 
 // apply copies the fields present in p onto r.
@@ -68,6 +70,7 @@ func (p RiderParams) apply(r *store.Rider) {
 	set(&r.CdA, p.CdA)
 	set(&r.Crr, p.Crr)
 	set(&r.PowerMultiplier, p.PowerMultiplier)
+	set(&r.LeadS, p.LeadS)
 }
 
 // checkRider validates the rules that span fields or need trimming.

@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"path"
 	"strconv"
+	"strings"
 
 	"github.com/metril/wattson/internal/blue"
 )
@@ -21,6 +23,7 @@ type Settings struct {
 	HA        HA        `json:"ha"`
 	MQTT      MQTT      `json:"mqtt"`
 	BRouter   BRouter   `json:"brouter"`
+	Elevation Elevation `json:"elevation"`
 	Mapillary Mapillary `json:"mapillary"`
 	Strava    Strava    `json:"strava"`
 }
@@ -76,8 +79,21 @@ type MQTT struct {
 	Password string `json:"password"` // secret
 }
 
+// BRouter configures routing (route drawing). PublicFallback sends route
+// requests to PublicURL when the local BRouter cannot answer.
 type BRouter struct {
-	URL string `json:"url"`
+	URL            string `json:"url"`
+	Profile        string `json:"profile"`
+	SegmentsDir    string `json:"segments_dir"`
+	SegmentsURL    string `json:"segments_url"`
+	PublicURL      string `json:"public_url"`
+	PublicFallback bool   `json:"public_fallback"`
+}
+
+// Elevation configures the optional external elevation lookup.
+type Elevation struct {
+	OpenTopoData    bool   `json:"opentopodata"`
+	OpenTopoDataURL string `json:"opentopodata_url"`
 }
 
 type Mapillary struct {
@@ -92,9 +108,11 @@ type Strava struct {
 // Defaults returns the settings used before anything is stored.
 func Defaults() Settings {
 	return Settings{
-		Auth:    Auth{AllowLocalLogin: true, SessionTTLHours: 168},
-		Bike:    Bike{Driver: "sim", Transport: "local", IdleReleaseMin: 10, SimCadenceRpm: 80},
-		BRouter: BRouter{URL: "http://brouter:17777"},
+		Auth: Auth{AllowLocalLogin: true, SessionTTLHours: 168},
+		Bike: Bike{Driver: "sim", Transport: "local", IdleReleaseMin: 10, SimCadenceRpm: 80},
+		BRouter: BRouter{URL: "http://brouter:17777", Profile: "trekking", SegmentsDir: "/segments",
+			SegmentsURL: "https://brouter.de/brouter/segments4/", PublicURL: "https://brouter.de"},
+		Elevation: Elevation{OpenTopoDataURL: "https://api.opentopodata.org/v1/mapzen"},
 	}
 }
 
@@ -173,6 +191,25 @@ func (s Settings) Validate() error {
 		if _, ok := parseURL(v, "http", "https"); !ok {
 			return bad("brouter.url", "must be an absolute http(s) URL")
 		}
+	}
+	switch s.BRouter.Profile {
+	case "trekking", "fastbike", "safety", "shortest":
+	default:
+		return bad("brouter.profile", "must be one of trekking, fastbike, safety, shortest")
+	}
+	if v := s.BRouter.SegmentsDir; !path.IsAbs(v) || path.Clean(v) != v {
+		return bad("brouter.segments_dir", "must be an absolute, clean path such as /segments")
+	}
+	if v := s.BRouter.SegmentsURL; !strings.HasSuffix(v, "/") {
+		return bad("brouter.segments_url", "must be an absolute http(s) URL ending in /")
+	} else if _, ok := parseURL(v, "http", "https"); !ok {
+		return bad("brouter.segments_url", "must be an absolute http(s) URL ending in /")
+	}
+	if _, ok := parseURL(s.BRouter.PublicURL, "http", "https"); !ok {
+		return bad("brouter.public_url", "must be an absolute http(s) URL")
+	}
+	if _, ok := parseURL(s.Elevation.OpenTopoDataURL, "http", "https"); !ok {
+		return bad("elevation.opentopodata_url", "must be an absolute http(s) URL")
 	}
 	return nil
 }

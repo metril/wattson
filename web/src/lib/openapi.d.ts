@@ -683,10 +683,30 @@ export interface components {
             trusted_proxies?: string[];
         };
         BRouterOut: {
+            /** @description Routing profile: trekking, fastbike, safety or shortest. */
+            profile: string;
+            /** @description Whether route requests may be sent to the public BRouter service when the local one cannot answer. Off by default: nothing leaves this host unless enabled. */
+            public_fallback: boolean;
+            /** @description Base URL of the public BRouter service used as a fallback (http or https). */
+            public_url: string;
+            /** @description Absolute directory where BRouter routing segments (.rd5 files) are stored. */
+            segments_dir: string;
+            /** @description Base URL segments are downloaded from (http or https, ends with /). */
+            segments_url: string;
             /** @description BRouter base URL. */
             url: string;
         };
         BRouterPatch: {
+            /** @description Routing profile: trekking, fastbike, safety or shortest. */
+            profile?: string;
+            /** @description Allow route requests to go to the public BRouter service when the local one cannot answer. */
+            public_fallback?: boolean;
+            /** @description Public BRouter base URL (http or https) used as the fallback. */
+            public_url?: string;
+            /** @description Absolute, clean directory for BRouter segments, such as /segments. */
+            segments_dir?: string;
+            /** @description Segment download base URL (http or https, must end with /). */
+            segments_url?: string;
             /** @description BRouter base URL; empty clears it. */
             url?: string;
         };
@@ -813,6 +833,11 @@ export interface components {
              */
             gain?: number;
             /**
+             * Format: double
+             * @description Lookahead for route grade, seconds, 0 to 15. Default 4.
+             */
+            lead_s?: number;
+            /**
              * Format: int64
              * @description Highest resistance level, 1 to 32 and at least min_level. Default 16.
              */
@@ -887,6 +912,18 @@ export interface components {
         DiscoverInBody: {
             /** @description OIDC discovery URL: the issuer URL or the full .well-known/openid-configuration URL. */
             discovery_url: string;
+        };
+        ElevationOut: {
+            /** @description Whether imported tracks without usable elevation (or above 60 degrees latitude) may be sent to OpenTopoData to look up elevations. Off by default: nothing leaves this host unless enabled. */
+            opentopodata: boolean;
+            /** @description OpenTopoData API base URL including the dataset (http or https). */
+            opentopodata_url: string;
+        };
+        ElevationPatch: {
+            /** @description Allow elevation lookups at OpenTopoData for tracks without usable elevation. */
+            opentopodata?: boolean;
+            /** @description OpenTopoData API base URL including the dataset (http or https). */
+            opentopodata_url?: string;
         };
         ErrorBody: {
             /** @description Machine-readable error code */
@@ -1029,6 +1066,11 @@ export interface components {
              */
             gain?: number;
             /**
+             * Format: double
+             * @description Lookahead for route grade, seconds, 0 to 15. Default 4.
+             */
+            lead_s?: number;
+            /**
              * Format: int64
              * @description Highest resistance level, 1 to 32 and at least min_level. Default 16.
              */
@@ -1165,6 +1207,11 @@ export interface components {
              */
             id: number;
             /**
+             * Format: double
+             * @description Lookahead for route grade, in seconds: on a route the resistance follows the grade this many seconds of riding ahead. 0 to 15.
+             */
+            lead_s: number;
+            /**
              * Format: int64
              * @description Highest resistance level used in rides, 1 to 32.
              */
@@ -1230,6 +1277,8 @@ export interface components {
             bike: components["schemas"]["BikeOut"];
             /** @description BRouter routing service. */
             brouter: components["schemas"]["BRouterOut"];
+            /** @description Elevation lookup for imported routes. */
+            elevation: components["schemas"]["ElevationOut"];
             /** @description General settings. */
             general: components["schemas"]["GeneralOut"];
             /** @description Home Assistant connection. */
@@ -1248,6 +1297,8 @@ export interface components {
             bike?: components["schemas"]["BikePatch"];
             /** @description BRouter routing service. */
             brouter?: components["schemas"]["BRouterPatch"];
+            /** @description Elevation lookup for imported routes. */
+            elevation?: components["schemas"]["ElevationPatch"];
             /** @description General settings. */
             general?: components["schemas"]["GeneralPatch"];
             /** @description Home Assistant connection. */

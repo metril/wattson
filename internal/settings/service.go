@@ -44,6 +44,7 @@ func sections(s *Settings) []section {
 		{"ha", &s.HA, []secret{{"ha.token", &s.HA.Token}}},
 		{"mqtt", &s.MQTT, []secret{{"mqtt.password", &s.MQTT.Password}}},
 		{"brouter", &s.BRouter, nil},
+		{"elevation", &s.Elevation, nil},
 		{"mapillary", &s.Mapillary, []secret{{"mapillary.token", &s.Mapillary.Token}}},
 		{"strava", &s.Strava, []secret{{"strava.client_secret", &s.Strava.ClientSecret}}},
 	}

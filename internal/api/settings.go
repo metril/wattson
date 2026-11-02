@@ -20,6 +20,7 @@ type SettingsOut struct {
 	HA        HAOut        `json:"ha" doc:"Home Assistant connection."`
 	MQTT      MQTTOut      `json:"mqtt" doc:"MQTT broker connection."`
 	BRouter   BRouterOut   `json:"brouter" doc:"BRouter routing service."`
+	Elevation ElevationOut `json:"elevation" doc:"Elevation lookup for imported routes."`
 	Mapillary MapillaryOut `json:"mapillary" doc:"Mapillary street imagery."`
 	Strava    StravaOut    `json:"strava" doc:"Strava integration."`
 }
@@ -56,7 +57,17 @@ type MQTTOut struct {
 }
 
 type BRouterOut struct {
-	URL string `json:"url" doc:"BRouter base URL."`
+	URL            string `json:"url" doc:"BRouter base URL."`
+	Profile        string `json:"profile" doc:"Routing profile: trekking, fastbike, safety or shortest."`
+	SegmentsDir    string `json:"segments_dir" doc:"Absolute directory where BRouter routing segments (.rd5 files) are stored."`
+	SegmentsURL    string `json:"segments_url" doc:"Base URL segments are downloaded from (http or https, ends with /)."`
+	PublicURL      string `json:"public_url" doc:"Base URL of the public BRouter service used as a fallback (http or https)."`
+	PublicFallback bool   `json:"public_fallback" doc:"Whether route requests may be sent to the public BRouter service when the local one cannot answer. Off by default: nothing leaves this host unless enabled."`
+}
+
+type ElevationOut struct {
+	OpenTopoData    bool   `json:"opentopodata" doc:"Whether imported tracks without usable elevation (or above 60 degrees latitude) may be sent to OpenTopoData to look up elevations. Off by default: nothing leaves this host unless enabled."`
+	OpenTopoDataURL string `json:"opentopodata_url" doc:"OpenTopoData API base URL including the dataset (http or https)."`
 }
 
 type MapillaryOut struct {
@@ -76,9 +87,11 @@ func settingsOut(s settings.Settings) SettingsOut {
 		Bike: BikeOut{Driver: s.Bike.Driver, Transport: s.Bike.Transport, Address: s.Bike.Address,
 			ESPHomeHost: s.Bike.ESPHomeHost, ESPHomeKeySet: s.Bike.ESPHomeKey != "",
 			IdleReleaseMin: s.Bike.IdleReleaseMin, SimCadenceRpm: s.Bike.SimCadenceRpm},
-		HA:        HAOut{URL: s.HA.URL, TokenSet: s.HA.Token != ""},
-		MQTT:      MQTTOut{URL: s.MQTT.URL, Username: s.MQTT.Username, PasswordSet: s.MQTT.Password != ""},
-		BRouter:   BRouterOut{URL: s.BRouter.URL},
+		HA:   HAOut{URL: s.HA.URL, TokenSet: s.HA.Token != ""},
+		MQTT: MQTTOut{URL: s.MQTT.URL, Username: s.MQTT.Username, PasswordSet: s.MQTT.Password != ""},
+		BRouter: BRouterOut{URL: s.BRouter.URL, Profile: s.BRouter.Profile, SegmentsDir: s.BRouter.SegmentsDir,
+			SegmentsURL: s.BRouter.SegmentsURL, PublicURL: s.BRouter.PublicURL, PublicFallback: s.BRouter.PublicFallback},
+		Elevation: ElevationOut{OpenTopoData: s.Elevation.OpenTopoData, OpenTopoDataURL: s.Elevation.OpenTopoDataURL},
 		Mapillary: MapillaryOut{TokenSet: s.Mapillary.Token != ""},
 		Strava:    StravaOut{ClientID: s.Strava.ClientID, ClientSecretSet: s.Strava.ClientSecret != ""},
 	}
@@ -95,6 +108,7 @@ type SettingsPatch struct {
 	HA        *HAPatch        `json:"ha,omitempty" doc:"Home Assistant connection."`
 	MQTT      *MQTTPatch      `json:"mqtt,omitempty" doc:"MQTT broker connection."`
 	BRouter   *BRouterPatch   `json:"brouter,omitempty" doc:"BRouter routing service."`
+	Elevation *ElevationPatch `json:"elevation,omitempty" doc:"Elevation lookup for imported routes."`
 	Mapillary *MapillaryPatch `json:"mapillary,omitempty" doc:"Mapillary street imagery."`
 	Strava    *StravaPatch    `json:"strava,omitempty" doc:"Strava integration."`
 }
@@ -131,7 +145,17 @@ type MQTTPatch struct {
 }
 
 type BRouterPatch struct {
-	URL *string `json:"url,omitempty" doc:"BRouter base URL; empty clears it."`
+	URL            *string `json:"url,omitempty" doc:"BRouter base URL; empty clears it."`
+	Profile        *string `json:"profile,omitempty" doc:"Routing profile: trekking, fastbike, safety or shortest."`
+	SegmentsDir    *string `json:"segments_dir,omitempty" doc:"Absolute, clean directory for BRouter segments, such as /segments."`
+	SegmentsURL    *string `json:"segments_url,omitempty" doc:"Segment download base URL (http or https, must end with /)."`
+	PublicURL      *string `json:"public_url,omitempty" doc:"Public BRouter base URL (http or https) used as the fallback."`
+	PublicFallback *bool   `json:"public_fallback,omitempty" doc:"Allow route requests to go to the public BRouter service when the local one cannot answer."`
+}
+
+type ElevationPatch struct {
+	OpenTopoData    *bool   `json:"opentopodata,omitempty" doc:"Allow elevation lookups at OpenTopoData for tracks without usable elevation."`
+	OpenTopoDataURL *string `json:"opentopodata_url,omitempty" doc:"OpenTopoData API base URL including the dataset (http or https)."`
 }
 
 type MapillaryPatch struct {
@@ -181,6 +205,15 @@ func (p SettingsPatch) apply(s *settings.Settings) {
 	}
 	if b := p.BRouter; b != nil {
 		set(&s.BRouter.URL, b.URL)
+		set(&s.BRouter.Profile, b.Profile)
+		set(&s.BRouter.SegmentsDir, b.SegmentsDir)
+		set(&s.BRouter.SegmentsURL, b.SegmentsURL)
+		set(&s.BRouter.PublicURL, b.PublicURL)
+		set(&s.BRouter.PublicFallback, b.PublicFallback)
+	}
+	if e := p.Elevation; e != nil {
+		set(&s.Elevation.OpenTopoData, e.OpenTopoData)
+		set(&s.Elevation.OpenTopoDataURL, e.OpenTopoDataURL)
 	}
 	if m := p.Mapillary; m != nil {
 		set(&s.Mapillary.Token, m.Token)

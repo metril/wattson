@@ -53,19 +53,64 @@
       "BRouterOut": {
         "additionalProperties": false,
         "properties": {
+          "profile": {
+            "description": "Routing profile: trekking, fastbike, safety or shortest.",
+            "type": "string"
+          },
+          "public_fallback": {
+            "description": "Whether route requests may be sent to the public BRouter service when the local one cannot answer. Off by default: nothing leaves this host unless enabled.",
+            "type": "boolean"
+          },
+          "public_url": {
+            "description": "Base URL of the public BRouter service used as a fallback (http or https).",
+            "type": "string"
+          },
+          "segments_dir": {
+            "description": "Absolute directory where BRouter routing segments (.rd5 files) are stored.",
+            "type": "string"
+          },
+          "segments_url": {
+            "description": "Base URL segments are downloaded from (http or https, ends with /).",
+            "type": "string"
+          },
           "url": {
             "description": "BRouter base URL.",
             "type": "string"
           }
         },
         "required": [
-          "url"
+          "url",
+          "profile",
+          "segments_dir",
+          "segments_url",
+          "public_url",
+          "public_fallback"
         ],
         "type": "object"
       },
       "BRouterPatch": {
         "additionalProperties": false,
         "properties": {
+          "profile": {
+            "description": "Routing profile: trekking, fastbike, safety or shortest.",
+            "type": "string"
+          },
+          "public_fallback": {
+            "description": "Allow route requests to go to the public BRouter service when the local one cannot answer.",
+            "type": "boolean"
+          },
+          "public_url": {
+            "description": "Public BRouter base URL (http or https) used as the fallback.",
+            "type": "string"
+          },
+          "segments_dir": {
+            "description": "Absolute, clean directory for BRouter segments, such as /segments.",
+            "type": "string"
+          },
+          "segments_url": {
+            "description": "Segment download base URL (http or https, must end with /).",
+            "type": "string"
+          },
           "url": {
             "description": "BRouter base URL; empty clears it.",
             "type": "string"
@@ -325,6 +370,13 @@
             "minimum": 0,
             "type": "number"
           },
+          "lead_s": {
+            "description": "Lookahead for route grade, seconds, 0 to 15. Default 4.",
+            "format": "double",
+            "maximum": 15,
+            "minimum": 0,
+            "type": "number"
+          },
           "max_level": {
             "description": "Highest resistance level, 1 to 32 and at least min_level. Default 16.",
             "format": "int64",
@@ -489,6 +541,38 @@
         "required": [
           "discovery_url"
         ],
+        "type": "object"
+      },
+      "ElevationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "opentopodata": {
+            "description": "Whether imported tracks without usable elevation (or above 60 degrees latitude) may be sent to OpenTopoData to look up elevations. Off by default: nothing leaves this host unless enabled.",
+            "type": "boolean"
+          },
+          "opentopodata_url": {
+            "description": "OpenTopoData API base URL including the dataset (http or https).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opentopodata",
+          "opentopodata_url"
+        ],
+        "type": "object"
+      },
+      "ElevationPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "opentopodata": {
+            "description": "Allow elevation lookups at OpenTopoData for tracks without usable elevation.",
+            "type": "boolean"
+          },
+          "opentopodata_url": {
+            "description": "OpenTopoData API base URL including the dataset (http or https).",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ErrorBody": {
@@ -844,6 +928,13 @@
             "minimum": 0,
             "type": "number"
           },
+          "lead_s": {
+            "description": "Lookahead for route grade, seconds, 0 to 15. Default 4.",
+            "format": "double",
+            "maximum": 15,
+            "minimum": 0,
+            "type": "number"
+          },
           "max_level": {
             "description": "Highest resistance level, 1 to 32 and at least min_level. Default 16.",
             "format": "int64",
@@ -1096,6 +1187,11 @@
             "format": "int64",
             "type": "integer"
           },
+          "lead_s": {
+            "description": "Lookahead for route grade, in seconds: on a route the resistance follows the grade this many seconds of riding ahead. 0 to 15.",
+            "format": "double",
+            "type": "number"
+          },
           "max_level": {
             "description": "Highest resistance level used in rides, 1 to 32.",
             "format": "int64",
@@ -1151,6 +1247,7 @@
           "cda",
           "crr",
           "power_multiplier",
+          "lead_s",
           "created_at",
           "updated_at"
         ],
@@ -1217,6 +1314,10 @@
             "$ref": "#/components/schemas/BRouterOut",
             "description": "BRouter routing service."
           },
+          "elevation": {
+            "$ref": "#/components/schemas/ElevationOut",
+            "description": "Elevation lookup for imported routes."
+          },
           "general": {
             "$ref": "#/components/schemas/GeneralOut",
             "description": "General settings."
@@ -1245,6 +1346,7 @@
           "ha",
           "mqtt",
           "brouter",
+          "elevation",
           "mapillary",
           "strava"
         ],
@@ -1264,6 +1366,10 @@
           "brouter": {
             "$ref": "#/components/schemas/BRouterPatch",
             "description": "BRouter routing service."
+          },
+          "elevation": {
+            "$ref": "#/components/schemas/ElevationPatch",
+            "description": "Elevation lookup for imported routes."
           },
           "general": {
             "$ref": "#/components/schemas/GeneralPatch",

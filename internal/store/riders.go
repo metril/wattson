@@ -22,6 +22,7 @@ type Rider struct {
 	DownhillScale    float64
 	CdA, Crr         float64
 	PowerMultiplier  float64
+	LeadS            float64 // route-grade lookahead, seconds
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -30,18 +31,18 @@ type Rider struct {
 func DefaultRider(userID int64, name string) Rider {
 	return Rider{UserID: userID, Name: name, WeightKg: 75, BikeKg: 8, FTPW: 200,
 		MinLevel: 1, MaxLevel: 16, Gain: 1.0, OffsetLevel: 5, DownhillScale: 0.5,
-		CdA: 0.32, Crr: 0.004, PowerMultiplier: 1.0}
+		CdA: 0.32, Crr: 0.004, PowerMultiplier: 1.0, LeadS: 4}
 }
 
 const riderCols = `id, user_id, name, weight_kg, bike_kg, ftp_w, min_level, max_level, gain,
-	offset_level, downhill_scale, cda, crr, power_multiplier, created_at, updated_at`
+	offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at`
 
 func scanRider(r scanner) (Rider, error) {
 	var x Rider
 	var created, updated string
 	if err := r.Scan(&x.ID, &x.UserID, &x.Name, &x.WeightKg, &x.BikeKg, &x.FTPW, &x.MinLevel,
 		&x.MaxLevel, &x.Gain, &x.OffsetLevel, &x.DownhillScale, &x.CdA, &x.Crr,
-		&x.PowerMultiplier, &created, &updated); err != nil {
+		&x.PowerMultiplier, &x.LeadS, &created, &updated); err != nil {
 		return Rider{}, err
 	}
 	var err error
@@ -59,10 +60,10 @@ func (s *Store) CreateRider(ctx context.Context, r Rider) (Rider, error) {
 	now := time.Now().UTC()
 	res, err := s.Write.ExecContext(ctx,
 		`INSERT INTO riders(user_id, name, weight_kg, bike_kg, ftp_w, min_level, max_level, gain,
-			offset_level, downhill_scale, cda, crr, power_multiplier, created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.UserID, r.Name, r.WeightKg, r.BikeKg, r.FTPW, r.MinLevel, r.MaxLevel, r.Gain,
-		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, fmtTime(now), fmtTime(now))
+		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, fmtTime(now), fmtTime(now))
 	if err != nil {
 		return Rider{}, fmt.Errorf("create rider: %w", err)
 	}
@@ -80,11 +81,11 @@ func (s *Store) EnsureRider(ctx context.Context, r Rider) error {
 	now := fmtTime(time.Now().UTC())
 	if _, err := s.Write.ExecContext(ctx,
 		`INSERT INTO riders(user_id, name, weight_kg, bike_kg, ftp_w, min_level, max_level, gain,
-			offset_level, downhill_scale, cda, crr, power_multiplier, created_at, updated_at)
-		 SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+			offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at)
+		 SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
 		 WHERE NOT EXISTS (SELECT 1 FROM riders WHERE user_id = ?)`,
 		r.UserID, r.Name, r.WeightKg, r.BikeKg, r.FTPW, r.MinLevel, r.MaxLevel, r.Gain,
-		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, now, now, r.UserID); err != nil {
+		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, now, now, r.UserID); err != nil {
 		return fmt.Errorf("ensure rider: %w", err)
 	}
 	return nil
@@ -95,10 +96,10 @@ func (s *Store) EnsureRider(ctx context.Context, r Rider) error {
 func (s *Store) UpdateRider(ctx context.Context, r Rider) (Rider, error) {
 	res, err := s.Write.ExecContext(ctx,
 		`UPDATE riders SET name=?, weight_kg=?, bike_kg=?, ftp_w=?, min_level=?, max_level=?, gain=?,
-			offset_level=?, downhill_scale=?, cda=?, crr=?, power_multiplier=?, updated_at=?
+			offset_level=?, downhill_scale=?, cda=?, crr=?, power_multiplier=?, lead_s=?, updated_at=?
 		 WHERE id=? AND user_id=?`,
 		r.Name, r.WeightKg, r.BikeKg, r.FTPW, r.MinLevel, r.MaxLevel, r.Gain, r.OffsetLevel,
-		r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, fmtTime(time.Now().UTC()), r.ID, r.UserID)
+		r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, fmtTime(time.Now().UTC()), r.ID, r.UserID)
 	if err != nil {
 		return Rider{}, fmt.Errorf("update rider: %w", err)
 	}

@@ -21,6 +21,7 @@ const rider = (over: Partial<Rider> = {}): Rider => ({
   offset_level: 5,
   gain: 1,
   downhill_scale: 0.5,
+  lead_s: 4,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
   ...over,

@@ -38,6 +38,7 @@ const SPECS: Spec[] = [
   { key: 'max_level', label: 'Highest resistance level', hint: '1 to 32, at least the lowest.', def: 16, min: 1, max: 32, step: '1', int: true },
   { key: 'offset_level', label: 'Flat-road level (level at 0 % grade)', hint: 'Between lowest and highest. Free rides start here.', def: 5, min: 1, max: 32, step: '0.5' },
   { key: 'gain', label: 'Gain (levels per 1 % grade)', hint: '0 to 5.', def: 1, min: 0, max: 5, step: '0.1' },
+  { key: 'lead_s', label: 'Lead (s)', hint: 'Seconds of road ahead the resistance reacts to on a route, 0 to 15.', def: 4, min: 0, max: 15, step: '0.5' },
   { key: 'downhill_scale', label: 'Downhill relief (0 to 1)', hint: 'Lower gives less relief on descents.', def: 0.5, min: 0, max: 1, step: '0.05' },
 ];
 

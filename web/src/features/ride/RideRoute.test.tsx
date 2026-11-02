@@ -30,6 +30,19 @@ vi.mock('@/features/map/MapView', async () => {
   };
 });
 
+vi.mock('@/features/ride/Ride3D', () => ({
+  default: (p: { exaggeration: number; tier: string; onFallback(r: string): void }) => (
+    <div data-testid="ride3d" data-ex={p.exaggeration} data-tier={p.tier}>
+      <button onClick={() => p.onFallback('slow')}>mock slow</button>
+      <button onClick={() => p.onFallback('context_lost')}>mock lost</button>
+    </div>
+  ),
+}));
+
+const withWebgl = () =>
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((type: string) =>
+    type === 'webgl2' ? {} : null) as unknown as HTMLCanvasElement['getContext']);
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 400 });
 });
@@ -43,6 +56,7 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeWebSocket);
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
 });
@@ -156,5 +170,76 @@ describe('Ride route mode', () => {
     expect(await screen.findByText(/no longer available/i)).toBeInTheDocument();
     expect(screen.queryByTestId('route-pos')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Harder' })).toBeInTheDocument();
+  });
+
+  describe('views', () => {
+    const riding = async () => {
+      const { ws } = await setup();
+      tick(ws, { distance_m: 1 });
+    };
+    it('a saved 3D view renders Ride3D instead of the 2D map', async () => {
+      withWebgl();
+      localStorage.setItem('wattson.view', '3d');
+      localStorage.setItem('wattson.view.exaggeration', '2');
+      await riding();
+      const r3 = await screen.findByTestId('ride3d');
+      expect(r3).toHaveAttribute('data-ex', '2');
+      expect(screen.queryByTestId('mapview')).not.toBeInTheDocument();
+      expect(screen.getByTestId('route-pos')).toBeInTheDocument();
+    });
+
+    it('slow fallback returns to 2D, saves it and explains', async () => {
+      withWebgl();
+      localStorage.setItem('wattson.view', '3d');
+      await riding();
+      await userEvent.click(await screen.findByRole('button', { name: 'mock slow' }));
+      await screen.findByTestId('mapview');
+      expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
+      expect(localStorage.getItem('wattson.view')).toBe('2d');
+      expect(localStorage.getItem('wattson.view.fell_back')).toBe('1');
+      expect(
+        screen.getByText('3D was too slow on this display, so the ride switched to 2D. Choose 3D in View to try again.'),
+      ).toBeInTheDocument();
+    });
+
+    it('a lost context says so', async () => {
+      withWebgl();
+      localStorage.setItem('wattson.view', '3d');
+      await riding();
+      await userEvent.click(await screen.findByRole('button', { name: 'mock lost' }));
+      expect(await screen.findByText('The 3D view stopped responding, so the ride switched to 2D.')).toBeInTheDocument();
+    });
+
+    it('choosing 3D in the menu clears fell_back and switches', async () => {
+      withWebgl();
+      localStorage.setItem('wattson.view.fell_back', '1');
+      await riding();
+      await screen.findByTestId('mapview');
+      await userEvent.click(screen.getByRole('button', { name: 'View' }));
+      await userEvent.click(screen.getByRole('radio', { name: /3D flyover/ }));
+      await screen.findByTestId('ride3d');
+      expect(localStorage.getItem('wattson.view')).toBe('3d');
+      expect(localStorage.getItem('wattson.view.fell_back')).toBe('0');
+      expect(localStorage.getItem('wattson.view.tier')).toMatch(/^(full|lite)$/);
+    });
+
+    it('without WebGL a saved 3D view shows the 2D map and 3D is disabled', async () => {
+      localStorage.setItem('wattson.view', '3d');
+      await riding();
+      await screen.findByTestId('mapview');
+      expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'View' }));
+      expect(screen.getByRole('radio', { name: /3D flyover/ })).toBeDisabled();
+      expect(screen.getByText("3D isn't supported on this display")).toBeInTheDocument();
+    });
+
+    it('a synthetic route has no View button', async () => {
+      const { ws } = await setup('/?route=3', {
+        'GET /api/routes/3': [200, routeFixture({ id: 3, source: 'synthetic' })],
+      });
+      tick(ws, { distance_m: 5 });
+      await screen.findByTestId('route-pos');
+      expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument();
+    });
   });
 });

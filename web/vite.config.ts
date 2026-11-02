@@ -35,6 +35,14 @@ export default defineConfig({
     emptyOutDir: true,
     // MapLibre is its own lazy chunk (~1 MB); the entry bundle is gated by npm run size.
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/maplibre-gl/')) return 'maplibre';
+          if (id.includes('/src/features/ride/Ride3D')) return 'ride3d';
+        },
+      },
+    },
   },
   server: {
     port: 5173,

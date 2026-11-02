@@ -105,7 +105,7 @@ func (d Deps) registerBike(api huma.API) {
 			"watch `GET /api/bike` or the WebSocket for `ready` or a connection problem. Any user with control may drive the single bike. " +
 			"Returns 409 `bike_busy` unless the bike is idle, 400 `no_bike_address` when the settings name no bike, " +
 			"and 404 for a rider that is not the caller's.",
-		Scope: auth.ScopeControl, Status: http.StatusAccepted, Errors: []int{http.StatusConflict, http.StatusServiceUnavailable}},
+		Scope: auth.ScopeControl, Status: http.StatusAccepted, Errors: []int{http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable}},
 		func(ctx context.Context, in *connectIn) (*bikeOut, error) {
 			m, err := d.bikeMgr()
 			if err != nil {

@@ -59,6 +59,32 @@ func TestTokenLifecycle(t *testing.T) {
 	}
 }
 
+func TestDeleteTokenNeedsControl(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	mk := func(name string, scopes ...string) CreatedToken {
+		resp, b := ts.do(t, admin, "POST", "/api/tokens", map[string]any{"name": name, "scopes": scopes})
+		if resp.StatusCode != 201 {
+			t.Fatalf("create %s: %d %s", name, resp.StatusCode, b)
+		}
+		return decode[CreatedToken](t, b)
+	}
+	kiosk, driver := mk("kiosk", "read"), mk("driver", "read", "control")
+	path := fmt.Sprintf("/api/tokens/%d", kiosk.ID)
+	// A read-only token cannot revoke, not even itself.
+	resp, b := ts.do(t, nil, "DELETE", path, nil, bearer(kiosk.Token)...)
+	if resp.StatusCode != 403 || errCode(t, b) != "forbidden" {
+		t.Fatalf("read token delete: %d %s, want 403 forbidden", resp.StatusCode, b)
+	}
+	if resp, _ = ts.do(t, nil, "GET", "/api/auth/me", nil, bearer(kiosk.Token)...); resp.StatusCode != 200 {
+		t.Errorf("kiosk token after refused delete: %d, want still valid", resp.StatusCode)
+	}
+	if resp, b = ts.do(t, nil, "DELETE", path, nil, bearer(driver.Token)...); resp.StatusCode != 204 {
+		t.Errorf("control token delete: %d %s, want 204", resp.StatusCode, b)
+	}
+}
+
 func TestTokenCannotMintToken(t *testing.T) {
 	t.Parallel()
 	ts := newTS(t)

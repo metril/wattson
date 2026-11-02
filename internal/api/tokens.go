@@ -110,7 +110,7 @@ func (d Deps) registerTokens(api huma.API) {
 	register(api, route{Method: http.MethodDelete, Path: "/api/tokens/{id}", ID: "deleteToken", Tag: "tokens",
 		Summary:     "Revoke an API token",
 		Description: "Deletes one of the caller's own tokens. Revocation takes effect immediately. A token owned by someone else returns 404.",
-		Scope:       auth.ScopeRead, Status: http.StatusNoContent},
+		Scope:       auth.ScopeControl, Status: http.StatusNoContent},
 		func(ctx context.Context, in *deleteTokenIn) (*noContent, error) {
 			id, _ := auth.FromContext(ctx)
 			err := d.Store.DeleteAPIToken(ctx, id.User.ID, in.ID)

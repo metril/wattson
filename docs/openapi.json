@@ -2726,6 +2726,16 @@
             },
             "description": "Forbidden"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -4386,7 +4396,7 @@
     },
     "/api/tokens/{id}": {
       "delete": {
-        "description": "Deletes one of the caller's own tokens. Revocation takes effect immediately. A token owned by someone else returns 404. Requires the `read` scope.",
+        "description": "Deletes one of the caller's own tokens. Revocation takes effect immediately. A token owned by someone else returns 404. Requires the `control` scope.",
         "operationId": "deleteToken",
         "parameters": [
           {

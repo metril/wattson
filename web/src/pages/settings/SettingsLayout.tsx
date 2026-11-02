@@ -7,6 +7,7 @@ const TABS = [
   ['general', 'General'],
   ['bike', 'Bike'],
   ['integrations', 'Integrations'],
+  ['maps', 'Map regions'],
   ['auth', 'Authentication'],
   ['users', 'Users'],
 ] as const;

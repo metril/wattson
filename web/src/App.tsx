@@ -26,6 +26,10 @@ const RouteSyntheticPage = lazy(() =>
 
 const RouteDrawPage = lazy(() => import('@/pages/RouteDraw').then((m) => ({ default: m.RouteDrawPage })));
 
+const MapRegionsPage = lazy(() =>
+  import('@/pages/settings/MapRegions').then((m) => ({ default: m.MapRegionsPage })),
+);
+
 const lazyPage = (el: JSX.Element) => (
   <Suspense
     fallback={
@@ -88,6 +92,7 @@ export function AppRoutes() {
           <Route path="general" element={<GeneralForm />} />
           <Route path="bike" element={<BikeForm />} />
           <Route path="integrations" element={<IntegrationsForm />} />
+          <Route path="maps" element={lazyPage(<MapRegionsPage />)} />
           <Route path="auth" element={<AuthPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="*" element={<Navigate to="general" replace />} />

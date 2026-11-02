@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -70,7 +73,27 @@ type env struct {
 	rid  int64
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, nil) }
+
+// hookRT runs before once, just before the first refresh_token request is sent.
+type hookRT struct {
+	base   http.RoundTripper
+	before func()
+	once   sync.Once
+}
+
+func (h *hookRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Path == "/oauth/token" && r.Body != nil {
+		b, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		if strings.Contains(string(b), "grant_type=refresh_token") && h.before != nil {
+			h.once.Do(h.before)
+		}
+	}
+	return h.base.RoundTrip(r)
+}
+
+func newEnvWith(t *testing.T, hook *hookRT) *env {
 	t.Helper()
 	st := storetest.New(t)
 	box, err := secretbox.NewBox(bytes.Repeat([]byte{7}, 32))
@@ -79,7 +102,12 @@ func newEnv(t *testing.T) *env {
 	}
 	set := settings.NewService(st, box)
 	fake := stravatest.New(t)
-	svc := strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: set, Client: strava.NewClient(fake.Endpoints(), nil)})
+	var hc *http.Client
+	if hook != nil {
+		hook.base = http.DefaultTransport
+		hc = &http.Client{Transport: hook}
+	}
+	svc := strava.NewService(strava.ServiceDeps{Store: st, Box: box, Settings: set, Client: strava.NewClient(fake.Endpoints(), hc)})
 	ctx := context.Background()
 	u, err := st.CreateUser(ctx, store.User{Username: "ada"})
 	if err != nil {
@@ -223,5 +251,146 @@ func TestCompleteRefusals(t *testing.T) {
 	}
 	if l, _ := e.st.StravaLink(ctx, e.rid); l.Connected() {
 		t.Error("connected despite refusals")
+	}
+}
+
+func TestReadStateUserCheckAlone(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.shared(t, "123", "shh")
+	ctx := context.Background()
+	loc, _ := e.svc.ConnectURL(ctx, e.rid, e.user.ID, "http://x/cb", "/riders")
+	state := loc[strings.Index(loc, "state=")+len("state="):]
+	if cs, err := e.svc.ReadState(state, e.user.ID); err != nil || cs.RiderID != e.rid {
+		t.Fatalf("own: %+v %v", cs, err)
+	}
+	for _, uid := range []int64{e.user.ID + 1, 0} {
+		if _, err := e.svc.ReadState(state, uid); !errors.Is(err, strava.ErrState) {
+			t.Errorf("user %d: %v", uid, err)
+		}
+	}
+}
+
+func expire(t *testing.T, e *env) {
+	t.Helper()
+	ctx := context.Background()
+	l, _ := e.st.StravaLink(ctx, e.rid)
+	l.ExpiresAt = time.Now().Add(-time.Hour)
+	if err := e.st.PutStravaLink(ctx, l); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSourceKeepsNewerRotation(t *testing.T) {
+	t.Parallel()
+	hook := &hookRT{}
+	e := newEnvWith(t, hook)
+	e.shared(t, "123", "shh")
+	e.connect(t)
+	expire(t, e)
+	ctx := context.Background()
+	// While this source refreshes (r1 -> r2), another writer stores r7/a7.
+	hook.before = func() {
+		l, _ := e.st.StravaLink(ctx, e.rid)
+		l.AccessEnc = e.box.SealFor("a7", fmt.Sprintf("strava.rider.%d.access_token", e.rid))
+		l.RefreshEnc = e.box.SealFor("r7", fmt.Sprintf("strava.rider.%d.refresh_token", e.rid))
+		l.ExpiresAt = time.Now().Add(5 * time.Hour)
+		if err := e.st.PutStravaLink(ctx, l); err != nil {
+			t.Error(err)
+		}
+	}
+	ts, err := e.svc.Source(ctx, e.rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := ts.Token()
+	if err != nil || tok.AccessToken != "a7" {
+		t.Fatalf("Token = %+v, %v; want the newer a7", tok, err)
+	}
+	l, _ := e.st.StravaLink(ctx, e.rid)
+	if got, _ := e.box.OpenFor(l.RefreshEnc, fmt.Sprintf("strava.rider.%d.refresh_token", e.rid)); got != "r7" || !l.Connected() {
+		t.Errorf("stored refresh = %q, connected %v; want the newer r7 kept", got, l.Connected())
+	}
+}
+
+func TestStaleSourceRefusedRefreshKeepsNewLink(t *testing.T) {
+	t.Parallel()
+	hook := &hookRT{}
+	e := newEnvWith(t, hook)
+	e.shared(t, "123", "shh")
+	e.connect(t)
+	expire(t, e)
+	ctx := context.Background()
+	// Mid-refresh the rider reconnects (new link) and Strava refuses the old refresh token.
+	hook.before = func() {
+		e.connect(t)
+		e.fake.SetApp("123", "other")
+	}
+	ts, err := e.svc.Source(ctx, e.rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := ts.Token()
+	if err != nil || tok.AccessToken != "a1" {
+		t.Fatalf("Token = %+v, %v; want the new link's a1", tok, err)
+	}
+	if l, _ := e.st.StravaLink(ctx, e.rid); !l.Connected() || l.AthleteID != 42 {
+		t.Errorf("new link was cleared: %+v", l)
+	}
+}
+
+func TestRevokedOnlyClearsMatchingToken(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.shared(t, "123", "shh")
+	e.connect(t)
+	ctx := context.Background()
+	if err := e.svc.Revoked(ctx, e.rid, "a-old"); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := e.st.StravaLink(ctx, e.rid); !l.Connected() {
+		t.Fatal("cleared by a stale token")
+	}
+	if err := e.svc.Revoked(ctx, e.rid, "a1"); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := e.st.StravaLink(ctx, e.rid); l.Connected() {
+		t.Error("not cleared by the current token")
+	}
+}
+
+func TestCompleteDeauthorizesReplacedAthlete(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.shared(t, "123", "shh")
+	e.connect(t)
+	e.connect(t) // same athlete again: the new grant must stay
+	if got := e.fake.Deauthorized(); len(got) != 0 {
+		t.Fatalf("same athlete deauthorized %v", got)
+	}
+	e.fake.SetAthlete(43, "Grace", "Hopper")
+	e.connect(t)
+	if got := e.fake.Deauthorized(); len(got) != 1 {
+		t.Errorf("deauthorized = %v, want the replaced athlete's token once", got)
+	}
+	if l, _ := e.st.StravaLink(context.Background(), e.rid); l.AthleteID != 43 || l.AthleteName != "Grace Hopper" || l.Scope != "read,activity:write" {
+		t.Errorf("link = %+v", l)
+	}
+}
+
+func TestDisconnectExpiredTokenSkipsRefresh(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.shared(t, "123", "shh")
+	e.connect(t)
+	expire(t, e)
+	if err := e.svc.Disconnect(context.Background(), e.rid); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.fake.Deauthorized(); len(got) != 1 || got[0] != "a1" {
+		t.Errorf("deauthorized = %v, want the stored a1 (no refresh)", got)
+	}
+	if l, _ := e.st.StravaLink(context.Background(), e.rid); l.Connected() {
+		t.Error("still connected")
 	}
 }

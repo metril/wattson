@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -130,8 +131,8 @@ func TestStravaConnectFlow(t *testing.T) {
 	if _, err := ts.Box.OpenFor(raw.RefreshEnc, fmt.Sprintf("strava.rider.%d.access_token", rider)); err == nil {
 		t.Error("refresh token opens under the access-token AAD")
 	}
-	if lg := ts.Log.String(); strings.Contains(lg, "shh") {
-		t.Errorf("log contains the client secret:\n%s", lg)
+	if lg := ts.Log.String(); regexp.MustCompile(`shh|\ba1\b|\br1\b`).MatchString(lg) {
+		t.Errorf("log contains a secret or token:\n%s", lg)
 	}
 	for _, s := range []string{"a1", "r1", "shh"} {
 		if strings.Contains(string(body), s) {
@@ -244,12 +245,18 @@ func TestStravaOwnApp(t *testing.T) {
 	if _, body := ts.stravaLink(t, admin, rider); strings.Contains(string(body), "own-sec") {
 		t.Error("GET leaks the own secret")
 	}
+	if resp, b := ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"client_secret": "other"}); resp.StatusCode != 400 {
+		t.Errorf("secret without client_id: %d %s, want 400", resp.StatusCode, b)
+	}
 	authURL, cb := ts.stravaStart(t, admin, rider, "")
 	if u, _ := url.Parse(authURL); u.Query().Get("client_id") != "999" {
 		t.Errorf("authorize = %s", authURL)
 	}
 	if _, loc := ts.getLoc(t, admin, cb); loc != "/riders?strava=connected" {
 		t.Errorf("loc = %q", loc)
+	}
+	if lg := ts.Log.String(); regexp.MustCompile(`own-sec|\ba1\b|\br1\b`).MatchString(lg) {
+		t.Errorf("log contains a secret or token:\n%s", lg)
 	}
 }
 
@@ -265,7 +272,7 @@ func TestStravaOwnAppOverridesShared(t *testing.T) {
 		t.Errorf("link = %+v", l)
 	}
 	// Emptying the client ID returns to the shared app and drops the secret.
-	ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"client_secret": "x"})
+	ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"client_id": "999", "client_secret": "x"})
 	ts.do(t, admin, "PATCH", fmt.Sprintf("/api/riders/%d/strava", rider), map[string]any{"client_id": ""})
 	if l, _ := ts.stravaLink(t, admin, rider); !l.Available || l.UsesOwnApp || l.ClientSecretSet {
 		t.Errorf("link = %+v", l)

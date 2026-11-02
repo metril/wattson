@@ -2458,7 +2458,7 @@
             "type": "string"
           },
           "client_secret": {
-            "description": "The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Never returned.",
+            "description": "The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Must be sent together with client_id (400 otherwise). Never returned.",
             "maxLength": 256,
             "type": "string"
           }

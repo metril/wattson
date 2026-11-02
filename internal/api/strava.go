@@ -37,7 +37,7 @@ type stravaPatchIn struct {
 	ID   int64 `path:"id" doc:"Rider ID."`
 	Body struct {
 		ClientID     *string `json:"client_id,omitempty" pattern:"^[0-9]{0,12}$" doc:"The rider's own Strava API client ID: digits only, at most 12. An empty string returns the rider to the shared application and removes the own secret. A changed value disconnects the rider."`
-		ClientSecret *string `json:"client_secret,omitempty" maxLength:"256" doc:"The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Never returned."`
+		ClientSecret *string `json:"client_secret,omitempty" maxLength:"256" doc:"The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Must be sent together with client_id (400 otherwise). Never returned."`
 		AutoUpload   *bool   `json:"auto_upload,omitempty" doc:"Upload finished rides to Strava automatically."`
 	}
 }
@@ -106,6 +106,9 @@ func (d Deps) registerStrava(api huma.API) {
 		func(ctx context.Context, in *stravaPatchIn) (*stravaLinkBody, error) {
 			if _, err := d.ownedRiderStrava(ctx, in.ID); err != nil {
 				return nil, err
+			}
+			if in.Body.ClientSecret != nil && in.Body.ClientID == nil {
+				return nil, apiErr(http.StatusBadRequest, "invalid_request", "client_secret: send client_id together with it")
 			}
 			l, err := d.Strava.UpdateLink(ctx, in.ID, in.Body.ClientID, in.Body.ClientSecret, in.Body.AutoUpload)
 			if err != nil {

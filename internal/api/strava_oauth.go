@@ -101,7 +101,7 @@ func (d Deps) handleStravaConnect(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusNotFound, "not_found", "no such rider")
 		return
 	} else if err != nil {
-		d.Logger.Error("strava connect: load rider", "err", err)
+		loggerFrom(r.Context()).Error("strava connect: load rider", "err", err)
 		writeEnvelope(w, http.StatusInternalServerError, "internal_error", "internal error")
 		return
 	}
@@ -111,7 +111,7 @@ func (d Deps) handleStravaConnect(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, strava.ErrNotConfigured):
 		redirectTo(w, stravaFail(returnTo, "not_configured"))
 	case err != nil:
-		d.Logger.Error("strava connect", "rider", riderID, "err", err)
+		loggerFrom(r.Context()).Error("strava connect", "rider", riderID, "err", err)
 		writeEnvelope(w, http.StatusInternalServerError, "internal_error", "internal error")
 	default:
 		redirectTo(w, loc)
@@ -135,13 +135,13 @@ func (d Deps) handleStravaCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	cs, err := d.Strava.ReadState(q.Get("state"), ident.User.ID)
 	if err != nil {
-		d.Logger.Warn("strava callback refused", "reason", "state", "user", ident.User.ID, "err", err)
+		loggerFrom(r.Context()).Warn("strava callback refused", "reason", "state", "user", ident.User.ID, "err", err)
 		redirectTo(w, stravaFail(defaultStravaReturn, "state"))
 		return
 	}
 	returnTo := sanitizeReturnTo(cs.ReturnTo)
 	if q.Get("error") != "" || q.Get("code") == "" {
-		d.Logger.Info("strava connect not granted", "rider", cs.RiderID, "error", truncate(q.Get("error"), 100))
+		loggerFrom(r.Context()).Info("strava connect not granted", "rider", cs.RiderID, "error", truncate(q.Get("error"), 100))
 		redirectTo(w, stravaFail(returnTo, "denied"))
 		return
 	}
@@ -153,10 +153,10 @@ func (d Deps) handleStravaCallback(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, strava.ErrState):
 		redirectTo(w, stravaFail(returnTo, "state"))
 	case errors.Is(err, strava.ErrScope):
-		d.Logger.Info("strava connect refused", "rider", cs.RiderID, "reason", "scope", "granted", truncate(q.Get("scope"), 100))
+		loggerFrom(r.Context()).Info("strava connect refused", "rider", cs.RiderID, "reason", "scope", "granted", truncate(q.Get("scope"), 100))
 		redirectTo(w, stravaFail(returnTo, "scope"))
 	default:
-		d.Logger.Warn("strava connect failed", "rider", cs.RiderID, "reason", "exchange_failed", "err", err)
+		loggerFrom(r.Context()).Warn("strava connect failed", "rider", cs.RiderID, "reason", "exchange_failed", "err", err)
 		redirectTo(w, stravaFail(returnTo, "exchange_failed"))
 	}
 }

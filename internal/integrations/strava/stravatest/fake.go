@@ -51,7 +51,8 @@ type Fake struct {
 	scope       string
 	deny        bool
 	unauth      bool
-	deauthCode  int // status /oauth/deauthorize answers; 0 means 200
+	athlete     [3]any // id, first, last of the athlete tokens carry
+	deauthCode  int    // status /oauth/deauthorize answers; 0 means 200
 	polls       int
 	failStatus  int // next uploads-endpoint request answers this status
 	failMsg     string
@@ -66,7 +67,7 @@ type Fake struct {
 
 // New starts a fake with app "123"/"shh"; t closes it on cleanup.
 func New(t testing.TB) *Fake {
-	f := &Fake{appID: "123", appSecret: "shh", scope: strava.Scope, polls: 1, uploads: map[int64]*upload{}}
+	f := &Fake{athlete: [3]any{42, "Ada", "Lovelace"}, appID: "123", appSecret: "shh", scope: strava.Scope, polls: 1, uploads: map[int64]*upload{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /oauth/authorize", f.authorize)
 	mux.HandleFunc("POST /oauth/token", f.token)
@@ -118,6 +119,11 @@ func (f *Fake) Unauthorized(on bool) { f.locked(func() { f.unauth = on }) }
 
 // FailDeauthorize makes /oauth/deauthorize answer status (still recording the token).
 func (f *Fake) FailDeauthorize(status int) { f.locked(func() { f.deauthCode = status }) }
+
+// SetAthlete changes the athlete later token responses carry (default 42, Ada Lovelace).
+func (f *Fake) SetAthlete(id int64, first, last string) {
+	f.locked(func() { f.athlete = [3]any{id, first, last} })
+}
 
 // SetApp changes the accepted client credentials.
 func (f *Fake) SetApp(id, secret string) { f.locked(func() { f.appID, f.appSecret = id, secret }) }
@@ -204,7 +210,7 @@ func (f *Fake) token(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, http.StatusOK, map[string]any{
 		"token_type": "Bearer", "access_token": "a" + strconv.Itoa(n), "refresh_token": f.validRefr,
 		"expires_at": time.Now().Add(6 * time.Hour).Unix(), "expires_in": 6 * 3600, "scope": f.scope,
-		"athlete": map[string]any{"id": 42, "firstname": "Ada", "lastname": "Lovelace"},
+		"athlete": map[string]any{"id": f.athlete[0], "firstname": f.athlete[1], "lastname": f.athlete[2]},
 	})
 }
 

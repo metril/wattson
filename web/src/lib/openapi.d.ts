@@ -2184,7 +2184,7 @@ export interface components {
             auto_upload?: boolean;
             /** @description The rider's own Strava API client ID: digits only, at most 12. An empty string returns the rider to the shared application and removes the own secret. A changed value disconnects the rider. */
             client_id?: string;
-            /** @description The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Never returned. */
+            /** @description The rider's own Strava client secret. Omit to keep the stored secret; a changed value disconnects the rider. Must be sent together with client_id (400 otherwise). Never returned. */
             client_secret?: string;
         };
         StravaStatusOut: {

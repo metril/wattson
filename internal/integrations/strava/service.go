@@ -50,6 +50,9 @@ type Service struct {
 	d        ServiceDeps
 	stateKey []byte
 	mu       sync.Mutex // serialises read-modify-write of strava_links rows
+
+	smu     sync.Mutex // guards sources
+	sources map[int64]*riderSource
 }
 
 // NewService builds a Service.
@@ -66,7 +69,7 @@ func NewService(d ServiceDeps) *Service {
 	if d.PollMax == 0 {
 		d.PollMax = 2 * time.Minute
 	}
-	return &Service{d: d, stateKey: d.Box.Derive(stateLabel)}
+	return &Service{d: d, stateKey: d.Box.Derive(stateLabel), sources: map[int64]*riderSource{}}
 }
 
 // Seal AADs bind each sealed value to its rider and field.
@@ -155,27 +158,77 @@ func (s *Service) Complete(ctx context.Context, state, code, grantedScope, redir
 	if err != nil {
 		return cs, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	l, err := s.d.Store.StravaLink(ctx, cs.RiderID)
+	prior, err := s.save(ctx, cs.RiderID, g, grantedScope)
 	if err != nil {
 		return cs, err
 	}
-	now := s.d.Now().UTC()
-	l.AthleteID, l.AthleteName, l.Scope = g.Athlete.ID, g.Athlete.Name, grantedScope
-	l.AccessEnc = s.d.Box.SealFor(g.Token.AccessToken, aad(cs.RiderID, "access_token"))
-	l.RefreshEnc = s.d.Box.SealFor(g.Token.RefreshToken, aad(cs.RiderID, "refresh_token"))
-	l.ExpiresAt, l.ConnectedAt = g.Token.Expiry.UTC(), &now
-	if l.RefreshEnc == "" {
-		return cs, errors.New("strava: token response has no refresh token")
+	// A different athlete's grant that this one replaces is orphaned: revoke
+	// it. (The same athlete's grant must stay: it is the one just issued.)
+	if prior.Connected() && prior.AthleteID != g.Athlete.ID {
+		s.deauthorize(ctx, prior)
 	}
-	return cs, s.d.Store.PutStravaLink(ctx, l)
+	return cs, nil
 }
 
-// Disconnect revokes the rider's authorisation at Strava (best effort) and
-// clears the athlete, tokens and connection time. The rider's own app
-// credentials and auto_upload are kept.
+// maxScope bounds the stored scope string.
+const maxScope = 256
+
+// save stores a fresh grant, returning the link it replaced.
+func (s *Service) save(ctx context.Context, riderID int64, g Grant, browserScope string) (store.StravaLink, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.d.Store.StravaLink(ctx, riderID)
+	if err != nil {
+		return store.StravaLink{}, err
+	}
+	prior := l
+	scope := g.Scope
+	if scope == "" {
+		scope = browserScope
+	}
+	if len(scope) > maxScope {
+		scope = scope[:maxScope]
+	}
+	now := s.d.Now().UTC()
+	l.AthleteID, l.AthleteName, l.Scope = g.Athlete.ID, g.Athlete.Name, scope
+	l.AccessEnc = s.d.Box.SealFor(g.Token.AccessToken, aad(riderID, "access_token"))
+	l.RefreshEnc = s.d.Box.SealFor(g.Token.RefreshToken, aad(riderID, "refresh_token"))
+	l.ExpiresAt, l.ConnectedAt = g.Token.Expiry.UTC(), &now
+	if l.RefreshEnc == "" {
+		return store.StravaLink{}, errors.New("strava: token response has no refresh token")
+	}
+	if err := s.d.Store.PutStravaLink(ctx, l); err != nil {
+		return store.StravaLink{}, err
+	}
+	s.dropSource(riderID)
+	return prior, nil
+}
+
+// deauthorize revokes l's access token at Strava, best effort within a
+// bounded budget. An expired token is tried as is: refreshing would spend
+// the budget on a call that only helps a grant about to be dropped.
+func (s *Service) deauthorize(ctx context.Context, l store.StravaLink) {
+	access, err := s.d.Box.OpenFor(l.AccessEnc, aad(l.RiderID, "access_token"))
+	if err != nil || access == "" {
+		return
+	}
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deauthTimeout)
+	defer cancel()
+	if err := s.d.Client.Deauthorize(dctx, access); err != nil {
+		s.d.Logger.Warn("strava deauthorize failed", "rider", l.RiderID, "err", err)
+	}
+}
+
+// Disconnect revokes the rider's authorisation at Strava (best effort, at
+// most 10 s) and clears the athlete, tokens and connection time. The rider's
+// own app credentials and auto_upload are kept.
 func (s *Service) Disconnect(ctx context.Context, riderID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.disconnectLocked(ctx, riderID)
+}
+
+func (s *Service) disconnectLocked(ctx context.Context, riderID int64) error {
 	l, err := s.d.Store.StravaLink(ctx, riderID)
 	if err != nil {
 		return err
@@ -183,20 +236,13 @@ func (s *Service) Disconnect(ctx context.Context, riderID int64) error {
 	if !l.Connected() {
 		return nil
 	}
-	if ts, err := s.Source(ctx, riderID); err == nil {
-		if tok, err := ts.Token(); err == nil {
-			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deauthTimeout)
-			if err := s.d.Client.Deauthorize(dctx, tok.AccessToken); err != nil {
-				s.d.Logger.Warn("strava deauthorize failed", "rider", riderID, "err", err)
-			}
-			cancel()
-		}
-	}
-	return s.Forget(ctx, riderID)
+	s.deauthorize(ctx, l)
+	return s.clearLocked(ctx, l)
 }
 
 // Forget clears the rider's connection locally, without telling Strava (it
-// has already revoked the grant, or Disconnect has just asked it to).
+// has already revoked the grant). Prefer Revoked after a 401, which refuses
+// to clear a connection newer than the token that failed.
 func (s *Service) Forget(ctx context.Context, riderID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -204,8 +250,31 @@ func (s *Service) Forget(ctx context.Context, riderID int64) error {
 	if err != nil {
 		return err
 	}
+	return s.clearLocked(ctx, l)
+}
+
+// Revoked clears the rider's connection after Strava answered 401 to
+// accessToken, but only if that token is still the stored one: a newer
+// connection or rotation is left alone.
+func (s *Service) Revoked(ctx context.Context, riderID int64, accessToken string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.d.Store.StravaLink(ctx, riderID)
+	if err != nil {
+		return err
+	}
+	cur, err := s.d.Box.OpenFor(l.AccessEnc, aad(riderID, "access_token"))
+	if err != nil || cur != accessToken {
+		return nil
+	}
+	return s.clearLocked(ctx, l)
+}
+
+// clearLocked wipes l's connection fields (s.mu held).
+func (s *Service) clearLocked(ctx context.Context, l store.StravaLink) error {
 	l.AthleteID, l.AthleteName, l.Scope = 0, "", ""
 	l.AccessEnc, l.RefreshEnc, l.ExpiresAt, l.ConnectedAt = "", "", time.Time{}, nil
+	s.dropSource(l.RiderID)
 	return s.d.Store.PutStravaLink(ctx, l)
 }
 
@@ -214,15 +283,17 @@ func (s *Service) Forget(ctx context.Context, riderID int64) error {
 // rider first (tokens belong to the old app). Emptying the client ID returns
 // the rider to the shared app and drops the own secret.
 func (s *Service) UpdateLink(ctx context.Context, riderID int64, clientID, clientSecret *string, autoUpload *bool) (store.StravaLink, error) {
-	cur, err := s.d.Store.StravaLink(ctx, riderID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, err := s.d.Store.StravaLink(ctx, riderID)
 	if err != nil {
 		return store.StravaLink{}, err
 	}
-	curSecret, err := s.d.Box.OpenFor(cur.ClientSecretEnc, aad(riderID, "client_secret"))
+	curSecret, err := s.d.Box.OpenFor(l.ClientSecretEnc, aad(riderID, "client_secret"))
 	if err != nil {
 		return store.StravaLink{}, fmt.Errorf("strava: open client secret: %w", err)
 	}
-	newID, newSecret := cur.ClientID, curSecret
+	newID, newSecret := l.ClientID, curSecret
 	if clientID != nil {
 		newID = *clientID
 	}
@@ -232,19 +303,17 @@ func (s *Service) UpdateLink(ctx context.Context, riderID int64, clientID, clien
 	if newID == "" {
 		newSecret = ""
 	}
-	if newID != cur.ClientID || newSecret != curSecret {
-		if err := s.Disconnect(ctx, riderID); err != nil {
-			return store.StravaLink{}, err
+	if newID != l.ClientID || newSecret != curSecret {
+		if l.Connected() {
+			s.deauthorize(ctx, l)
+			if err := s.clearLocked(ctx, l); err != nil {
+				return store.StravaLink{}, err
+			}
+			if l, err = s.d.Store.StravaLink(ctx, riderID); err != nil {
+				return store.StravaLink{}, err
+			}
 		}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	l, err := s.d.Store.StravaLink(ctx, riderID)
-	if err != nil {
-		return store.StravaLink{}, err
-	}
-	l.ClientID = newID
-	if newSecret != curSecret || l.ClientSecretEnc == "" {
+		l.ClientID = newID
 		l.ClientSecretEnc = s.d.Box.SealFor(newSecret, aad(riderID, "client_secret"))
 	}
 	if autoUpload != nil {
@@ -256,9 +325,12 @@ func (s *Service) UpdateLink(ctx context.Context, riderID int64, clientID, clien
 	return l, nil
 }
 
-// Source returns a token source for the connected rider. A refreshed token
-// pair is stored (sealed) before it is served; a refresh Strava refuses
-// clears the link and returns ErrUnauthorized.
+// Source returns the rider's cached token source. Every Token call starts
+// from the stored (sealed) link, so a source that outlives a reconnect, a
+// rotation by another source or a disconnect never serves or overwrites
+// stale tokens. A rotated token pair is stored before it is returned. A
+// refresh Strava refuses clears the link, but only if the refresh token that
+// was refused is still the stored one; the error is then ErrUnauthorized.
 func (s *Service) Source(ctx context.Context, riderID int64) (oauth2.TokenSource, error) {
 	l, err := s.d.Store.StravaLink(ctx, riderID)
 	if err != nil {
@@ -267,49 +339,96 @@ func (s *Service) Source(ctx context.Context, riderID int64) (oauth2.TokenSource
 	if !l.Connected() {
 		return nil, ErrNotConnected
 	}
-	app, _, err := s.AppFor(ctx, riderID)
-	if err != nil {
-		return nil, err
+	s.smu.Lock()
+	defer s.smu.Unlock()
+	src := s.sources[riderID]
+	if src == nil {
+		src = &riderSource{s: s, riderID: riderID}
+		s.sources[riderID] = src
 	}
-	access, err := s.d.Box.OpenFor(l.AccessEnc, aad(riderID, "access_token"))
-	if err != nil {
-		return nil, fmt.Errorf("strava: open access token: %w", err)
-	}
-	refresh, err := s.d.Box.OpenFor(l.RefreshEnc, aad(riderID, "refresh_token"))
-	if err != nil {
-		return nil, fmt.Errorf("strava: open refresh token: %w", err)
-	}
-	tok := &oauth2.Token{AccessToken: access, RefreshToken: refresh, Expiry: l.ExpiresAt}
-	persist := func(n *oauth2.Token) error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		cur, err := s.d.Store.StravaLink(context.WithoutCancel(ctx), riderID)
-		if err != nil {
-			return err
-		}
-		if !cur.Connected() {
-			return ErrNotConnected
-		}
-		cur.AccessEnc = s.d.Box.SealFor(n.AccessToken, aad(riderID, "access_token"))
-		cur.RefreshEnc = s.d.Box.SealFor(n.RefreshToken, aad(riderID, "refresh_token"))
-		cur.ExpiresAt = n.Expiry.UTC()
-		return s.d.Store.PutStravaLink(context.WithoutCancel(ctx), cur)
-	}
-	return &forgetOnUnauthorized{s: s, riderID: riderID, ts: s.d.Client.TokenSource(ctx, app, tok, persist)}, nil
+	return src, nil
 }
 
-type forgetOnUnauthorized struct {
+// dropSource forgets the cached source after the link changed hands.
+func (s *Service) dropSource(riderID int64) {
+	s.smu.Lock()
+	delete(s.sources, riderID)
+	s.smu.Unlock()
+}
+
+type riderSource struct {
 	s       *Service
 	riderID int64
-	ts      oauth2.TokenSource
+	mu      sync.Mutex // one refresh at a time per source
 }
 
-func (f *forgetOnUnauthorized) Token() (*oauth2.Token, error) {
-	t, err := f.ts.Token()
-	if errors.Is(err, ErrUnauthorized) {
-		if ferr := f.s.Forget(context.Background(), f.riderID); ferr != nil {
-			f.s.d.Logger.Warn("strava: clearing revoked link failed", "rider", f.riderID, "err", ferr)
+// expiryDelta matches oauth2's refresh-early window.
+const expiryDelta = 10 * time.Second
+
+func (r *riderSource) Token() (*oauth2.Token, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := r.s
+	ctx, cancel := context.WithTimeout(context.Background(), exchangeBudget)
+	defer cancel()
+	// Two passes: the second runs when another writer changed the link while
+	// this one was refreshing, and then trusts what the store holds.
+	for pass := 0; ; pass++ {
+		l, err := s.d.Store.StravaLink(ctx, r.riderID)
+		if err != nil {
+			return nil, err
 		}
+		if !l.Connected() {
+			return nil, ErrNotConnected
+		}
+		access, err := s.d.Box.OpenFor(l.AccessEnc, aad(r.riderID, "access_token"))
+		if err != nil {
+			return nil, fmt.Errorf("strava: open access token: %w", err)
+		}
+		refresh, err := s.d.Box.OpenFor(l.RefreshEnc, aad(r.riderID, "refresh_token"))
+		if err != nil {
+			return nil, fmt.Errorf("strava: open refresh token: %w", err)
+		}
+		tok := &oauth2.Token{AccessToken: access, RefreshToken: refresh, Expiry: l.ExpiresAt}
+		if access != "" && (l.ExpiresAt.IsZero() || s.d.Now().Add(expiryDelta).Before(l.ExpiresAt)) {
+			return tok, nil
+		}
+		app, _, err := s.AppFor(ctx, r.riderID)
+		if err != nil {
+			return nil, err
+		}
+		nt, rerr := s.d.Client.TokenSource(ctx, app, tok, nil).Token()
+
+		s.mu.Lock()
+		cur, err := s.d.Store.StravaLink(ctx, r.riderID)
+		if err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+		if cur.RefreshEnc != l.RefreshEnc { // someone else rotated, reconnected or disconnected
+			s.mu.Unlock()
+			if pass < 2 {
+				continue
+			}
+			return nil, errors.New("strava: link changed while refreshing")
+		}
+		if rerr != nil {
+			if errors.Is(rerr, ErrUnauthorized) {
+				if err := s.clearLocked(ctx, cur); err != nil {
+					s.d.Logger.Warn("strava: clearing revoked link failed", "rider", r.riderID, "err", err)
+				}
+			}
+			s.mu.Unlock()
+			return nil, rerr
+		}
+		cur.AccessEnc = s.d.Box.SealFor(nt.AccessToken, aad(r.riderID, "access_token"))
+		cur.RefreshEnc = s.d.Box.SealFor(nt.RefreshToken, aad(r.riderID, "refresh_token"))
+		cur.ExpiresAt = nt.Expiry.UTC()
+		err = s.d.Store.PutStravaLink(ctx, cur)
+		s.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return nt, nil
 	}
-	return t, err
 }

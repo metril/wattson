@@ -5,8 +5,11 @@ import { BikeBar } from '@/features/ride/BikeBar';
 import { LevelControls } from '@/features/ride/LevelControls';
 import { MetricGrid } from '@/features/ride/MetricGrid';
 import { RideControls } from '@/features/ride/RideControls';
-import { RoutePicker } from '@/features/ride/RoutePicker';
+import { ErgControls } from '@/features/ride/ErgControls';
+import { choiceFromParams, ergError, StartPicker, type StartChoice } from '@/features/ride/StartPicker';
 import { RouteView, useRouteId } from '@/features/ride/RouteView';
+import { useTickValue } from '@/features/ride/useTickValue';
+import { WorkoutView } from '@/features/ride/WorkoutView';
 import { notifyUnauthorized } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { createRideSocket } from '@/lib/ride-socket';
@@ -15,7 +18,7 @@ import type { CommandName, Tick } from '@/lib/ws-types';
 const ALERT_MS = 10_000;
 
 /**
- * Free ride: live readouts, resistance and ride controls over the WebSocket.
+ * Ride screen: live readouts, resistance and ride controls over the WebSocket.
  * Ticks bypass React; this component re-renders only when the connection,
  * bike, ride state or alert changes.
  */
@@ -56,27 +59,41 @@ export function RidePage() {
   );
   const levelSocket = useMemo(() => ({ send, ticks: socket.ticks }), [send, socket]);
 
-  // Route mode: picked before Start (from ?route=), then whatever the ticks say.
+  // What Start rides: picked before Start (from ?route= or ?workout=), then whatever the ticks say.
   const [params] = useSearchParams();
-  const [picked, setPicked] = useState<number | null>(() => {
-    const n = Number(params.get('route'));
-    return Number.isInteger(n) && n > 0 ? n : null;
-  });
+  const [choice, setChoice] = useState<StartChoice>(() => choiceFromParams(params));
   const routeId = useRouteId(socket.ticks);
   const routeMode = routeId !== 0;
+  const workoutId = useTickValue(socket.ticks, (t) => t.workout_id ?? 0, 0);
+  const mode = useTickValue(socket.ticks, (t) => t.mode, '');
   const control = useCallback(
-    (command: CommandName) => (command === 'start' && picked !== null ? send('start', 0, { route_id: picked }) : send(command)),
-    [send, picked],
+    (command: CommandName) => {
+      if (command !== 'start') return send(command);
+      switch (choice.kind) {
+        case 'route':
+          return send('start', 0, { route_id: choice.id });
+        case 'workout':
+          return send('start', 0, { workout_id: choice.id });
+        case 'erg': {
+          const bad = ergError(choice.watts);
+          return bad ? Promise.reject(new Error(bad)) : send('start', 0, { target_power_w: choice.watts });
+        }
+        default:
+          return send('start');
+      }
+    },
+    [send, choice],
   );
 
-  // "Route complete" only when the finish line was reached (a manual Stop is not), until the next Start.
-  const [complete, setComplete] = useState(false);
+  // "Route/Workout complete" only when the end was reached (a manual Stop is not), until the next Start.
+  const [complete, setComplete] = useState<'route' | 'workout' | null>(null);
   useEffect(() => {
     const apply = (t: Tick) => {
       if (t.state === 'finished') {
-        setComplete(t.route_id > 0 && t.route_length_m > 0 && t.distance_m >= t.route_length_m);
+        if (t.workout_id > 0) setComplete(t.block_count > 0 && t.block_index >= t.block_count - 1 && t.block_remaining_s <= 0 ? 'workout' : null);
+        else setComplete(t.route_id > 0 && t.route_length_m > 0 && t.distance_m >= t.route_length_m ? 'route' : null);
       } else if (t.state === 'riding') {
-        setComplete(false);
+        setComplete(null);
       }
     };
     if (socket.ticks.latest) apply(socket.ticks.latest);
@@ -84,6 +101,7 @@ export function RidePage() {
   }, [socket]);
 
   const { connected, state, bike } = status;
+  const ergMode = mode === 'erg';
   const active = state === 'ready' || state === 'riding' || state === 'paused';
 
   return (
@@ -96,20 +114,25 @@ export function RidePage() {
         </Banner>
       )}
       {cmdError && <Banner tone="error">{cmdError}</Banner>}
-      {state === 'ready' && <RoutePicker value={picked} onChange={setPicked} />}
+      {state === 'ready' && <StartPicker value={choice} onChange={setChoice} />}
       {complete && (
         <Banner tone="ok">
-          <p className="text-lg font-medium">Route complete</p>
+          <p className="text-lg font-medium">{complete === 'workout' ? 'Workout complete' : 'Route complete'}</p>
         </Banner>
       )}
       {routeMode && <RouteView routeId={routeId} ticks={socket.ticks} />}
-      <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} hr={bike?.hr}>
-        <LevelControls
-          socket={levelSocket}
-          route={routeMode}
-          disabled={!connected || !active}
-          onError={onError}
-        />
+      {workoutId !== 0 && <WorkoutView workoutId={workoutId} ticks={socket.ticks} riderId={bike?.rider_id} />}
+      <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} erg={ergMode} hr={bike?.hr}>
+        {ergMode ? (
+          <ErgControls send={send} free={workoutId === 0} disabled={!connected || !active} onError={onError} />
+        ) : (
+          <LevelControls
+            socket={levelSocket}
+            route={routeMode || mode === 'interval'}
+            disabled={!connected || !active}
+            onError={onError}
+          />
+        )}
       </MetricGrid>
       <RideControls state={state} send={control} disabled={!connected} onError={onError} />
     </div>

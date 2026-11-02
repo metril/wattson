@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { api, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
@@ -444,11 +445,87 @@ export function HeartRateForm() {
   return <SettingsGate>{(s) => <HeartRateBody s={s} />}</SettingsGate>;
 }
 
-/** The Bike settings tab: the bike, then the heart rate monitor. */
+const POWER_MODEL_KEY = ['bike', 'power-model'] as const;
+const CONFIRM_MS = 4000;
+
+/**
+ * What ERG has learned about this bike: the number of ride samples and the
+ * modelled watts at 80 rpm for a few levels. Reset (two taps) discards it.
+ */
+export function PowerModelCard() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: POWER_MODEL_KEY,
+    queryFn: async () => unwrap(await api.GET('/api/bike/power-model')),
+  });
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), CONFIRM_MS);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const reset = useMutation({
+    mutationFn: async () => unwrap(await api.DELETE('/api/bike/power-model')),
+    onSuccess: () => qc.invalidateQueries({ queryKey: POWER_MODEL_KEY }),
+  });
+
+  const m = q.data;
+  const at = (level: number) => (m && m.watts_at_80[level - 1] !== undefined ? `${Math.round(m.watts_at_80[level - 1])} W` : '–');
+  return (
+    <FormCard title="Learned power model">
+      {q.isError && <Banner tone="error">{errMessage(q.error)}</Banner>}
+      {reset.isError && <Banner tone="error">{errMessage(reset.error)}</Banner>}
+      {m && (
+        <>
+          <p className="text-sm text-dim">
+            ERG uses this to pick the resistance level for a target power. It learns from your rides on this bike.
+            {m.seeded && ' It is still the built-in starting model.'}
+          </p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+            {(
+              [
+                ['Samples', String(m.samples), 'pm-samples'],
+                ['L1 at 80 rpm', at(1), 'pm-l1'],
+                ['L8 at 80 rpm', at(8), 'pm-l8'],
+                ['L16 at 80 rpm', at(16), 'pm-l16'],
+              ] as const
+            ).map(([k, v, id]) => (
+              <div key={k} className="flex flex-col">
+                <dt className="text-sm font-medium text-dim">{k}</dt>
+                <dd data-testid={id} className="numeral text-lg">
+                  {v}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <div>
+            <Button
+              variant={armed ? 'danger' : 'secondary'}
+              disabled={reset.isPending}
+              onClick={() => {
+                if (!armed) {
+                  setArmed(true);
+                  return;
+                }
+                setArmed(false);
+                reset.mutate();
+              }}
+            >
+              {armed ? 'Tap again to reset' : 'Reset'}
+            </Button>
+          </div>
+        </>
+      )}
+    </FormCard>
+  );
+}
+
+/** The Bike settings tab: the bike, the learned power model, then the heart rate monitor. */
 export function BikePage() {
   return (
     <div className="flex flex-col gap-4">
       <BikeForm />
+      <PowerModelCard />
       <HeartRateForm />
     </div>
   );

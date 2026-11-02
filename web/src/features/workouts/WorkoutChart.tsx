@@ -1,6 +1,8 @@
 import { resolve, totalS, type Block, type RiderLite, type WorkoutType } from '@/lib/workout-math';
 
-const W = 1000;
+/** Width of the chart's viewBox; a cursor at fraction f of the workout sits at f * CHART_W. */
+export const CHART_W = 1000;
+const W = CHART_W;
 const H = 200;
 // Power zone upper bounds as a fraction of FTP (Z1..Z6; above is Z7).
 const ZONE_TOP = [0.55, 0.75, 0.9, 1.05, 1.2, 1.5];

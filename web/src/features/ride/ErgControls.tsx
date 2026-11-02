@@ -1,0 +1,84 @@
+import { useState } from 'react';
+import { Minus, Plus } from 'lucide-react';
+import { Button } from '@/components/Button';
+import { Field } from '@/components/Field';
+import type { CommandName } from '@/lib/ws-types';
+import { ergError } from './StartPicker';
+import { useRideKey } from './keys';
+
+const step =
+  'inline-flex h-[4.5rem] min-w-[7rem] flex-1 shrink-0 items-center justify-center gap-2 rounded-control border border-line bg-raised px-3 text-xl font-medium text-chalk hover:border-accent active:bg-line disabled:cursor-not-allowed disabled:opacity-50 min-[1600px]:h-24 min-[1600px]:text-3xl';
+
+/**
+ * ERG target controls. "−10 W" / "+10 W" send level_delta, which the engine
+ * turns into a 10 W nudge (in a workout, an adjustment on top of the blocks).
+ * Free ERG also takes a typed target. ArrowUp/Right and ArrowDown/Left nudge too.
+ */
+export function ErgControls({
+  send,
+  free = false,
+  disabled = false,
+  onError,
+}: {
+  send: (command: CommandName, value?: number) => Promise<void>;
+  /** Free ERG (no workout): shows the numeric target input. */
+  free?: boolean;
+  disabled?: boolean;
+  onError?: (e: unknown) => void;
+}) {
+  const [text, setText] = useState('');
+  const watts = Number(text);
+  const invalid = text === '' || ergError(watts) !== null;
+
+  function bump(delta: 1 | -1) {
+    if (disabled) return;
+    send('level_delta', delta).catch((e) => onError?.(e));
+  }
+
+  useRideKey((key) => {
+    if (disabled) return false;
+    if (key === 'ArrowUp' || key === 'ArrowRight') bump(1);
+    else if (key === 'ArrowDown' || key === 'ArrowLeft') bump(-1);
+    else return false;
+    return true;
+  });
+
+  return (
+    <div className="col-span-2 flex flex-col gap-3 rounded-panel border border-line bg-panel p-3 md:col-span-3">
+      <div className="flex items-center gap-3">
+        <button type="button" className={step} disabled={disabled} onClick={() => bump(-1)}>
+          <Minus aria-hidden className="size-7" />
+          <span>−10 W</span>
+        </button>
+        <button type="button" className={step} disabled={disabled} onClick={() => bump(1)}>
+          <Plus aria-hidden className="size-7" />
+          <span>+10 W</span>
+        </button>
+      </div>
+      {free && (
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (disabled || invalid) return;
+            send('set_target_power', watts).catch((err) => onError?.(err));
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <Field
+              label="Target power (W)"
+              type="number"
+              inputMode="numeric"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              error={text !== '' ? (ergError(watts) ?? undefined) : undefined}
+            />
+          </div>
+          <Button type="submit" variant="primary" disabled={disabled || invalid} className="mb-px">
+            Set
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}

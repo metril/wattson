@@ -108,4 +108,21 @@ describe('MetricGrid', () => {
     rerender(<MetricGrid ticks={new TickStore()} hr={{ source: 'ha', target: 'sensor.hr', connected: true }} />);
     expect(screen.getByText('Home Assistant: connected')).toBeInTheDocument();
   });
+
+  it('ERG mode adds a Target tile without re-rendering', () => {
+    const ticks = new TickStore();
+    let renders = 0;
+    render(
+      <Profiler id="g" onRender={() => renders++}>
+        <MetricGrid ticks={ticks} erg />
+      </Profiler>,
+    );
+    expect(screen.getByText('Target')).toBeInTheDocument();
+    act(() => {
+      ticks.set(tickFixture({ target_power_w: 250, power_w: 241 }));
+      vi.runAllTimers();
+    });
+    expect(screen.getByText('250')).toBeInTheDocument();
+    expect(renders).toBe(1);
+  });
 });

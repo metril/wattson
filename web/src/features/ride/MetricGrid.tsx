@@ -22,6 +22,7 @@ const pickGrade = (t: Tick) => t.grade_pct.toFixed(1);
 const pickAhead = (t: Tick) => t.grade_ahead_pct.toFixed(1);
 const pickRemaining = (t: Tick) => km(Math.max(0, t.route_length_m - t.distance_m));
 const pickHR = (t: Tick) => (t.heart_rate_bpm > 0 ? fixed0(t.heart_rate_bpm) : '—');
+const pickTarget = (t: Tick) => fixed0(t.target_power_w);
 const pickLevel = (t: Tick) => `L${t.level} (${t.reported_level > 0 ? t.reported_level : '–'})`;
 
 const HR_SOURCE: Record<string, string> = { ble: 'Bluetooth', ha: 'Home Assistant' };
@@ -41,6 +42,7 @@ export function MetricGrid({
   ticks,
   showLevel = true,
   route = false,
+  erg = false,
   hr,
   children,
 }: {
@@ -48,6 +50,8 @@ export function MetricGrid({
   showLevel?: boolean;
   /** Route ride: adds grade now, grade ahead and the distance left. */
   route?: boolean;
+  /** ERG ride: adds the target power. */
+  erg?: boolean;
   /** Heart rate source status; absent when no source is set. */
   hr?: BikeStatus['hr'];
   children?: ReactNode;
@@ -96,6 +100,15 @@ export function MetricGrid({
         <Value ticks={ticks} pick={pickHR} className={`text-numeral-md ${tv}`} />
         {hr && <p className="truncate text-xs text-dim">{hrStatus(hr)}</p>}
       </div>
+      {erg && (
+        <div className={tile}>
+          <p className={label}>
+            <span>Target</span>
+            <span>W</span>
+          </p>
+          <Value ticks={ticks} pick={pickTarget} className={`text-numeral-md ${tv}`} />
+        </div>
+      )}
       {route && (
         <>
           <div className={tile}>

@@ -53,7 +53,8 @@ export function LevelControls({
       <div className="flex min-w-0 flex-col items-center">
         <span className="text-sm font-medium text-dim">Resistance</span>
         <span ref={level} className="numeral text-numeral-md min-[1600px]:text-[clamp(3rem,6vw,7rem)]" />
-        {route && <span ref={bias} className="numeral text-lg" />}
+        {/* Always mounted: useTickText binds its ref once, so a span added later would stay empty. */}
+        <span ref={bias} hidden={!route} className="numeral text-lg" />
         <span ref={reported} className="text-sm text-dim" />
       </div>
       <button type="button" className={step} aria-label={route ? 'Harder' : 'Increase level'} disabled={disabled} onClick={() => bump(1)}>

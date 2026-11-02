@@ -74,17 +74,17 @@ const tick = (ws: FakeWebSocket, over: Partial<Tick>) =>
 describe('Ride route mode', () => {
   it('preselects ?route= and Start sends that route_id', async () => {
     const { ws } = await setup();
-    const picker = await screen.findByLabelText('Route');
-    await waitFor(() => expect(picker).toHaveValue('3'));
+    const picker = await screen.findByLabelText('Ride');
+    await waitFor(() => expect(picker).toHaveValue('route:3'));
     await userEvent.click(screen.getByRole('button', { name: 'Start' }));
     expect(ws.commands.at(-1)).toMatchObject({ command: 'start', value: 0, route_id: 3 });
   });
 
   it('Free ride sends no route_id', async () => {
     const { ws } = await setup('/');
-    const picker = await screen.findByLabelText('Route');
+    const picker = await screen.findByLabelText('Ride');
     await waitFor(() => expect(screen.getByRole('option', { name: 'Climb' })).toBeInTheDocument());
-    expect(picker).toHaveValue('');
+    expect(picker).toHaveValue('free');
     await userEvent.click(screen.getByRole('button', { name: 'Start' }));
     expect(ws.commands.at(-1)).not.toHaveProperty('route_id');
   });

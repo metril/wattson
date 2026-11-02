@@ -3,6 +3,7 @@ package bike
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -55,6 +56,10 @@ type Supervisor struct {
 	cancel     context.CancelFunc
 	exited     chan struct{} // closed when run (and the channels) are finished
 
+	// floorErr is the outcome of the final floor write: ErrNoSession until a
+	// live session received it (guarded by mu).
+	floorErr error
+
 	closeOnce sync.Once
 }
 
@@ -99,6 +104,8 @@ func NewSupervisor(dial Dial, o SupervisorOptions) *Supervisor {
 		target: ClampLevel(floor, floor, max),
 		caps:   Caps{MinLevel: ClampLevel(floor, floor, max), MaxLevel: max},
 		exited: make(chan struct{}),
+
+		floorErr: ErrNoSession,
 	}
 }
 
@@ -149,17 +156,28 @@ func (s *Supervisor) Caps() Caps {
 	return s.caps
 }
 
+// ErrNoSession is returned by Close when supervision had started but no live
+// session received the floor level (the link was down or reconnecting), so the
+// bike may still be at its last level. Close also returns the floor write's
+// own error when a live session rejected it. Close before Connect returns nil.
+var ErrNoSession = errors.New("bike: no live session to return to the minimum level")
+
 // Close stops supervision, sends the floor level to a connected session and
-// closes Telemetry and Events. It is idempotent.
+// closes Telemetry and Events. It is idempotent and returns the same outcome
+// on every call: nil only when a live session accepted the floor write (see
+// ErrNoSession).
 func (s *Supervisor) Close(ctx context.Context) error {
 	s.mu.Lock()
 	if s.closed {
 		started := s.started
 		s.mu.Unlock()
-		if started {
-			<-s.exited
+		if !started {
+			return nil
 		}
-		return nil
+		<-s.exited
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.floorErr
 	}
 	s.closed = true
 	started := s.started
@@ -176,15 +194,32 @@ func (s *Supervisor) Close(ctx context.Context) error {
 		return nil
 	}
 	cancel()
-	var err error
 	if sess != nil {
 		// Write the floor explicitly rather than relying on the session's own
 		// minimum. A dead link fails here; Close still releases the session.
 		_, werr := sess.Resend(ctx, floorFor(sess, floor))
-		err = errors.Join(ignoreDown(werr), sess.Close(ctx))
+		s.setFloor(floorOutcome(werr, sess.Close(ctx)))
 	}
 	<-s.exited
-	return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.floorErr
+}
+
+// setFloor records the outcome of the final floor write.
+func (s *Supervisor) setFloor(err error) {
+	s.mu.Lock()
+	s.floorErr = err
+	s.mu.Unlock()
+}
+
+// floorOutcome folds a floor write and session close into one result: a write
+// that only failed because the link was gone means the floor was not delivered.
+func floorOutcome(werr, cerr error) error {
+	if errors.Is(werr, ErrClosed) || errors.Is(werr, blue.ErrDisconnected) {
+		werr = fmt.Errorf("%w: %w", ErrNoSession, werr)
+	}
+	return errors.Join(werr, cerr)
 }
 
 // push sends v, dropping the oldest buffered value when ch is full. Each
@@ -220,7 +255,7 @@ func (s *Supervisor) run(ctx context.Context) {
 		floor := s.caps.MinLevel
 		s.mu.Unlock()
 		if sess != nil {
-			closeWithFloor(sess, floor)
+			s.closeWithFloor(sess, floor)
 		}
 		fwd.Wait()
 		s.bg.Wait() // the watchdog may still emit
@@ -252,7 +287,7 @@ func (s *Supervisor) run(ctx context.Context) {
 		sess, err := s.dial(ctx)
 		if ctx.Err() != nil {
 			if sess != nil {
-				closeWithFloor(sess, s.floor)
+				s.closeWithFloor(sess, s.floor)
 			}
 			return
 		}
@@ -282,11 +317,11 @@ func floorFor(sess Session, floor int) int {
 
 // closeWithFloor writes the floor level explicitly (not relying on the
 // session's own minimum), then closes the session.
-func closeWithFloor(sess Session, floor int) {
+func (s *Supervisor) closeWithFloor(sess Session, floor int) {
 	ctx, cancel := context.WithTimeout(context.Background(), supCloseTimeout)
 	defer cancel()
-	_, _ = sess.Resend(ctx, floorFor(sess, floor))
-	_ = sess.Close(ctx)
+	_, werr := sess.Resend(ctx, floorFor(sess, floor))
+	s.setFloor(floorOutcome(werr, sess.Close(ctx)))
 }
 
 // serve owns one connected session until it ends. It returns false when ctx
@@ -299,7 +334,7 @@ func (s *Supervisor) serve(ctx context.Context, sess Session, fwd *sync.WaitGrou
 	if s.closed {
 		floor := s.floor
 		s.mu.Unlock()
-		closeWithFloor(sess, floor)
+		s.closeWithFloor(sess, floor)
 		return false
 	}
 	s.sess = sess
@@ -642,12 +677,4 @@ func (s *Supervisor) forward(ctx context.Context, sess Session, obs chan Telemet
 			return
 		}
 	}
-}
-
-// ignoreDown drops write errors that only mean the link is already gone.
-func ignoreDown(err error) error {
-	if errors.Is(err, ErrClosed) || errors.Is(err, blue.ErrDisconnected) {
-		return nil
-	}
-	return err
 }

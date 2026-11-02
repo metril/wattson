@@ -50,7 +50,7 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, "wattson ride: need exactly one of --sim or --addr")
 		return 2
 	}
-	opts := bike.Options{MaxLevel: *maxL, MinLevel: *minL}
+	opts := bike.Options{MaxLevel: *maxL, MinLevel: *minL, SilenceTimeout: silenceTimeout}
 	switch *protoS {
 	case "auto":
 	case "fitplus":
@@ -65,10 +65,15 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, "wattson ride: --max and --mass must be positive; --duration and --cadence must not be negative")
 		return 2
 	}
+	if *minL > *maxL {
+		fmt.Fprintln(stderr, "wattson ride: --min must not exceed --max")
+		return 2
+	}
 	if *minL < 1 {
 		fmt.Fprintln(stderr, "wattson ride: level 0 is never sent; using --min 1")
 	}
-	lo := min(max(1, *minL), *maxL)
+	lo := max(1, *minL)
+	startLevel := min(max(*level, lo), *maxL)
 
 	var dial bike.Dial
 	if *simF {
@@ -97,13 +102,13 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 	phys := engine.DefaultPhysics()
 	phys.MassKg = *mass
 	sup := bike.NewSupervisor(dial, bike.SupervisorOptions{MinLevel: lo, MaxLevel: *maxL})
-	eng := engine.New(engine.Config{Driver: sup, StartLevel: *level, Physics: phys})
+	eng := engine.New(engine.Config{Driver: sup, StartLevel: startLevel, Physics: phys})
 	ticks, unsub := eng.Subscribe(64)
 	defer unsub()
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- eng.Run(ctx) }()
-	fmt.Fprintf(stderr, "riding in free mode from level %d; Ctrl-C returns the bike to level %d.\n", *level, lo)
+	fmt.Fprintf(stderr, "riding in free mode from level %d; Ctrl-C returns the bike to level %d.\n", startLevel, lo)
 
 	started, stopping, connected := false, false, false
 	for tk := range ticks {
@@ -137,8 +142,12 @@ func cmdRide(ctx context.Context, d deps, args []string, stdout, stderr io.Write
 	}
 	err := <-runErr
 	if started {
-		fmt.Fprintf(stderr, "bike returned to level %d\n", lo)
-		lastLevel.Store(int32(lo))
+		if cerr := eng.CloseErr(); cerr != nil {
+			fmt.Fprintf(stderr, "wattson ride: failed to return bike to level %d: %v; lower resistance at the console\n", lo, cerr)
+		} else {
+			fmt.Fprintf(stderr, "bike returned to level %d\n", lo)
+			lastLevel.Store(int32(lo))
+		}
 	}
 
 	end := eng.Snapshot()

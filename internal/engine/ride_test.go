@@ -17,9 +17,10 @@ type fakeDriver struct {
 	tel chan bike.Telemetry
 	ev  chan bike.Event
 
-	mu     sync.Mutex
-	calls  []int
-	closed bool
+	mu       sync.Mutex
+	calls    []int
+	closed   bool
+	closeErr error
 }
 
 func newFake() *fakeDriver {
@@ -42,7 +43,7 @@ func (f *fakeDriver) Close(context.Context) error {
 	f.mu.Lock()
 	f.closed = true
 	f.mu.Unlock()
-	return nil
+	return f.closeErr
 }
 func (f *fakeDriver) Calls() []int {
 	f.mu.Lock()
@@ -554,4 +555,18 @@ func BenchmarkTick(b *testing.B) {
 		now = now.Add(time.Second)
 		e.tick(ctx, now)
 	}
+}
+
+func TestCloseErrSurfacesDriverClose(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		f.closeErr = bike.ErrNoSession
+		e := New(Config{Driver: f})
+		_, stop := start(t, e)
+		stop()
+		if err := e.CloseErr(); !errors.Is(err, bike.ErrNoSession) {
+			t.Fatalf("CloseErr = %v", err)
+		}
+	})
 }

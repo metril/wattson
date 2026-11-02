@@ -107,10 +107,11 @@ type Engine struct {
 	alert     string
 	lastTick  time.Time
 
-	mu     sync.Mutex // guards snap, subs, closed
-	snap   Tick
-	subs   map[chan Tick]struct{}
-	closed bool
+	mu       sync.Mutex // guards snap, subs, closed, closeErr
+	closeErr error
+	snap     Tick
+	subs     map[chan Tick]struct{}
+	closed   bool
 }
 
 func New(c Config) *Engine {
@@ -167,6 +168,15 @@ func (e *Engine) Subscribe(buf int) (<-chan Tick, func()) {
 	}
 }
 
+// CloseErr is the driver's Close result: nil when the bike was told to return
+// to its minimum level, otherwise why not (bike.ErrNoSession when the link was
+// down). Call it only after Run has returned.
+func (e *Engine) CloseErr() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.closeErr
+}
+
 // Do sends a command to Run and returns its result. After Run returns it
 // reports ErrStopped.
 func (e *Engine) Do(ctx context.Context, c Command) error {
@@ -196,9 +206,10 @@ func (e *Engine) Do(ctx context.Context, c Command) error {
 func (e *Engine) Run(ctx context.Context) (err error) {
 	defer func() {
 		cctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
-		_ = e.drv.Close(cctx)
+		cerr := e.drv.Close(cctx)
 		cancel()
 		e.mu.Lock()
+		e.closeErr = cerr
 		e.closed = true
 		for ch := range e.subs {
 			close(ch)

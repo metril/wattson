@@ -426,8 +426,8 @@ func TestCloseDuringBackoff(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		synctest.Wait()
 		n := d.count()
-		if err := sup.Close(context.Background()); err != nil {
-			t.Fatal(err)
+		if err := sup.Close(context.Background()); !errors.Is(err, ErrNoSession) {
+			t.Fatalf("Close during backoff = %v, want ErrNoSession", err)
 		}
 		time.Sleep(time.Minute)
 		if d.count() != n {
@@ -937,5 +937,67 @@ func TestConfirmRetryRespectsWriteGate(t *testing.T) {
 		synctest.Wait()
 		wantWrites(t, s, 1, 5, 5)
 		sup.Close(ctxb())
+	})
+}
+
+func TestCloseReportsFloorOutcome(t *testing.T) {
+	t.Parallel()
+	errRejected := errors.New("floor rejected")
+	for name, tc := range map[string]struct {
+		werr    error
+		cancel  bool // end supervision by cancelling the Connect ctx
+		want    error
+		wantNil bool
+	}{
+		"accepted":         {wantNil: true},
+		"rejected":         {werr: errRejected, want: errRejected},
+		"link gone":        {werr: ErrClosed, want: ErrNoSession},
+		"accepted, cancel": {cancel: true, wantNil: true},
+		"rejected, cancel": {werr: errRejected, cancel: true, want: errRejected},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				s := newFakeSession(ProtoFitPlus, 16)
+				d := &fakeDial{}
+				d.push(dialResult{s: s})
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				sup := NewSupervisor(d.dial, SupervisorOptions{})
+				sup.Connect(ctx)
+				synctest.Wait()
+				s.mu.Lock()
+				s.werr = tc.werr
+				s.mu.Unlock()
+				if tc.cancel {
+					cancel()
+					synctest.Wait()
+				}
+				err := sup.Close(context.Background())
+				if tc.wantNil && err != nil || !tc.wantNil && !errors.Is(err, tc.want) {
+					t.Fatalf("Close = %v, want %v", err, tc.want)
+				}
+				if again := sup.Close(context.Background()); (again == nil) != (err == nil) {
+					t.Fatalf("second Close = %v, first %v", again, err)
+				}
+			})
+		})
+	}
+}
+
+func TestCloseAfterCancelDuringBackoff(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := &fakeDial{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		sup := NewSupervisor(d.dial, SupervisorOptions{})
+		sup.Connect(ctx)
+		time.Sleep(3 * time.Second)
+		cancel()
+		synctest.Wait()
+		if err := sup.Close(context.Background()); !errors.Is(err, ErrNoSession) {
+			t.Fatalf("Close = %v, want ErrNoSession", err)
+		}
 	})
 }

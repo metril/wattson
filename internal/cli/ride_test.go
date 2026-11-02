@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ func TestRideFlagErrors(t *testing.T) {
 		"bad addr":   {"ride", "--addr", "bogus"},
 		"bad proto":  {"ride", "--sim", "--proto", "x"},
 		"bad max":    {"ride", "--sim", "--max", "0"},
+		"min>max":    {"ride", "--sim", "--min", "5", "--max", "3"},
 		"extra args": {"ride", "--sim", "oops"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -147,6 +149,79 @@ func TestRideInterruptReturnsBikeToMin(t *testing.T) {
 		}
 		if !slices.Contains(c.last().Levels(), 9) {
 			t.Fatalf("levels %v never reached 9", c.last().Levels())
+		}
+	})
+}
+
+// failFloor is a sim session whose floor write (Resend) fails.
+type failFloor struct{ *sim.Session }
+
+func (f failFloor) Resend(context.Context, int) (int, error) { return 0, errors.New("write refused") }
+
+func TestRideReportsFailedReturn(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := testDeps(nil)
+		d.simDial = func(cfg sim.Config) bike.Dial {
+			return func(context.Context) (bike.Session, error) { return failFloor{sim.New(cfg)}, nil }
+		}
+		code, _, errs := runCLI(t, d, "ride", "--sim", "--duration", "3s")
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errs)
+		}
+		if strings.Contains(errs, "bike returned") || !strings.Contains(errs, "failed to return bike to level 1") || !strings.Contains(errs, "lower resistance at the console") {
+			t.Fatalf("stderr %q", errs)
+		}
+	})
+}
+
+func TestRideInterruptWhileDisconnected(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		c := &capture{}
+		d := testDeps(nil)
+		var dials int
+		d.simDial = func(cfg sim.Config) bike.Dial {
+			return func(ctx context.Context) (bike.Session, error) {
+				dials++
+				if dials > 1 {
+					return nil, errors.New("no route")
+				}
+				return c.dial(cfg)(ctx)
+			}
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		time.AfterFunc(5*time.Second, func() { c.last().Drop() })
+		time.AfterFunc(10*time.Second, cancel)
+		var out, errb bytes.Buffer
+		code := run(ctx, d, []string{"ride", "--sim", "--level", "9"}, &out, &errb)
+		if code != 130 {
+			t.Fatalf("exit %d: %s", code, errb.String())
+		}
+		if strings.Contains(errb.String(), "bike returned") || !strings.Contains(errb.String(), "failed to return bike to level 1") {
+			t.Fatalf("stderr %q", errb.String())
+		}
+	})
+}
+
+func TestRideRealBikeOptions(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := fitPlusEcho()
+		d := testDeps(f)
+		inner := d.tweakBike
+		var got bike.Options
+		d.tweakBike = func(o *bike.Options) { got = *o; inner(o) }
+		code, _, errs := runCLI(t, d, "ride", "--addr", testAddr.String(), "--duration", "2s", "--min", "2", "--max", "12", "--proto", "fitplus")
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errs)
+		}
+		if got.MinLevel != 2 || got.MaxLevel != 12 || got.SilenceTimeout != silenceTimeout || got.Protocol != bike.ProtoFitPlus {
+			t.Fatalf("options %+v", got)
+		}
+		if w := levelWrites(f); len(w) == 0 || slices.Min(w) < 2 || slices.Max(w) > 12 {
+			t.Fatalf("level writes %v outside 2..12", w)
 		}
 	})
 }

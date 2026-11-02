@@ -139,6 +139,98 @@
         },
         "type": "object"
       },
+      "CreateRiderInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "bike_kg": {
+            "description": "Virtual bike mass in kilograms, 0 to 30. Default 8.",
+            "format": "double",
+            "maximum": 30,
+            "minimum": 0,
+            "type": "number"
+          },
+          "cda": {
+            "description": "Drag area in square metres, 0.15 to 0.8. Default 0.32.",
+            "format": "double",
+            "maximum": 0.8,
+            "minimum": 0.15,
+            "type": "number"
+          },
+          "crr": {
+            "description": "Rolling resistance coefficient, 0.001 to 0.02. Default 0.004.",
+            "format": "double",
+            "maximum": 0.02,
+            "minimum": 0.001,
+            "type": "number"
+          },
+          "downhill_scale": {
+            "description": "Factor on negative grades, 0 to 1. Default 0.5.",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "ftp_w": {
+            "description": "Functional threshold power in watts, 50 to 600. Default 200.",
+            "format": "int64",
+            "maximum": 600,
+            "minimum": 50,
+            "type": "integer"
+          },
+          "gain": {
+            "description": "Resistance levels per 1 percent grade, 0 to 5. Default 1.0.",
+            "format": "double",
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "max_level": {
+            "description": "Highest resistance level, 1 to 32 and at least min_level. Default 16.",
+            "format": "int64",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "min_level": {
+            "description": "Lowest resistance level, 1 to 32 and at most max_level. Default 1.",
+            "format": "int64",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Display name of the rider, 1 to 64 characters.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "offset_level": {
+            "description": "Resistance level at 0 percent grade and free-ride start level, 1 to 32. Default 5.",
+            "format": "double",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "number"
+          },
+          "power_multiplier": {
+            "description": "Factor on measured power, 0.5 to 2.0. Default 1.0.",
+            "format": "double",
+            "maximum": 2,
+            "minimum": 0.5,
+            "type": "number"
+          },
+          "weight_kg": {
+            "description": "Rider mass in kilograms, 30 to 200. Default 75.",
+            "format": "double",
+            "maximum": 200,
+            "minimum": 30,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "CreateTokenInBody": {
         "additionalProperties": false,
         "properties": {
@@ -449,6 +541,95 @@
         ],
         "type": "object"
       },
+      "PatchRiderInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "bike_kg": {
+            "description": "Virtual bike mass in kilograms, 0 to 30. Default 8.",
+            "format": "double",
+            "maximum": 30,
+            "minimum": 0,
+            "type": "number"
+          },
+          "cda": {
+            "description": "Drag area in square metres, 0.15 to 0.8. Default 0.32.",
+            "format": "double",
+            "maximum": 0.8,
+            "minimum": 0.15,
+            "type": "number"
+          },
+          "crr": {
+            "description": "Rolling resistance coefficient, 0.001 to 0.02. Default 0.004.",
+            "format": "double",
+            "maximum": 0.02,
+            "minimum": 0.001,
+            "type": "number"
+          },
+          "downhill_scale": {
+            "description": "Factor on negative grades, 0 to 1. Default 0.5.",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "ftp_w": {
+            "description": "Functional threshold power in watts, 50 to 600. Default 200.",
+            "format": "int64",
+            "maximum": 600,
+            "minimum": 50,
+            "type": "integer"
+          },
+          "gain": {
+            "description": "Resistance levels per 1 percent grade, 0 to 5. Default 1.0.",
+            "format": "double",
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "max_level": {
+            "description": "Highest resistance level, 1 to 32 and at least min_level. Default 16.",
+            "format": "int64",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "min_level": {
+            "description": "Lowest resistance level, 1 to 32 and at most max_level. Default 1.",
+            "format": "int64",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Display name of the rider, 1 to 64 characters.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "offset_level": {
+            "description": "Resistance level at 0 percent grade and free-ride start level, 1 to 32. Default 5.",
+            "format": "double",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "number"
+          },
+          "power_multiplier": {
+            "description": "Factor on measured power, 0.5 to 2.0. Default 1.0.",
+            "format": "double",
+            "maximum": 2,
+            "minimum": 0.5,
+            "type": "number"
+          },
+          "weight_kg": {
+            "description": "Rider mass in kilograms, 30 to 200. Default 75.",
+            "format": "double",
+            "maximum": 200,
+            "minimum": 30,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "PatchUserInBody": {
         "additionalProperties": false,
         "properties": {
@@ -509,6 +690,109 @@
           "needs_setup",
           "local_login",
           "providers"
+        ],
+        "type": "object"
+      },
+      "RiderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bike_kg": {
+            "description": "Virtual bike mass in kilograms.",
+            "format": "double",
+            "type": "number"
+          },
+          "cda": {
+            "description": "Drag area (drag coefficient times frontal area) in square metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "crr": {
+            "description": "Rolling resistance coefficient, dimensionless.",
+            "format": "double",
+            "type": "number"
+          },
+          "downhill_scale": {
+            "description": "Factor applied to negative grades, 0 to 1. Lower values give less relief on descents.",
+            "format": "double",
+            "type": "number"
+          },
+          "ftp_w": {
+            "description": "Functional threshold power in watts.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "gain": {
+            "description": "Resistance levels added per 1 percent of road grade.",
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "description": "Rider ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_level": {
+            "description": "Highest resistance level used in rides, 1 to 32.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "min_level": {
+            "description": "Lowest resistance level used in rides, 1 to 32. The bike returns to this level on release.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Display name of the rider.",
+            "type": "string"
+          },
+          "offset_level": {
+            "description": "Resistance level at 0 percent grade; also the start level of a free ride.",
+            "format": "double",
+            "type": "number"
+          },
+          "power_multiplier": {
+            "description": "Factor applied to the bike's measured power, dimensionless.",
+            "format": "double",
+            "type": "number"
+          },
+          "updated_at": {
+            "description": "Last change time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "ID of the user who owns this rider.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "weight_kg": {
+            "description": "Rider mass in kilograms.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "name",
+          "weight_kg",
+          "bike_kg",
+          "ftp_w",
+          "min_level",
+          "max_level",
+          "gain",
+          "offset_level",
+          "downhill_scale",
+          "cda",
+          "crr",
+          "power_multiplier",
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -1146,6 +1430,467 @@
         "summary": "Sign-in options",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/riders": {
+      "get": {
+        "description": "Returns the caller's riders, ordered by ID. A user with no rider gets a default one (named after their display name or username) created on the first call. An admin may pass `all=true` to list every user's riders; other users get 403. Requires the `read` scope.",
+        "operationId": "listRiders",
+        "parameters": [
+          {
+            "description": "Admin only: list the riders of every user instead of only your own.",
+            "explode": false,
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "description": "Admin only: list the riders of every user instead of only your own.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RiderOut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List riders",
+        "tags": [
+          "riders"
+        ]
+      },
+      "post": {
+        "description": "Creates a rider owned by the caller. Omitted fields take their documented defaults. Requires the `control` scope.",
+        "operationId": "createRider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRiderInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiderOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a rider",
+        "tags": [
+          "riders"
+        ]
+      }
+    },
+    "/api/riders/{id}": {
+      "delete": {
+        "description": "Deletes one of the caller's riders. The last remaining rider cannot be deleted (409 `last_rider`). A rider owned by someone else returns 404. Requires the `control` scope.",
+        "operationId": "deleteRider",
+        "parameters": [
+          {
+            "description": "Rider ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Rider ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete a rider",
+        "tags": [
+          "riders"
+        ]
+      },
+      "get": {
+        "description": "Returns one of the caller's riders. A rider owned by someone else returns 404. Requires the `read` scope.",
+        "operationId": "getRider",
+        "parameters": [
+          {
+            "description": "Rider ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Rider ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiderOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a rider",
+        "tags": [
+          "riders"
+        ]
+      },
+      "patch": {
+        "description": "Changes the fields present in the body of one of the caller's riders. The merged profile is validated (`min_level` must not exceed `max_level`). A rider owned by someone else returns 404. Requires the `control` scope.",
+        "operationId": "updateRider",
+        "parameters": [
+          {
+            "description": "Rider ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Rider ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchRiderInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiderOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update a rider",
+        "tags": [
+          "riders"
         ]
       }
     },

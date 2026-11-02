@@ -18,3 +18,6 @@ var (
 	// ErrIssSubMismatch is returned when an OIDC identity has an issuer without a subject or vice versa.
 	ErrIssSubMismatch = errors.New("store: iss and sub must be set together")
 )
+
+// ErrLastRider is returned when deleting a user's only rider.
+var ErrLastRider = errors.New("store: cannot delete the last rider")

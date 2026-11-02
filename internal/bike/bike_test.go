@@ -594,3 +594,10 @@ func TestProtoSimString(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestProtoHAString(t *testing.T) {
+	t.Parallel()
+	if got := ProtoHA.String(); got != "ha" || ProtoHA != 4 {
+		t.Fatalf("got %q (%d)", got, ProtoHA)
+	}
+}

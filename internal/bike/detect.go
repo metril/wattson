@@ -9,6 +9,7 @@ const (
 	ProtoFitPlus
 	ProtoFTMS
 	ProtoSim // simulator; never produced by Detect
+	ProtoHA  // Home Assistant number entity; never produced by Detect
 )
 
 func (p Protocol) String() string {
@@ -19,6 +20,8 @@ func (p Protocol) String() string {
 		return "ftms"
 	case ProtoSim:
 		return "sim"
+	case ProtoHA:
+		return "ha"
 	}
 	return "unknown"
 }

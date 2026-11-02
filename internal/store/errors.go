@@ -13,4 +13,6 @@ var (
 	ErrLastAdmin = errors.New("store: cannot remove the last admin")
 	// ErrBootstrap is returned when an operation is not allowed on the bootstrap user.
 	ErrBootstrap = errors.New("store: not allowed on bootstrap user")
+	// ErrAmbiguous is returned when a lookup that must identify one row matches several.
+	ErrAmbiguous = errors.New("store: ambiguous match")
 )

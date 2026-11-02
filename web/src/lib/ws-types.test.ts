@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { COMMAND_NAMES, SERVER_MSG_TYPES, type BikeStatus, type RideState, type ServerMsg, type Tick } from './ws-types';
+import { COMMAND_NAMES, SERVER_MSG_TYPES, type BikeStatus, type CommandMsg, type RideState, type ServerMsg, type Tick } from './ws-types';
 
 const spec = JSON.parse(
   readFileSync(resolve(process.cwd(), '../docs/asyncapi.yaml'), 'utf8'),
@@ -60,10 +60,15 @@ describe('ws-types vs docs/asyncapi.yaml', () => {
     const err = schemas.WSError;
     expect(keys(err.properties)).toEqual(['error', 'id', 'type']);
     expect([...err.required].sort()).toEqual(['error', 'type']); // id is optional
-    expect(keys(schemas.ErrorBody.properties)).toEqual(['code', 'message']);
-    const sample: Extract<ServerMsg, { type: 'error' }> = { type: 'error', id: '', error: { code: '', message: '' } };
+    expect(keys(schemas.ErrorBody.properties)).toEqual(['code', 'details', 'message']);
+    const sample: Extract<ServerMsg, { type: 'error' }> = { type: 'error', id: '', error: { code: '', message: '', details: {} } };
     expect(keys(sample)).toEqual(keys(err.properties));
     expect(keys(sample.error)).toEqual(keys(schemas.ErrorBody.properties));
+  });
+  it('WSCommand fields match CommandMsg', () => {
+    const sample: CommandMsg = { type: 'command', id: '', command: 'start', value: 0, route_id: 0 };
+    expect(keys(sample)).toEqual(keys(schemas.WSCommand.properties));
+    expect(schemas.WSCommand.required).not.toContain('route_id');
   });
   it('server message types match', () => {
     const types = ['WSState', 'WSTick', 'WSBike', 'WSAck', 'WSError'].map((n) => schemas[n].properties.type.enum[0]);

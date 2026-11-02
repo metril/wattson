@@ -1,6 +1,6 @@
 import { ApiError, getKioskToken } from './api';
 import { TickStore } from './tick-store';
-import type { BikeStatus, CommandName, RideState, ServerMsg } from './ws-types';
+import type { BikeStatus, CommandMsg, CommandName, RideState, ServerMsg } from './ws-types';
 
 export interface RideStatus {
   connected: boolean;
@@ -83,7 +83,7 @@ export class RideSocket {
     return () => this.listeners.delete(fn);
   }
 
-  send(command: CommandName, value = 0): Promise<void> {
+  send(command: CommandName, value = 0, routeId?: number): Promise<void> {
     const ws = this.ws;
     if (!ws || ws.readyState !== OPEN) {
       return Promise.reject(new ApiError(0, 'disconnected', 'Not connected to the server.'));
@@ -95,7 +95,9 @@ export class RideSocket {
         reject(new ApiError(0, 'timeout', 'The server did not answer in time.'));
       }, COMMAND_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
-      ws.send(JSON.stringify({ type: 'command', id, command, value }));
+      const msg: CommandMsg = { type: 'command', id, command, value };
+      if (routeId !== undefined) msg.route_id = routeId;
+      ws.send(JSON.stringify(msg));
     });
   }
 

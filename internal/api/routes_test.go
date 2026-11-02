@@ -445,3 +445,26 @@ func TestImportRequiresLogin(t *testing.T) {
 		t.Fatalf("anonymous import: %d", resp.StatusCode)
 	}
 }
+
+func TestDeleteRouteInUse(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t) // no RouteInUse override: the Bike's is used
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	id := ts.syntheticRoute(t, admin)
+	if resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "route_id": id}); resp.StatusCode != 204 {
+		t.Fatalf("start: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "riding", func() bool { return ts.ride(t, admin).State == "riding" })
+	path := fmt.Sprintf("/api/routes/%d", id)
+	if resp, b := ts.do(t, admin, "DELETE", path, nil); resp.StatusCode != 409 || errCode(t, b) != "route_in_use" {
+		t.Fatalf("delete while riding: %d %s", resp.StatusCode, b)
+	}
+	if resp, b := ts.command(t, admin, "stop", 0); resp.StatusCode != 204 {
+		t.Fatalf("stop: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "ready", func() bool { return ts.ride(t, admin).State != "riding" && ts.bikeStatus(t, admin).State == "ready" })
+	if resp, _ := ts.do(t, admin, "DELETE", path, nil); resp.StatusCode != 204 {
+		t.Errorf("delete after stop: %d", resp.StatusCode)
+	}
+}

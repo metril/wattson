@@ -308,9 +308,13 @@ func (s *wsSession) handle(data []byte) {
 		s.send(wsErr(m.ID, "unknown_command", "unknown command: "+m.Command))
 		return
 	}
+	if m.RouteID != 0 && kind != engine.CmdStart {
+		s.send(wsErr(m.ID, "invalid_request", errRouteIDOnlyStart))
+		return
+	}
 	ctx, cancel := context.WithTimeout(s.ctx, wsCommandTimeout)
 	defer cancel()
-	if err := s.d.Bike.Do(ctx, engine.Command{Kind: kind, Value: m.Value}); err != nil {
+	if err := runCommand(ctx, s.d.Bike, kind, m.Value, m.RouteID); err != nil {
 		if _, code, msg, ok := commandFailure(err); ok {
 			s.send(wsErr(m.ID, code, msg))
 		} else {

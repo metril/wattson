@@ -391,7 +391,7 @@ export interface paths {
         put?: never;
         /**
          * Send a ride command
-         * @description Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. Returns 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.
+         * @description Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. `start` with `route_id` rides that route with the rider bound to the bike; the ride ends by itself at the route's end. `route_id` with any other command is a 400 `invalid_request`. Returns 404 `route_not_found` for an unknown route, 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.
          */
         post: operations["rideCommand"];
         delete?: never;
@@ -952,6 +952,11 @@ export interface components {
              * @enum {string}
              */
             command: "start" | "pause" | "resume" | "stop" | "set_level" | "level_delta";
+            /**
+             * Format: int64
+             * @description Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike.
+             */
+            route_id?: number;
             /**
              * Format: int64
              * @description Resistance level for set_level, or the change in levels for level_delta; ignored by other commands.
@@ -3382,6 +3387,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

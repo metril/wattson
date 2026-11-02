@@ -13,7 +13,9 @@ import (
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/blue/bluetest"
 	"github.com/metril/wattson/internal/engine"
+	"github.com/metril/wattson/internal/route"
 	"github.com/metril/wattson/internal/settings"
+	"github.com/metril/wattson/internal/store"
 )
 
 func start(t *testing.T, m *Manager) {
@@ -587,4 +589,173 @@ func TestHintFor(t *testing.T) {
 			t.Errorf("hintFor(%v) = %q, want prefix %q", c.err, got, c.want)
 		}
 	}
+}
+
+// routeRider tunes the rider for route tests.
+var routeRider = store.Rider{ID: 7, UserID: 1, Name: "r", MinLevel: 1, MaxLevel: 16, OffsetLevel: 5, Gain: 1, DownhillScale: 0.5, LeadS: 4,
+	WeightKg: 75, BikeKg: 8, CdA: 0.32, Crr: 0.004}
+
+func testRoute(t *testing.T) *route.Profile {
+	t.Helper()
+	p, err := route.Process(route.Synthetic([]route.Segment{{LengthM: 300, GradePct: 0}, {LengthM: 600, GradePct: 6}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func loadRoute3(p *route.Profile) func(context.Context, int64) (*route.Profile, error) {
+	return func(_ context.Context, id int64) (*route.Profile, error) {
+		if id != 3 {
+			return nil, ErrRouteNotFound
+		}
+		return p, nil
+	}
+}
+
+func readyRoute(t *testing.T, rider store.Rider) (*Manager, *simRec) {
+	t.Helper()
+	rec := &simRec{}
+	m := newMgr(rec, 20*time.Millisecond, func(s *settings.Settings) { s.Bike.SimCadenceRpm = 85 }, Deps{LoadRoute: loadRoute3(testRoute(t))})
+	if _, err := m.Connect(t.Context(), rider); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, m, "ready")
+	return m, rec
+}
+
+func TestStartRouteRidesProfile(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		m, rec := readyRoute(t, routeRider)
+		defer m.Close(context.Background())
+		ch, cancel := m.Subscribe(1 << 16)
+		defer cancel()
+		if err := m.StartRoute(t.Context(), 3); err != nil {
+			t.Fatal(err)
+		}
+		if !m.RouteInUse(3) || m.RouteInUse(4) {
+			t.Error("RouteInUse wrong while riding")
+		}
+		var rising, finished bool
+		var sawFree bool
+		for i := 0; i < 400 && !(finished && sawFree); i++ {
+			time.Sleep(time.Second)
+			for drained := false; !drained; {
+				select {
+				case ev := <-ch:
+					if ev.Type != "tick" {
+						continue
+					}
+					tk := ev.Tick
+					switch {
+					case tk.State == engine.StateFinished:
+						finished = true
+						if tk.DistanceM != 900 {
+							t.Errorf("finished distance = %v, want 900", tk.DistanceM)
+						}
+					case tk.State == engine.StateRiding:
+						if tk.Mode != "route" || tk.RouteID != 3 || tk.RouteLengthM != 900 {
+							t.Fatalf("tick = %+v", tk)
+						}
+						if tk.Level >= 6 && !rising {
+							rising = true
+							if tk.DistanceM >= 300 {
+								t.Errorf("level reached 6 at %v m, want before the climb", tk.DistanceM)
+							}
+						}
+					case finished && tk.State == engine.StateReady && tk.Mode == "free":
+						sawFree = true
+					}
+				default:
+					drained = true
+				}
+			}
+		}
+		if !rising || !finished || !sawFree {
+			t.Fatalf("rising=%v finished=%v free-after=%v", rising, finished, sawFree)
+		}
+		waitState(t, m, "ready")
+		if m.RouteInUse(3) {
+			t.Error("route still in use after the ride")
+		}
+		if l := lastLevel(t, rec.get(0)); l != 1 {
+			t.Errorf("floor level = %d, want 1", l)
+		}
+		if tk := m.Snapshot(); tk.Mode != "free" {
+			t.Errorf("next engine mode = %q", tk.Mode)
+		}
+	})
+}
+
+func TestStartRouteUnknown(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		m, _ := readyRoute(t, routeRider)
+		defer m.Close(context.Background())
+		if err := m.StartRoute(t.Context(), 99); !errors.Is(err, ErrRouteNotFound) {
+			t.Fatalf("StartRoute = %v", err)
+		}
+		if m.Status().State != "ready" {
+			t.Errorf("state = %s", m.Status().State)
+		}
+	})
+}
+
+func TestStartRouteIdle(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		m := newMgr(&simRec{}, 20*time.Millisecond, nil, Deps{LoadRoute: loadRoute3(testRoute(t))})
+		defer m.Close(context.Background())
+		if err := m.StartRoute(t.Context(), 3); !errors.Is(err, ErrNoBike) {
+			t.Fatalf("StartRoute = %v", err)
+		}
+	})
+}
+
+func TestStartRouteBadState(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		m, _ := readyRoute(t, routeRider)
+		defer m.Close(context.Background())
+		if err := m.StartRoute(t.Context(), 3); err != nil {
+			t.Fatal(err)
+		}
+		waitState(t, m, "riding")
+		if err := m.StartRoute(t.Context(), 3); !errors.Is(err, engine.ErrBadState) {
+			t.Fatalf("second StartRoute = %v", err)
+		}
+	})
+}
+
+func TestStartRouteUsesRiderMapper(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := routeRider
+		r.Gain, r.OffsetLevel = 2, 3
+		m, _ := readyRoute(t, r)
+		defer m.Close(context.Background())
+		ch, cancel := m.Subscribe(1 << 16)
+		defer cancel()
+		if err := m.StartRoute(t.Context(), 3); err != nil {
+			t.Fatal(err)
+		}
+		hit := false
+		for i := 0; i < 400 && !hit; i++ {
+			time.Sleep(time.Second)
+			for drained := false; !drained; {
+				select {
+				case ev := <-ch:
+					if ev.Type == "tick" && ev.Tick.State == engine.StateRiding && ev.Tick.DistanceM >= 600 && ev.Tick.Level == 15 {
+						hit = true
+					}
+				default:
+					drained = true
+				}
+			}
+		}
+		if !hit {
+			t.Fatal("never saw level 15 past 600 m (gain 2, offset 3, 6 %)")
+		}
+	})
 }

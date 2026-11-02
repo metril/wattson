@@ -130,7 +130,7 @@ func newTS(t testing.TB, opts ...tsOpt) *testServer {
 		}
 		return s.General.PublicURL
 	}, logger)
-	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
+	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, LoadRoute: ridectl.StoreRoutes(st), OpenLocal: cfg.openLocal, SimDial: cfg.simDial, Logger: logger,
 		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
 	tiles := maptiles.New(svc.Get, http.DefaultClient)
 	t.Cleanup(tiles.Close)

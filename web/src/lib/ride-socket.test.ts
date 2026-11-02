@@ -49,6 +49,18 @@ describe('RideSocket', () => {
     await expect(p).resolves.toBeUndefined();
   });
 
+  it('send includes route_id only when given', () => {
+    const { s } = mk();
+    s.start();
+    const ws = FakeWebSocket.last;
+    ws.open();
+    ws.receive(stateMsg());
+    void s.send('start', 0, 3).catch(() => {});
+    void s.send('pause').catch(() => {});
+    expect(ws.sent[0]).toBe('{"type":"command","id":"c1","command":"start","value":0,"route_id":3}');
+    expect(JSON.parse(ws.sent[1])).not.toHaveProperty('route_id');
+  });
+
   it('error rejects with code', async () => {
     const { s } = mk();
     s.start();

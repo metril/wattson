@@ -51,7 +51,7 @@ type Deps struct {
 	// the /api/maps endpoints (503) and the local tile check when drawing.
 	Tiles *maptiles.Manager
 	// Bike is the single bike manager the bike, ride and WebSocket endpoints
-	// drive. When RiderInUse is nil, Bike.RiderInUse is used.
+	// drive. When RiderInUse or RouteInUse is nil, the Bike's is used.
 	Bike *ridectl.Manager
 	// WSRecheck is how often an open WebSocket re-validates its credential;
 	// zero means 60 s.
@@ -84,6 +84,9 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	}
 	if d.RiderInUse == nil && d.Bike != nil {
 		d.RiderInUse = d.Bike.RiderInUse
+	}
+	if d.RouteInUse == nil && d.Bike != nil {
+		d.RouteInUse = d.Bike.RouteInUse
 	}
 	d.ws = &wsGate{}
 	d.oidcState = newStateCodec(d)

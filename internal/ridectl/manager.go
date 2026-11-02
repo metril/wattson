@@ -18,6 +18,7 @@ import (
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/engine"
+	"github.com/metril/wattson/internal/route"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
 )
@@ -29,6 +30,9 @@ var (
 	ErrNoAddress = errors.New("ridectl: no bike address configured")
 	ErrNoHost    = errors.New("ridectl: no ESPHome host configured")
 	ErrClosed    = errors.New("ridectl: manager closed")
+
+	// ErrRouteNotFound is returned by StartRoute (and a Deps.LoadRoute) for a route that does not exist.
+	ErrRouteNotFound = errors.New("ridectl: route not found")
 )
 
 // Deps are the manager's collaborators; every func has a production default.
@@ -37,6 +41,7 @@ type Deps struct {
 	OpenLocal   func() (blue.Transport, error)                                          // default blue.NewLocal
 	OpenESPHome func(ctx context.Context, hostport, key string) (blue.Transport, error) // default blue.NewESPHome
 	SimDial     func(sim.Config) bike.Dial                                              // default sim.Dial
+	LoadRoute   func(ctx context.Context, id int64) (*route.Profile, error)             // route for StartRoute; ErrRouteNotFound when missing; see StoreRoutes
 	TickEvery   time.Duration                                                           // engine tick period; default 1s
 	SimPeriod   time.Duration                                                           // simulator telemetry period; default 1s
 	Logger      *slog.Logger
@@ -259,6 +264,60 @@ func (m *Manager) RiderInUse(id int64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cur != nil && m.cur.rider.ID == id
+}
+
+// RouteInUse reports whether route id is being ridden (riding or paused). The
+// routes API uses it to refuse deleting that route (409 route_in_use).
+func (m *Manager) RouteInUse(id int64) bool {
+	tk := m.Snapshot()
+	return id != 0 && tk.RouteID == id && (tk.State == engine.StateRiding || tk.State == engine.StatePaused)
+}
+
+// StartRoute starts a ride along the stored route with the rider bound at
+// connect (their gain, offset, downhill scale, range and lookahead). ErrNoBike
+// without a connection, engine.ErrBadState unless the bike is ready,
+// ErrRouteNotFound for an unknown route. The route is read once: deleting it
+// mid-ride does not affect the ride.
+func (m *Manager) StartRoute(ctx context.Context, routeID int64) error {
+	m.mu.Lock()
+	c := m.cur
+	if c == nil || c.eng == nil || c.releasing {
+		m.mu.Unlock()
+		return ErrNoBike
+	}
+	r, eng := c.rider, c.eng
+	m.mu.Unlock()
+	if eng.Snapshot().State != engine.StateReady {
+		return engine.ErrBadState
+	}
+	if m.d.LoadRoute == nil {
+		return ErrRouteNotFound
+	}
+	p, err := m.d.LoadRoute(ctx, routeID)
+	if err != nil {
+		return err
+	}
+	return m.Do(ctx, engine.Command{Kind: engine.CmdStart, Mode: engine.NewRouteMode(engine.RouteConfig{
+		ID:       routeID,
+		Course:   p,
+		Mapper:   engine.Mapper{Gain: r.Gain, Offset: r.OffsetLevel, DownhillScale: r.DownhillScale, Min: r.MinLevel, Max: r.MaxLevel},
+		Smoother: engine.DefaultSmoother(r.MinLevel, r.MaxLevel),
+		LeadS:    r.LeadS,
+	})})
+}
+
+// StoreRoutes returns a Deps.LoadRoute that decodes routes from the store.
+func StoreRoutes(st *store.Store) func(context.Context, int64) (*route.Profile, error) {
+	return func(ctx context.Context, id int64) (*route.Profile, error) {
+		r, err := st.Route(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, ErrRouteNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+		return route.Decode(r.Points)
+	}
 }
 
 // Snapshot returns the engine's latest tick, or a tick in state "idle".

@@ -80,6 +80,17 @@ func (ts *testServer) ride(t testing.TB, c *http.Client) engine.Tick {
 	return decode[engine.Tick](t, b)
 }
 
+// syntheticRoute creates a 900 m route (300 m flat, 600 m at 6 %) and returns its id.
+func (ts *testServer) syntheticRoute(t testing.TB, c *http.Client) int64 {
+	t.Helper()
+	resp, b := ts.do(t, c, "POST", "/api/routes/synthetic", map[string]any{"name": "ramp",
+		"segments": []map[string]any{{"length_m": 300, "grade_pct": 0}, {"length_m": 600, "grade_pct": 6}}})
+	if resp.StatusCode != 201 {
+		t.Fatalf("synthetic: %d %s", resp.StatusCode, b)
+	}
+	return decode[RouteDetail](t, b).ID
+}
+
 func (ts *testServer) command(t testing.TB, c *http.Client, cmd string, value int) (*http.Response, []byte) {
 	t.Helper()
 	body := map[string]any{"command": cmd}
@@ -471,5 +482,44 @@ func TestScanFailed424(t *testing.T) {
 	resp, b := ts.do(t, admin, "POST", "/api/bike/scan", map[string]any{"duration_s": 1})
 	if resp.StatusCode != 424 || errCode(t, b) != "scan_failed" {
 		t.Errorf("scan: %d %s, want 424 scan_failed", resp.StatusCode, b)
+	}
+}
+
+func TestRideStartRoute(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	id := ts.syntheticRoute(t, admin)
+	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "route_id": id})
+	if resp.StatusCode != 204 {
+		t.Fatalf("start route: %d %s", resp.StatusCode, b)
+	}
+	poll(t, "route ride", func() bool {
+		tk := ts.ride(t, admin)
+		return tk.State == "riding" && tk.RouteID == id && tk.Mode == "route" && tk.RouteLengthM > 0
+	})
+}
+
+func TestRouteIDWithoutStart(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	id := ts.syntheticRoute(t, admin)
+	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "pause", "route_id": id})
+	if resp.StatusCode != 400 || errCode(t, b) != "invalid_request" {
+		t.Fatalf("pause+route_id: %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestStartUnknownRoute(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	resp, b := ts.do(t, admin, "POST", "/api/ride/command", map[string]any{"command": "start", "route_id": 999})
+	if resp.StatusCode != 404 || errCode(t, b) != "route_not_found" {
+		t.Fatalf("unknown route: %d %s", resp.StatusCode, b)
 	}
 }

@@ -357,6 +357,11 @@
             "description": "Client-chosen identifier, echoed in the ack or error that answers this command.",
             "type": "string"
           },
+          "route_id": {
+            "description": "Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike.",
+            "format": "int64",
+            "type": "integer"
+          },
           "type": {
             "description": "Message kind: always command.",
             "enum": [
@@ -382,7 +387,7 @@
         "properties": {
           "error": {
             "$ref": "#/components/schemas/ErrorBody",
-            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, internal_error."
+            "description": "What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, route_not_found, internal_error."
           },
           "id": {
             "description": "The id of the failed command; absent when the message could not be parsed.",

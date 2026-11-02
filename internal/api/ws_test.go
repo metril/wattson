@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -465,4 +466,30 @@ func BenchmarkWSCommandAck(b *testing.B) {
 		wsCmd(b, conn, "b", "level_delta", 0)
 		wsReadUntil(b, conn, "ack", func(m wsMsg) bool { return m.str("type") == "ack" })
 	}
+}
+
+func TestWSStartRoute(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.connectSim(t, admin)
+	id := ts.syntheticRoute(t, admin)
+	conn := ts.mustWS(t, admin, nil)
+	wsRead(t, conn)
+	wsSend(t, conn, fmt.Sprintf(`{"type":"command","id":"r0","command":"pause","route_id":%d}`, id))
+	if m := wsReadUntil(t, conn, "error", func(m wsMsg) bool { return m.str("type") == "error" }); m.sub("error").str("code") != "invalid_request" {
+		t.Errorf("route_id with pause = %v", m)
+	}
+	wsSend(t, conn, `{"type":"command","id":"r1","command":"start","route_id":999}`)
+	if m := wsReadUntil(t, conn, "error", func(m wsMsg) bool { return m.str("type") == "error" }); m.str("id") != "r1" || m.sub("error").str("code") != "route_not_found" {
+		t.Errorf("unknown route = %v", m)
+	}
+	wsSend(t, conn, fmt.Sprintf(`{"type":"command","id":"r2","command":"start","route_id":%d}`, id))
+	if m := wsReadUntil(t, conn, "ack", func(m wsMsg) bool { return m.str("type") == "ack" }); m.str("id") != "r2" {
+		t.Errorf("ack = %v", m)
+	}
+	wsReadUntil(t, conn, "route tick", func(m wsMsg) bool {
+		rid, _ := m.sub("tick")["route_id"].(float64)
+		return m.str("type") == "tick" && int64(rid) == id
+	})
 }

@@ -214,6 +214,11 @@
             ],
             "type": "string"
           },
+          "route_id": {
+            "description": "Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike.",
+            "format": "int64",
+            "type": "integer"
+          },
           "value": {
             "description": "Resistance level for set_level, or the change in levels for level_delta; ignored by other commands.",
             "format": "int64",
@@ -4135,7 +4140,7 @@
     },
     "/api/ride/command": {
       "post": {
-        "description": "Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. Returns 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.",
+        "description": "Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. `start` with `route_id` rides that route with the rider bound to the bike; the ride ends by itself at the route's end. `route_id` with any other command is a 400 `invalid_request`. Returns 404 `route_not_found` for an unknown route, 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.",
         "operationId": "rideCommand",
         "requestBody": {
           "content": {
@@ -4180,6 +4185,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "409": {
             "content": {

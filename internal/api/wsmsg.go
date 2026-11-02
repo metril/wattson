@@ -37,7 +37,7 @@ type WSAck struct {
 type WSError struct {
 	Type  string    `json:"type" enum:"error" doc:"Message kind: always error."`
 	ID    string    `json:"id,omitempty" doc:"The id of the failed command; absent when the message could not be parsed."`
-	Error ErrorBody `json:"error" doc:"What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, internal_error."`
+	Error ErrorBody `json:"error" doc:"What went wrong. Codes: invalid_request, forbidden, unknown_command, unsupported_command, no_bike, bad_state, route_not_found, internal_error."`
 }
 
 // WSCommand is the one message a client sends.
@@ -46,4 +46,5 @@ type WSCommand struct {
 	ID      string `json:"id" doc:"Client-chosen identifier, echoed in the ack or error that answers this command."`
 	Command string `json:"command" enum:"start,pause,resume,stop,set_level,level_delta,set_target_power" doc:"What to do: start, pause, resume or stop the ride, set_level (to value), level_delta (by value) or set_target_power (not supported yet)."`
 	Value   int    `json:"value,omitempty" doc:"Resistance level for set_level, change in levels for level_delta; ignored by the other commands."`
+	RouteID int64  `json:"route_id,omitempty" doc:"Route to ride; only with start. The ride follows the route's grade using the rider bound to the bike."`
 }

@@ -63,7 +63,7 @@ test('draw a route, save it and ride it: the level rises before the climb', asyn
   await page.getByRole('button', { name: 'Connect' }).click();
   const state = page.getByTestId('ride-state');
   await expect(state).toHaveText('ready', { timeout: 5_000 });
-  await expect(page.getByLabel('Route')).toHaveValue(/\d+/);
+  await expect(page.getByLabel('Ride', { exact: true })).toHaveValue(/^route:\d+$/);
   await page.getByRole('button', { name: 'Start' }).click();
   await expect(state).toHaveText('riding');
 

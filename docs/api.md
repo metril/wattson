@@ -46,6 +46,51 @@ Status codes worth knowing: `409 bike_busy` (already connected), `409 no_bike`, 
 
 Only one bike is controlled, by one rider at a time. The server never sends resistance level 0, and returns the bike to the rider's minimum level on stop, release, idle timeout and shutdown.
 
+## Workouts and ERG
+
+```
+# Create an interval workout (needs the control scope): level blocks, 5 to 7200 s each.
+# An interval block takes one of "level" (absolute) or "level_offset" (relative to the rider's flat-road level).
+curl -sS -X POST $W/api/workouts -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Over-unders","type":"interval","blocks":[{"duration_s":300,"level_offset":-1,"label":"Warm-up"},{"duration_s":60,"level_offset":2,"cadence":"90-100"}]}'
+
+# An ERG workout holds a power per block: "power_w" (50 to 1000) or "ftp_pct" (20 to 200, of the rider's FTP)
+curl -sS -X POST $W/api/workouts -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Sweet spot","type":"erg","blocks":[{"duration_s":600,"ftp_pct":60},{"duration_s":1200,"ftp_pct":90}]}'
+
+# List, read, replace and delete (the owner or an admin; deleting a workout being ridden is 409 workout_in_use)
+curl -sS $W/api/workouts -H "Authorization: Bearer $TOKEN"
+curl -sS $W/api/workouts/1 -H "Authorization: Bearer $TOKEN"
+
+# Ride workout 1 (the bike must be ready). The blocks are resolved for the connected rider when the ride starts,
+# so editing the workout later affects the next ride only.
+curl -sS -X POST $W/api/ride/command -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"command":"start","workout_id":1}'
+
+# Free ERG: hold 200 W until stopped. start takes at most one of route_id, workout_id and target_power_w.
+curl -sS -X POST $W/api/ride/command -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"command":"start","target_power_w":200}'
+
+# Change the free-ERG target (50 to 1000 W); level_delta nudges it by 10 W per step
+curl -sS -X POST $W/api/ride/command -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"command":"set_target_power","value":260}'
+
+# What ERG has learned about this bike (read scope), and resetting it (admin scope)
+curl -sS $W/api/bike/power-model -H "Authorization: Bearer $TOKEN"
+curl -sS -X DELETE $W/api/bike/power-model -H "Authorization: Bearer $TOKEN"
+```
+
+Over the WebSocket the same commands are messages:
+
+```
+{"type":"command","id":"c2","command":"start","value":0,"workout_id":1}
+{"type":"command","id":"c3","command":"set_target_power","value":260}
+```
+
+Ticks of a workout ride carry `workout_id`, `block_index` (from 0), `block_count`, `block_remaining_s` and `target_power_w`. `set_level` during ERG is `409 bad_state`; a target outside 50 to 1000 W is `400 invalid_value`.
+
 ## WebSocket
 
 `/ws` streams the bike status and a ride tick about once per second, and accepts the same commands as `POST /api/ride/command`. Offer the subprotocol `wattson.v1`; authenticate with the session cookie (same-origin pages) or by also offering `bearer.<token>`:

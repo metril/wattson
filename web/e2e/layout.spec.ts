@@ -10,6 +10,8 @@ const SIZES = [
 const ADMIN_PAGES = [
   '/riders',
   '/history',
+  '/workouts',
+  '/workouts/new',
   '/settings/general',
   '/settings/bike',
   '/settings/integrations',
@@ -36,9 +38,11 @@ for (const size of SIZES) {
       await page.getByRole('button', { name: 'Connect' }).click();
       await expect(page.getByTestId('ride-state')).toHaveText('ready', { timeout: 5_000 });
       await expectGoodLayout(page, 'ride (ready)');
+      await page.getByLabel('Ride', { exact: true }).selectOption('erg');
+      await expectGoodLayout(page, 'ride (ready, free ERG)');
       await page.getByRole('button', { name: 'Start' }).click();
       await expect(page.getByTestId('ride-state')).toHaveText('riding');
-      await expectGoodLayout(page, 'ride (riding)');
+      await expectGoodLayout(page, 'ride (riding, ERG)');
 
       // Leave the bike running; the other pages do not need it.
       for (const path of ADMIN_PAGES) {

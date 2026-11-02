@@ -68,6 +68,18 @@ To use a BRouter running elsewhere, set **Settings, BRouter URL** and leave the 
 
 Privacy: importing and riding use only your own server. The map background is loaded by your browser from `tiles.openfreemap.org`. With **OpenTopoData** on, the coordinates of a track are sent to `api.opentopodata.org` when more than 10 % of its points are missing elevation (an import without elevation, or a BRouter track that comes back without it) and for any track above 60 degrees latitude. With **public fallback** on, the waypoints of a drawn route are sent to `brouter.de` only when the route needs map regions you have not downloaded; it is never used when BRouter itself is down. Both are off by default.
 
+## Workouts and ERG
+
+Open **Workouts** in the web app to build a workout from blocks, with a preview chart for the rider you pick. Reorder blocks with Move up and Move down.
+
+- **Interval workouts** set a resistance level per block: an absolute **Level**, or an **Offset** from the rider's flat-road level (so one workout fits every rider). Levels are clamped to the rider's range.
+- **ERG workouts** hold a target power per block, in **Watts** or as **% FTP** of the rider's FTP (set on the Riders page). A % FTP target outside 50 to 1000 W is raised or capped when ridden; the editor warns about it. Wattson picks the resistance level that gives the target at your current cadence and trims it with a small feedback loop. It holds within about 5 % on the simulator; between two levels it can only be as close as the level steps allow.
+- **Blocks** last 5 s to 2 h each (up to 200 blocks and 6 h), with an optional label and cadence hint shown on the ride screen. Blocks are steps; build a ramp from several short blocks.
+- **Ride**: choose a workout on the ride screen (or tap "Ride this workout"), then Start. The screen shows the block number, its target, the next block, a countdown and the chart with a cursor. Pausing freezes the block clock. The ride ends after the last block. In an interval workout Easier and Harder shift every block's level (the bias); in ERG, -10 W and +10 W shift the target (up to 100 W). Editing a workout never changes a ride in progress, and a workout being ridden cannot be deleted.
+- **Free ERG**: choose "Free ERG" on the ride screen, enter a power (default 150 W) and Start. Change it with -10 W and +10 W or by typing a new power and tapping Set.
+- **Power multiplier**: each rider has a power multiplier (Riders page) that scales the bike's reported power, for a bike that reads high or low. The multiplied power is what you see, what is recorded, what drives the speed, and what ERG holds.
+- **Learned power model**: every bike gets its own model of power against cadence and level, starting from a built-in one. Wattson refines it from steady stretches of your rides (level unchanged for 3 s, 40 to 160 rpm, implausible readings ignored) and saves it per bike. **Settings, Bike, Learned power model** shows the number of samples and the modelled watts at 80 rpm for levels 1, 8 and 16. **Reset** (tap twice, admin) discards it and starts again from the built-in model, which is worth doing after changing the bike's calibration.
+
 ## History & Strava
 
 Finished rides are recorded automatically: one sample per second of riding, kept in the same database. Open **History** (also on a paired kiosk display) for the list, newest first, with a rider filter and "Load more". Open a ride for its stats (duration, distance, ascent, average and normalized power, energy, cadence, speed, heart rate when available), charts of power, cadence, speed and elevation over distance, and the map trace for route rides. Rides shorter than about 10 seconds are discarded. Delete removes the ride only after a second tap.

@@ -183,7 +183,10 @@ func TestSupervisorOverSim(t *testing.T) {
 		if _, err := sup.SetLevel(ctx, 6); err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.After(2 * time.Second)
+		// The first write after Connect waits out the supervisor's 1 s rate
+		// limit and the sim's 1 s ticker fires at the same virtual instant, so
+		// Level 6 may only show at ~2 s; allow plenty of (virtual) time.
+		deadline := time.After(10 * time.Second)
 		for {
 			select {
 			case tel := <-sup.Telemetry():
@@ -193,7 +196,7 @@ func TestSupervisorOverSim(t *testing.T) {
 				}
 			case <-deadline:
 				sup.Close(ctx)
-				t.Fatal("no Level 6 telemetry within 2s")
+				t.Fatal("no Level 6 telemetry within 10s")
 			}
 		}
 	})

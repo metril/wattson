@@ -19,6 +19,9 @@ const (
 	pmMaxWatts   = 2000
 	pmOutlierN   = 20 // outlier rejection starts after this many samples
 	pmOutlierFrc = 0.5
+	// pmMaxTrace bounds the covariance trace: with samples at one level the
+	// uncovered direction would otherwise grow by 1/λ per sample without limit.
+	pmMaxTrace = 2.0
 )
 
 // PowerModelState is the persisted fit. P holds the symmetric 2×2 covariance
@@ -45,7 +48,7 @@ func finite(vs ...float64) bool {
 }
 
 func (s PowerModelState) valid() bool {
-	return finite(s.A, s.B, s.P[0], s.P[1], s.P[2]) && s.B >= pmMinB && s.P[0] > 0 && s.P[2] > 0 && s.N >= 0
+	return finite(s.A, s.B, s.P[0], s.P[1], s.P[2]) && s.B >= pmMinB && s.P[0] > 0 && s.P[2] > 0 && s.P[0]*s.P[2] > s.P[1]*s.P[1] && s.N >= 0
 }
 
 // PowerModel is a 2-parameter recursive-least-squares fit of
@@ -73,7 +76,8 @@ func (m *PowerModel) Observe(level int, rpm, watts float64) bool {
 	defer m.mu.Unlock()
 	s := m.s
 	x1, x2 := rpm, rpm*float64(level)
-	pred := s.A*x1 + s.B*x2
+	pp := m.paramsLocked() // a degenerate fit predicts via the seed, so good samples can repair it
+	pred := pp.A*x1 + pp.B*x2
 	if s.N >= pmOutlierN && pred > 0 && math.Abs(watts-pred) > pmOutlierFrc*pred {
 		return false
 	}
@@ -91,6 +95,10 @@ func (m *PowerModel) Observe(level int, rpm, watts float64) bool {
 	n.P[0] = (p11 - k1*a) / pmForget
 	n.P[1] = (p12 - (k1*b+k2*a)/2) / pmForget
 	n.P[2] = (p22 - k2*b) / pmForget
+	if tr := n.P[0] + n.P[2]; tr > pmMaxTrace {
+		f := pmMaxTrace / tr
+		n.P[0], n.P[1], n.P[2] = n.P[0]*f, n.P[1]*f, n.P[2]*f
+	}
 	if !finite(n.A, n.B, n.P[0], n.P[1], n.P[2]) {
 		return false
 	}

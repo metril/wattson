@@ -977,7 +977,11 @@ func (s *stubMode) NudgeTarget(n int) {
 	defer s.mu.Unlock()
 	s.nudges = append(s.nudges, n)
 }
-func (s *stubMode) WorkoutInfo() (int64, int) { return 9, s.blocks }
+func (s *stubMode) WorkoutInfo() (int64, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return 9, s.blocks
+}
 
 func startWith(t *testing.T, e *Engine, f *fakeDriver, m Mode) {
 	t.Helper()
@@ -1024,20 +1028,24 @@ func TestLearnOnlySettled(t *testing.T) {
 		}
 		push(5)
 		push(5)
-		for range 2 {
-			push(6)
-		}
+		push(6) // the level switches here, at t=2 s
+		push(6)
+		f.tel <- bike.Telemetry{Level: 6, Cadence: 80, PowerW: sim.Power(6, 80)}
+		advance(500*time.Millisecond, sub) // t=4.5 s: 2.5 s after the switch
 		if n := pm.State().N; n != 0 {
-			t.Fatalf("N = %d before settling, want 0", n)
+			t.Fatalf("N = %d 2.5 s after the level change, want 0", n)
 		}
-		for range 8 {
+		advance(500*time.Millisecond, sub)
+		for range 6 {
 			push(6)
 		}
 		if n := pm.State().N; n < 6 {
 			t.Fatalf("N = %d after 10 s at L6, want >= 6", n)
 		}
-		if a := pm.State().B; a == 0.4 {
-			t.Fatal("model did not move")
+		// The fit saw raw 150 W (not 225 W with the multiplier): the model's
+		// 208 W at L6/80 rpm moves toward 150.
+		if got := pm.Power(6, 80); got >= 208 || got < 140 {
+			t.Fatalf("Power(6,80) = %v, want between 140 and 208 (raw power learned)", got)
 		}
 	})
 }

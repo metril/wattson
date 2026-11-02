@@ -117,3 +117,36 @@ func TestPowerModelStateJSON(t *testing.T) {
 		t.Fatalf("round trip %+v err %v", out, err)
 	}
 }
+
+func TestPowerModelCovarianceBounded(t *testing.T) {
+	t.Parallel()
+	m := bike.NewPowerModel(bike.SeedState())
+	for i := range 20000 { // an hour-plus at one fixed level, cadence wandering
+		rpm := 70 + 20*math.Sin(float64(i)/37)
+		w := sim.Power(5, rpm) * (1 + 0.01*math.Sin(float64(i)*1.7))
+		if !m.Observe(5, rpm, w) {
+			t.Fatalf("sample %d rejected", i)
+		}
+	}
+	s := m.State()
+	if tr := s.P[0] + s.P[2]; !(tr <= 2+1e-9) || math.IsNaN(tr) {
+		t.Fatalf("covariance trace %v: %+v", tr, s)
+	}
+	if p := m.Params(); p.B < 0.01 || math.IsNaN(p.A) || math.IsNaN(p.B) || math.Abs(p.A+5*p.B-sim.Power(5, 1)) > 0.05 {
+		t.Fatalf("fit not sane: %+v", p)
+	}
+	if !m.Observe(8, 80, sim.Power(8, 80)) {
+		t.Fatal("learning dead after long single-level riding")
+	}
+	if got := bike.NewPowerModel(s).State(); got != s {
+		t.Fatalf("saved state invalid on reload: %+v", got)
+	}
+}
+
+func TestPowerModelRejectsNonPositiveDefinite(t *testing.T) {
+	t.Parallel()
+	s := bike.PowerModelState{A: 0.4, B: 0.3, P: [3]float64{1, 2, 1}}
+	if got := bike.NewPowerModel(s).State(); got != bike.SeedState() {
+		t.Fatalf("accepted indefinite covariance: %+v", got)
+	}
+}

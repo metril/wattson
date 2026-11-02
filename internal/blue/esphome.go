@@ -63,6 +63,36 @@ func NewESPHomeWith(ctx context.Context, hostport, key string, opts ...ESPHomeOp
 	return t, nil
 }
 
+// ProbeESPHome reads a proxy's identity, feature flags and connection slots
+// without subscribing to advertisements, so it never takes the proxy's Bluetooth
+// subscription from another client (Home Assistant). Subscribed is not
+// reported (always false): only a subscribed transport can tell. If the proxy
+// does not answer ConnectionsFree within slotsWait, Limit and Free stay 0 and
+// the error is nil.
+func ProbeESPHome(ctx context.Context, hostport, key string, slotsWait time.Duration) (ProxyStatus, error) {
+	c, err := esphomeapi.Dial(ctx, hostport, key)
+	if err != nil {
+		return ProxyStatus{}, err
+	}
+	defer c.Close()
+	info := c.Info()
+	st := ProxyStatus{Name: info.Name, MAC: info.MAC, Version: info.ESPHomeVersion, Flags: info.BTProxyFlags}
+	sctx, cancel := context.WithTimeout(ctx, slotsWait)
+	defer cancel()
+	r, err := c.ConnectionsFree(sctx)
+	switch {
+	case err == nil:
+		st.Free, st.Limit = int(r.Free), int(r.Limit)
+		for _, a := range r.Allocated {
+			st.Allocated = append(st.Allocated, addrFromUint64(a, 0))
+		}
+	case errors.Is(err, context.DeadlineExceeded):
+	default:
+		return st, espErr("proxy status", err)
+	}
+	return st, nil
+}
+
 // defaultHeldAfter is how long the proxy may go without sending us any
 // subscriber-only message before it counts as held by another client.
 const defaultHeldAfter = 10 * time.Second

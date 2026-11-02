@@ -152,12 +152,16 @@ func scrub(text, secret string) string {
 // Diagnose checks the Bluetooth path the bike and heart rate monitor use.
 // While a bike is connected (or connecting) it reuses that connection's shared
 // transport: a second ESPHome subscription would take the proxy from the
-// connection itself. When idle it opens a temporary transport, closed before
-// it returns, and holds the scan slot meanwhile so a Connect or Scan arriving
-// at the same time gets bike_busy instead of fighting it for the proxy; a
-// Diagnose that finds a scan running reports "busy" instead of failing. scan
-// is the length of the passive scan that fills in the devices' RSSI (0 skips
-// it; at most 10 s). It never returns ErrBusy.
+// connection itself. When idle with scan 0 and an ESPHome proxy it only probes
+// the proxy (no advertisement subscription, no scan slot), so polling never
+// takes the proxy from Home Assistant. Otherwise, when idle, it opens a
+// temporary transport (which subscribes: an ESPHome proxy is taken from any
+// other client until it closes), closed before it returns, and holds the scan
+// slot meanwhile so a Connect or Scan arriving at the same time gets bike_busy
+// instead of fighting it for the proxy; a Diagnose that finds a scan running
+// reports "busy" instead of failing. scan is the length of the passive scan
+// that fills in the devices' RSSI (0 skips it; at most 10 s). It never
+// returns ErrBusy.
 func (m *Manager) Diagnose(ctx context.Context, scan time.Duration) Diagnostics {
 	scan = max(0, min(scan, maxDiagScan))
 	d := Diagnostics{Transport: "none", Devices: []DeviceDiag{}, CheckedAt: time.Now().UTC()}
@@ -203,7 +207,8 @@ func (m *Manager) Diagnose(ctx context.Context, scan time.Duration) Diagnostics 
 		}
 	}
 	busy := false
-	if c == nil && (t.bikeBLE || t.hrBLE) {
+	probeOnly := c == nil && scan == 0 && t.kind == "esphome" && (t.bikeBLE || t.hrBLE)
+	if c == nil && !probeOnly && (t.bikeBLE || t.hrBLE) {
 		if m.scanning {
 			busy = true
 		} else {
@@ -233,8 +238,21 @@ func (m *Manager) Diagnose(ctx context.Context, scan time.Duration) Diagnostics 
 	// Open the transport: the live shared one, else a temporary one.
 	octx, ocancel := context.WithTimeout(ctx, diagOpenBound)
 	var tr blue.Transport
+	var probed blue.Proxy
 	var openErr error
 	switch {
+	case probeOnly:
+		if strings.TrimSpace(t.host) == "" {
+			openErr = ErrNoHost
+			break
+		}
+		wait := cmp.Or(m.diagProxy, diagProxyBound)
+		ps, err := m.d.ProbeESPHome(octx, hostPort(t.host), t.key, wait)
+		if err != nil {
+			openErr = err
+		} else {
+			probed = probedProxy{ps}
+		}
 	case busy:
 		openErr = errBusyScan
 	case c != nil && shared == nil:
@@ -270,7 +288,11 @@ func (m *Manager) Diagnose(ctx context.Context, scan time.Duration) Diagnostics 
 	case "local":
 		d.Local = localDiag(openErr, scanErr)
 	default:
-		d.Proxy = m.proxyDiag(ctx, tr, live, openErr, scanErr, own, t.key)
+		px := probed
+		if tr != nil {
+			px, _ = tr.(blue.Proxy)
+		}
+		d.Proxy = m.proxyDiag(ctx, px, live, openErr, scanErr, own, t.key)
 	}
 
 	d.Devices = m.deviceDiags(t, c != nil, st, rssi)
@@ -278,6 +300,14 @@ func (m *Manager) Diagnose(ctx context.Context, scan time.Duration) Diagnostics 
 }
 
 var errBusyScan = errors.New("busy")
+
+// probedProxy is a one-shot ProxyStatus answered by a non-subscribing probe.
+type probedProxy struct{ ps blue.ProxyStatus }
+
+func (probedProxy) Done() <-chan struct{} { return nil }
+func (p probedProxy) ProxyStatus(context.Context) (blue.ProxyStatus, error) {
+	return p.ps, nil
+}
 
 // canonAddr normalises a configured address for display; unparsable text is
 // shown as typed.
@@ -304,7 +334,7 @@ func localDiag(openErr, scanErr error) *LocalDiag {
 	return &LocalDiag{Status: "error", Code: code, Message: err.Error(), Fix: fix}
 }
 
-func (m *Manager) proxyDiag(ctx context.Context, tr blue.Transport, live bool, openErr, scanErr error, own []blue.Address, key string) *ProxyDiag {
+func (m *Manager) proxyDiag(ctx context.Context, px blue.Proxy, live bool, openErr, scanErr error, own []blue.Address, key string) *ProxyDiag {
 	p := &ProxyDiag{Status: "error", Flags: []string{}, MissingFlags: []string{}, Subscription: "unknown", Allocated: []string{}}
 	fail := func(err error) *ProxyDiag {
 		p.Code, p.Fix = classifyProxy(err)
@@ -318,8 +348,7 @@ func (m *Manager) proxyDiag(ctx context.Context, tr blue.Transport, live bool, o
 	if openErr != nil {
 		return fail(openErr)
 	}
-	px, ok := tr.(blue.Proxy)
-	if !ok {
+	if px == nil {
 		p.Status, p.Message = "ok", "The transport reports no proxy details."
 		return p
 	}

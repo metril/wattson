@@ -46,15 +46,16 @@ var (
 // Deps are the manager's collaborators; every func has a production default.
 type Deps struct {
 	Settings     func(context.Context) (settings.Settings, error)
-	OpenLocal    func() (blue.Transport, error)                                          // default blue.NewLocal
-	OpenESPHome  func(ctx context.Context, hostport, key string) (blue.Transport, error) // default blue.NewESPHome
-	SimDial      func(sim.Config) bike.Dial                                              // default sim.Dial
-	LoadRoute    func(ctx context.Context, id int64) (*route.Profile, error)             // route for StartRoute; ErrRouteNotFound when missing; see StoreRoutes
-	TickEvery    time.Duration                                                           // engine tick period; default 1s
-	SimPeriod    time.Duration                                                           // simulator telemetry period; default 1s
-	OpenHA       func(ctx context.Context, base, token string) (*hass.Client, error)     // default hass.Dial(Options{})
-	HAPeriod     time.Duration                                                           // Home Assistant bike telemetry period; default 1s
-	HRBackoffMin time.Duration                                                           // first heart rate reconnect delay; default 1s
+	OpenLocal    func() (blue.Transport, error)                                                                     // default blue.NewLocal
+	OpenESPHome  func(ctx context.Context, hostport, key string) (blue.Transport, error)                            // default blue.NewESPHome
+	ProbeESPHome func(ctx context.Context, hostport, key string, slotsWait time.Duration) (blue.ProxyStatus, error) // default blue.ProbeESPHome; diagnostics only, never subscribes
+	SimDial      func(sim.Config) bike.Dial                                                                         // default sim.Dial
+	LoadRoute    func(ctx context.Context, id int64) (*route.Profile, error)                                        // route for StartRoute; ErrRouteNotFound when missing; see StoreRoutes
+	TickEvery    time.Duration                                                                                      // engine tick period; default 1s
+	SimPeriod    time.Duration                                                                                      // simulator telemetry period; default 1s
+	OpenHA       func(ctx context.Context, base, token string) (*hass.Client, error)                                // default hass.Dial(Options{})
+	HAPeriod     time.Duration                                                                                      // Home Assistant bike telemetry period; default 1s
+	HRBackoffMin time.Duration                                                                                      // first heart rate reconnect delay; default 1s
 	Logger       *slog.Logger
 }
 
@@ -157,6 +158,9 @@ func New(d Deps) *Manager {
 	}
 	if d.OpenLocal == nil {
 		d.OpenLocal = blue.NewLocal
+	}
+	if d.ProbeESPHome == nil {
+		d.ProbeESPHome = blue.ProbeESPHome
 	}
 	if d.OpenESPHome == nil {
 		d.OpenESPHome = blue.NewESPHome

@@ -221,6 +221,54 @@ func TestDiagnoseESPHome(t *testing.T) {
 	}
 }
 
+// An idle poll (scan 0) only probes the proxy: it never subscribes, so another
+// client's subscription (Home Assistant) stays in place, and it does not take
+// the scan slot.
+func TestDiagnoseIdleProbeDoesNotSubscribe(t *testing.T) {
+	t.Parallel()
+	srv, key := proxyServer(t)
+	srv.SetForeignSubscriber()
+	m := newMgr(nil, 20*time.Millisecond, espSettings(srv, key, false), Deps{})
+	defer m.Close(context.Background())
+	m.mu.Lock()
+	m.scanning = true // a scan is running: the probe must not report busy
+	m.mu.Unlock()
+	for range 2 {
+		d := m.Diagnose(t.Context(), 0)
+		p := d.Proxy
+		if d.Transport != "esphome" || p == nil || p.Status != "ok" || p.Code != "" || p.Subscription != "unknown" {
+			t.Fatalf("proxy = %+v", p)
+		}
+		if p.Name == "" || p.Limit != 3 || len(p.Flags) == 0 {
+			t.Errorf("proxy = %+v", p)
+		}
+	}
+	if f := srv.BLEAdvFlags(); len(f) != 0 {
+		t.Fatalf("advert subscriptions = %v: an idle poll must not subscribe", f)
+	}
+	m.mu.Lock()
+	still := m.scanning
+	m.mu.Unlock()
+	if !still {
+		t.Error("the probe released a scan slot it did not take")
+	}
+}
+
+// An explicit idle scan does subscribe (it needs the adverts).
+func TestDiagnoseIdleScanSubscribes(t *testing.T) {
+	t.Parallel()
+	srv, key := proxyServer(t)
+	m := newMgr(nil, 20*time.Millisecond, espSettings(srv, key, false), Deps{})
+	defer m.Close(context.Background())
+	d := m.Diagnose(t.Context(), 100*time.Millisecond)
+	if d.Proxy == nil || d.Proxy.Status != "ok" {
+		t.Fatalf("proxy = %+v", d.Proxy)
+	}
+	if f := srv.BLEAdvFlags(); len(f) != 1 {
+		t.Fatalf("advert subscriptions = %v, want 1", f)
+	}
+}
+
 func TestDiagnoseProxyHeld(t *testing.T) {
 	t.Parallel()
 	srv, key := proxyServer(t)
@@ -339,8 +387,8 @@ func TestDiagnoseNoSecrets(t *testing.T) {
 	m := newMgr(nil, 20*time.Millisecond, func(s *settings.Settings) {
 		bleBike(nil)(s)
 		s.Bike.Transport, s.Bike.ESPHomeHost, s.Bike.ESPHomeKey = "esphome", "h", key
-	}, Deps{OpenESPHome: func(context.Context, string, string) (blue.Transport, error) {
-		return nil, fmt.Errorf("dial failed with key %s", key)
+	}, Deps{ProbeESPHome: func(context.Context, string, string, time.Duration) (blue.ProxyStatus, error) {
+		return blue.ProxyStatus{}, fmt.Errorf("dial failed with key %s", key)
 	}})
 	defer m.Close(context.Background())
 	d := m.Diagnose(t.Context(), 0)

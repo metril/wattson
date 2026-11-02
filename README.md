@@ -58,7 +58,7 @@ Routes turn the bike into a gradient trainer: Wattson raises the resistance a fe
 
 To use a BRouter running elsewhere, set **Settings, BRouter URL** and leave the segments directory empty; Wattson then skips the local missing-region check. On arm64 (Raspberry Pi) the pinned BRouter image is amd64 only, so it runs under emulation (see Docker above) or on another machine through that URL.
 
-Privacy: importing and riding use only your own server. The map background is loaded by your browser from `tiles.openfreemap.org`. With **public fallback** on, a draw BRouter cannot answer sends its waypoints to `brouter.de`, and with **OpenTopoData** on, routes above 60 degrees latitude send their coordinates to `api.opentopodata.org` to get elevation. Both are off by default.
+Privacy: importing and riding use only your own server. The map background is loaded by your browser from `tiles.openfreemap.org`. With **OpenTopoData** on, the coordinates of a track are sent to `api.opentopodata.org` when more than 10 % of its points are missing elevation (an import without elevation, or a BRouter track that comes back without it) and for any track above 60 degrees latitude. With **public fallback** on, the waypoints of a drawn route are sent to `brouter.de` only when the route needs map regions you have not downloaded; it is never used when BRouter itself is down. Both are off by default.
 
 ## Quick start (CLI)
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/metril/wattson/internal/mapillary"
 	"github.com/metril/wattson/internal/secretbox"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -472,6 +473,60 @@ func TestValidateM5(t *testing.T) {
 			if tc.field == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			var ve *settings.ValidationError
+			if !errors.As(err, &ve) || ve.Field != tc.field {
+				t.Fatalf("err = %v, want field %s", err, tc.field)
+			}
+		})
+	}
+}
+
+func TestMapillaryDefaults(t *testing.T) {
+	t.Parallel()
+	m := settings.Defaults().Mapillary
+	if m.Token != "" || m.GraphURL != mapillary.DefaultGraphURL || m.TilesURL != mapillary.DefaultTilesURL {
+		t.Errorf("mapillary defaults = %+v", m)
+	}
+	// A section stored before the URLs existed keeps the defaults.
+	svc, st := newSvc(t)
+	if err := st.PutSettings(context.Background(), map[string]string{"mapillary": `{"token":""}`}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mapillary.GraphURL != mapillary.DefaultGraphURL || got.Mapillary.TilesURL != mapillary.DefaultTilesURL {
+		t.Errorf("stored old section = %+v", got.Mapillary)
+	}
+}
+
+func TestMapillaryValidate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		mod   func(*settings.Settings)
+		field string
+	}{
+		{"graph ftp", func(s *settings.Settings) { s.Mapillary.GraphURL = "ftp://x" }, "mapillary.graph_url"},
+		{"graph empty", func(s *settings.Settings) { s.Mapillary.GraphURL = "" }, "mapillary.graph_url"},
+		{"tiles relative", func(s *settings.Settings) { s.Mapillary.TilesURL = "tiles/x" }, "mapillary.tiles_url"},
+		{"both http", func(s *settings.Settings) {
+			s.Mapillary.GraphURL, s.Mapillary.TilesURL = "http://127.0.0.1:1", "http://127.0.0.1:2/t"
+		}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := settings.Defaults()
+			tc.mod(&s)
+			err := s.Validate()
+			if tc.field == "" {
+				if err != nil {
+					t.Fatal(err)
 				}
 				return
 			}

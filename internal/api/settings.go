@@ -87,7 +87,9 @@ type ElevationOut struct {
 }
 
 type MapillaryOut struct {
-	TokenSet bool `json:"token_set" doc:"Whether a Mapillary access token is stored. The token itself is never returned."`
+	TokenSet bool   `json:"token_set" doc:"Whether a Mapillary access token is stored. The token itself is never returned."`
+	GraphURL string `json:"graph_url" doc:"Mapillary Graph API base URL (http or https)."`
+	TilesURL string `json:"tiles_url" doc:"Mapillary coverage vector tile base URL, without the /{z}/{x}/{y} suffix (http or https)."`
 }
 
 type StravaOut struct {
@@ -113,7 +115,7 @@ func settingsOut(s settings.Settings) SettingsOut {
 		BRouter: BRouterOut{URL: s.BRouter.URL, Profile: s.BRouter.Profile, SegmentsDir: s.BRouter.SegmentsDir,
 			SegmentsURL: s.BRouter.SegmentsURL, PublicURL: s.BRouter.PublicURL, PublicFallback: s.BRouter.PublicFallback},
 		Elevation: ElevationOut{OpenTopoData: s.Elevation.OpenTopoData, OpenTopoDataURL: s.Elevation.OpenTopoDataURL},
-		Mapillary: MapillaryOut{TokenSet: s.Mapillary.Token != ""},
+		Mapillary: MapillaryOut{TokenSet: s.Mapillary.Token != "", GraphURL: s.Mapillary.GraphURL, TilesURL: s.Mapillary.TilesURL},
 		Strava:    StravaOut{ClientID: s.Strava.ClientID, ClientSecretSet: s.Strava.ClientSecret != ""},
 	}
 }
@@ -196,7 +198,9 @@ type ElevationPatch struct {
 }
 
 type MapillaryPatch struct {
-	Token *string `json:"token,omitempty" doc:"Mapillary access token. Omit to keep the stored token; an empty string clears it."`
+	Token    *string `json:"token,omitempty" doc:"Mapillary access token. Omit to keep the stored token; an empty string clears it."`
+	GraphURL *string `json:"graph_url,omitempty" doc:"Mapillary Graph API base URL (http or https). Default https://graph.mapillary.com."`
+	TilesURL *string `json:"tiles_url,omitempty" doc:"Mapillary coverage tile base URL (http or https). Default https://tiles.mapillary.com/maps/vtp/mly1_public/2."`
 }
 
 type StravaPatch struct {
@@ -265,6 +269,8 @@ func (p SettingsPatch) apply(s *settings.Settings) {
 	}
 	if m := p.Mapillary; m != nil {
 		set(&s.Mapillary.Token, m.Token)
+		set(&s.Mapillary.GraphURL, m.GraphURL)
+		set(&s.Mapillary.TilesURL, m.TilesURL)
 	}
 	if st := p.Strava; st != nil {
 		set(&s.Strava.ClientID, st.ClientID)

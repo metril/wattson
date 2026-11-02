@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/mapillary"
 )
 
 // Settings is the whole configuration, one struct per stored section.
@@ -115,8 +116,12 @@ type Elevation struct {
 	OpenTopoDataURL string `json:"opentopodata_url"`
 }
 
+// Mapillary configures street imagery. GraphURL and TilesURL are overridable
+// so tests and a self-hosted mirror can point elsewhere.
 type Mapillary struct {
-	Token string `json:"token"` // secret
+	Token    string `json:"token"` // secret
+	GraphURL string `json:"graph_url"`
+	TilesURL string `json:"tiles_url"`
 }
 
 type Strava struct {
@@ -134,6 +139,7 @@ func Defaults() Settings {
 		BRouter: BRouter{URL: "http://brouter:17777", Profile: "trekking", SegmentsDir: "/segments",
 			SegmentsURL: "https://brouter.de/brouter/segments4/", PublicURL: "https://brouter.de"},
 		Elevation: Elevation{OpenTopoDataURL: "https://api.opentopodata.org/v1/mapzen"},
+		Mapillary: Mapillary{GraphURL: mapillary.DefaultGraphURL, TilesURL: mapillary.DefaultTilesURL},
 	}
 }
 
@@ -291,6 +297,12 @@ func (s Settings) Validate() error {
 	}
 	if _, ok := parseURL(s.Elevation.OpenTopoDataURL, "http", "https"); !ok {
 		return bad("elevation.opentopodata_url", "must be an absolute http(s) URL")
+	}
+	if _, ok := parseURL(s.Mapillary.GraphURL, "http", "https"); !ok {
+		return bad("mapillary.graph_url", "must be an absolute http(s) URL")
+	}
+	if _, ok := parseURL(s.Mapillary.TilesURL, "http", "https"); !ok {
+		return bad("mapillary.tiles_url", "must be an absolute http(s) URL")
 	}
 	return nil
 }

@@ -1256,19 +1256,37 @@
       "MapillaryOut": {
         "additionalProperties": false,
         "properties": {
+          "graph_url": {
+            "description": "Mapillary Graph API base URL (http or https).",
+            "type": "string"
+          },
+          "tiles_url": {
+            "description": "Mapillary coverage vector tile base URL, without the /{z}/{x}/{y} suffix (http or https).",
+            "type": "string"
+          },
           "token_set": {
             "description": "Whether a Mapillary access token is stored. The token itself is never returned.",
             "type": "boolean"
           }
         },
         "required": [
-          "token_set"
+          "token_set",
+          "graph_url",
+          "tiles_url"
         ],
         "type": "object"
       },
       "MapillaryPatch": {
         "additionalProperties": false,
         "properties": {
+          "graph_url": {
+            "description": "Mapillary Graph API base URL (http or https). Default https://graph.mapillary.com.",
+            "type": "string"
+          },
+          "tiles_url": {
+            "description": "Mapillary coverage tile base URL (http or https). Default https://tiles.mapillary.com/maps/vtp/mly1_public/2.",
+            "type": "string"
+          },
           "token": {
             "description": "Mapillary access token. Omit to keep the stored token; an empty string clears it.",
             "type": "string"
@@ -3136,6 +3154,16 @@
           },
           "username": {
             "description": "Username to test. Empty uses the stored username, but only when the URL is the stored one.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TestMapillaryInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "Mapillary access token to test. Empty uses the stored token.",
             "type": "string"
           }
         },
@@ -8717,6 +8745,96 @@
           }
         ],
         "summary": "Test the Home Assistant connection",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/test/mapillary": {
+      "post": {
+        "description": "Makes one small Graph API request with the token as an OAuth credential in a header (never in a URL), timing out after 5 seconds. An empty `token` uses the stored one. The result is always HTTP 200; check `ok`. A 401 or 403 reports `token rejected (401)`. The token is never echoed back. Requires the `admin` scope.",
+        "operationId": "testMapillary",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestMapillaryInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Test the Mapillary token",
         "tags": [
           "settings"
         ]

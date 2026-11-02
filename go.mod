@@ -13,6 +13,7 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/muktihari/fit v0.28.5
+	github.com/paulmach/orb v0.14.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/oauth2 v0.30.0
@@ -24,10 +25,12 @@ require (
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/paulmach/protoscan v0.2.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/saltosystems/winrt-go v0.0.0-20261015065339-8ef619c103a3 // indirect
@@ -37,6 +40,7 @@ require (
 	github.com/soypat/seqs v0.0.0-20260125140838-2c1c6b1bd69e // indirect
 	github.com/tinygo-org/cbgo v0.1.0 // indirect
 	github.com/tinygo-org/pio v0.3.0 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.9.2 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect

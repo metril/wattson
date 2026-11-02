@@ -1,0 +1,380 @@
+// Package mapillary talks to Mapillary (coverage vector tiles and the Graph
+// API) and selects street photos along a route. The access token never
+// leaves the server and never appears in an error string.
+package mapillary
+
+import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/encoding/mvt"
+	"github.com/paulmach/orb/maptile"
+)
+
+const (
+	DefaultGraphURL = "https://graph.mapillary.com"
+	DefaultTilesURL = "https://tiles.mapillary.com/maps/vtp/mly1_public/2"
+)
+
+var (
+	ErrNoToken       = errors.New("mapillary: no access token configured")
+	ErrTokenRejected = errors.New("token rejected")
+	ErrRateLimited   = errors.New("mapillary: rate limited")
+	ErrBadImageHost  = errors.New("mapillary: image URL host not allowed")
+)
+
+const (
+	maxAttempts  = 3
+	maxTileBytes = 8 << 20
+	maxJSONBytes = 1 << 20
+	redactedVal  = "REDACTED"
+)
+
+// Client reads Mapillary. The zero value is not usable: set GraphURL, TilesURL
+// and Token (HTTP defaults to http.DefaultClient).
+type Client struct {
+	GraphURL, TilesURL string
+	HTTP               *http.Client
+	Token              func(ctx context.Context) (string, error) // reads sealed settings; "" -> ErrNoToken
+	// ImageHostOK reports whether an image URL host may be fetched. Default:
+	// the Graph host, *.fbcdn.net or *.mapillary.com.
+	ImageHostOK func(host string) bool
+
+	sleep func(time.Duration) // tests only; default waits on a timer or ctx
+}
+
+// Candidate is one image found in a coverage tile.
+type Candidate struct {
+	ID         string
+	Lat, Lon   float64
+	Compass    float64 // degrees clockwise from north
+	CapturedAt int64   // Unix milliseconds
+	Pano       bool
+}
+
+// ImageMeta locates the image bytes.
+type ImageMeta struct{ URL, Creator string }
+
+func (c *Client) token(ctx context.Context) (string, error) {
+	if c.Token == nil {
+		return "", ErrNoToken
+	}
+	t, err := c.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+	if t == "" {
+		return "", ErrNoToken
+	}
+	return t, nil
+}
+
+func (c *Client) http() *http.Client {
+	if c.HTTP != nil {
+		return c.HTTP
+	}
+	return http.DefaultClient
+}
+
+// redactURL returns u with any access_token query value replaced.
+func redactURL(u string) string {
+	p, err := url.Parse(u)
+	if err != nil {
+		return "(unparseable URL)"
+	}
+	q := p.Query()
+	if q.Has("access_token") {
+		q.Set("access_token", redactedVal)
+		p.RawQuery = q.Encode()
+	}
+	p.User = nil
+	return p.String()
+}
+
+// scrub removes the token from an error text.
+func scrub(s, tok string) string {
+	if tok != "" {
+		s = strings.ReplaceAll(s, tok, redactedVal)
+	}
+	return s
+}
+
+// do GETs rawURL with up to maxAttempts tries on 429 and 5xx. headerAuth
+// sends the token as "Authorization: OAuth <token>"; the caller puts it in
+// the query otherwise. The caller closes the body of a 2xx response.
+func (c *Client) do(ctx context.Context, rawURL, tok string, headerAuth bool) (*http.Response, error) {
+	var last error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			if err := c.wait(ctx, time.Duration(attempt)*time.Second); err != nil {
+				return nil, err
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("mapillary: bad request URL %s", redactURL(rawURL))
+		}
+		if headerAuth {
+			req.Header.Set("Authorization", "OAuth "+tok)
+		}
+		resp, err := c.http().Do(req)
+		if err != nil {
+			var ue *url.Error
+			inner := err
+			if errors.As(err, &ue) {
+				inner = ue.Err
+			}
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("mapillary: GET %s: %s", redactURL(rawURL), scrub(inner.Error(), tok))
+		}
+		switch {
+		case resp.StatusCode >= 200 && resp.StatusCode < 300, resp.StatusCode == http.StatusNotFound:
+			return resp, nil
+		case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("%w (%d)", ErrTokenRejected, resp.StatusCode)
+		case resp.StatusCode == http.StatusBadRequest && oauthError(resp.Body):
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("%w (%d)", ErrTokenRejected, resp.StatusCode)
+		case resp.StatusCode == http.StatusTooManyRequests:
+			_ = resp.Body.Close()
+			last = ErrRateLimited
+		case resp.StatusCode >= 500:
+			_ = resp.Body.Close()
+			last = fmt.Errorf("mapillary: HTTP %d from %s", resp.StatusCode, redactURL(rawURL))
+		default:
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("mapillary: HTTP %d from %s", resp.StatusCode, redactURL(rawURL))
+		}
+	}
+	return nil, last
+}
+
+// oauthError reports whether a 400 body is a Graph API OAuth (token) error,
+// and closes nothing.
+func oauthError(r io.Reader) bool {
+	var e struct {
+		Error struct {
+			Type string `json:"type"`
+			Code int    `json:"code"`
+		} `json:"error"`
+	}
+	if json.NewDecoder(io.LimitReader(r, 64<<10)).Decode(&e) != nil {
+		return false
+	}
+	return e.Error.Type == "OAuthException" || e.Error.Code == 190
+}
+
+func (c *Client) wait(ctx context.Context, d time.Duration) error {
+	if c.sleep != nil {
+		c.sleep(d)
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// Coverage lists the images in the z/x/y coverage tile (zoom 14 carries
+// individual images). A tile without coverage is nil, nil.
+func (c *Client) Coverage(ctx context.Context, z, x, y int) ([]Candidate, error) {
+	tok, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u := fmt.Sprintf("%s/%d/%d/%d?access_token=%s", strings.TrimRight(c.TilesURL, "/"), z, x, y, url.QueryEscape(tok))
+	resp, err := c.do(ctx, u, tok, false)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("mapillary: read tile: %s", scrub(err.Error(), tok))
+	}
+	if len(body) > maxTileBytes {
+		return nil, errors.New("mapillary: coverage tile too large")
+	}
+	var layers mvt.Layers
+	if len(body) > 2 && body[0] == 0x1f && body[1] == 0x8b {
+		zr, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("mapillary: decode tile: %w", err)
+		}
+		body, err = io.ReadAll(io.LimitReader(zr, maxTileBytes+1))
+		if err != nil || len(body) > maxTileBytes {
+			return nil, errors.New("mapillary: decode tile: bad gzip")
+		}
+	}
+	layers, err = mvt.Unmarshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("mapillary: decode tile: %w", err)
+	}
+	layers.ProjectToWGS84(maptile.New(uint32(x), uint32(y), maptile.Zoom(z)))
+	var out []Candidate
+	for _, l := range layers {
+		if l.Name != "image" {
+			continue
+		}
+		for _, f := range l.Features {
+			var pts []orb.Point
+			switch g := f.Geometry.(type) {
+			case orb.Point:
+				pts = []orb.Point{g}
+			case orb.MultiPoint:
+				pts = g
+			}
+			id := propString(f.Properties["id"])
+			if id == "" && f.ID != nil {
+				id = propString(f.ID)
+			}
+			if id == "" {
+				continue
+			}
+			for _, p := range pts {
+				out = append(out, Candidate{
+					ID: id, Lat: p[1], Lon: p[0],
+					Compass:    propFloat(f.Properties["compass_angle"]),
+					CapturedAt: int64(propFloat(f.Properties["captured_at"])),
+					Pano:       propBool(f.Properties["is_pano"]),
+				})
+			}
+		}
+	}
+	return out, nil
+}
+
+func propFloat(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case uint64:
+		return float64(n)
+	case string:
+		f, _ := strconv.ParseFloat(n, 64)
+		return f
+	}
+	return 0
+}
+
+func propBool(v any) bool {
+	switch b := v.(type) {
+	case bool:
+		return b
+	default:
+		return propFloat(v) != 0
+	}
+}
+
+func propString(v any) string {
+	switch n := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return n
+	case float64:
+		if n == math.Trunc(n) {
+			return strconv.FormatInt(int64(n), 10)
+		}
+	case float32, int, int64, uint64:
+		return strconv.FormatInt(int64(propFloat(n)), 10)
+	}
+	return ""
+}
+
+// Image looks up the 2048 px thumbnail URL and creator of an image.
+func (c *Client) Image(ctx context.Context, id string) (ImageMeta, error) {
+	tok, err := c.token(ctx)
+	if err != nil {
+		return ImageMeta{}, err
+	}
+	if id == "" || strings.Trim(id, "0123456789") != "" {
+		return ImageMeta{}, errors.New("mapillary: bad image id")
+	}
+	u := strings.TrimRight(c.GraphURL, "/") + "/" + id + "?fields=thumb_2048_url,creator"
+	resp, err := c.do(ctx, u, tok, true)
+	if err != nil {
+		return ImageMeta{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ImageMeta{}, fmt.Errorf("mapillary: image %s not found", id)
+	}
+	var v struct {
+		URL     string `json:"thumb_2048_url"`
+		Creator struct {
+			Username string `json:"username"`
+		} `json:"creator"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&v); err != nil {
+		return ImageMeta{}, errors.New("mapillary: unreadable image reply")
+	}
+	if v.URL == "" {
+		return ImageMeta{}, fmt.Errorf("mapillary: image %s has no thumbnail", id)
+	}
+	if !c.imageHostOK(v.URL) {
+		return ImageMeta{}, ErrBadImageHost
+	}
+	return ImageMeta{URL: v.URL, Creator: v.Creator.Username}, nil
+}
+
+func (c *Client) imageHostOK(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return false
+	}
+	if c.ImageHostOK != nil {
+		return c.ImageHostOK(u.Host)
+	}
+	if g, err := url.Parse(c.GraphURL); err == nil && g.Host != "" && strings.EqualFold(u.Host, g.Host) {
+		return true
+	}
+	h := strings.ToLower(u.Hostname())
+	return strings.HasSuffix(h, ".fbcdn.net") || strings.HasSuffix(h, ".mapillary.com")
+}
+
+// Ping makes a cheap authenticated Graph API call; nil means the token works.
+func (c *Client) Ping(ctx context.Context) error {
+	tok, err := c.token(ctx)
+	if err != nil {
+		return err
+	}
+	u := strings.TrimRight(c.GraphURL, "/") + "/images?fields=id&limit=1&bbox=13.40,52.51,13.41,52.52"
+	resp, err := c.do(ctx, u, tok, true)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return errors.New("mapillary: Graph API not found at the configured URL")
+	}
+	return nil
+}

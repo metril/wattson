@@ -153,3 +153,73 @@ func TestESPHomeTest(t *testing.T) {
 func base64Key(b byte) string {
 	return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{b}, 32))
 }
+
+func TestMapillaryTest(t *testing.T) {
+	t.Parallel()
+	const tok = "MLY|secret-token-1"
+	var sawAuth, sawURL atomic.Value
+	graph := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth.Store(r.Header.Get("Authorization"))
+		sawURL.Store(r.URL.String())
+		switch r.Header.Get("Authorization") {
+		case "OAuth " + tok:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "OAuth forbidden":
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	t.Cleanup(graph.Close)
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	post := func(body map[string]any) TestResult {
+		t.Helper()
+		resp, b := ts.do(t, admin, "POST", "/api/settings/test/mapillary", body)
+		if resp.StatusCode != 200 {
+			t.Fatalf("test/mapillary: %d %s", resp.StatusCode, b)
+		}
+		if strings.Contains(string(b), tok) {
+			t.Fatalf("response leaks the token: %s", b)
+		}
+		return decode[TestResult](t, b)
+	}
+	// No token anywhere.
+	if r := post(map[string]any{}); r.OK || r.Message != "no Mapillary token saved" {
+		t.Errorf("no token = %+v", r)
+	}
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"graph_url": graph.URL}}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	// Token from the body.
+	if r := post(map[string]any{"token": tok}); !r.OK || r.Message != "Mapillary token accepted" {
+		t.Errorf("body token = %+v", r)
+	}
+	if r := post(map[string]any{"token": "bad"}); r.OK || r.Message != "token rejected (401)" {
+		t.Errorf("401 = %+v", r)
+	}
+	if r := post(map[string]any{"token": "forbidden"}); r.OK || r.Message != "token rejected (403)" {
+		t.Errorf("403 = %+v", r)
+	}
+	// Stored token, never echoed back in settings.
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"token": tok}}); resp.StatusCode != 200 || strings.Contains(string(b), tok) {
+		t.Fatalf("patch token: %d %s", resp.StatusCode, b)
+	}
+	if r := post(map[string]any{}); !r.OK {
+		t.Errorf("stored token = %+v", r)
+	}
+	if v, _ := sawURL.Load().(string); strings.Contains(v, tok) || strings.Contains(v, "access_token") {
+		t.Errorf("token in request URL: %q", v)
+	}
+	// Unreachable server: a plain message without the token.
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"graph_url": "http://127.0.0.1:1"}}); resp.StatusCode != 200 {
+		t.Fatalf("patch: %d %s", resp.StatusCode, b)
+	}
+	if r := post(map[string]any{}); r.OK || r.Message == "" {
+		t.Errorf("unreachable = %+v", r)
+	}
+	// Non-admin is refused.
+	if resp, _ := ts.do(t, nil, "POST", "/api/settings/test/mapillary", map[string]any{}); resp.StatusCode != 401 && resp.StatusCode != 403 {
+		t.Errorf("anonymous status = %d", resp.StatusCode)
+	}
+}

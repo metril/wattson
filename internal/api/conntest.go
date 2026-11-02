@@ -16,6 +16,7 @@ import (
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/esphomeapi"
+	"github.com/metril/wattson/internal/mapillary"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/ridectl"
 	wroute "github.com/metril/wattson/internal/route"
@@ -63,6 +64,12 @@ type testBRouterIn struct {
 	}
 }
 
+type testMapillaryIn struct {
+	Body struct {
+		Token string `json:"token,omitempty" doc:"Mapillary access token to test. Empty uses the stored token."`
+	}
+}
+
 type testOut struct {
 	Body TestResult
 }
@@ -93,6 +100,7 @@ func orStored(v, stored string) string {
 
 func (d Deps) registerConnTests(api huma.API) {
 	d.registerBRouterTest(api)
+	d.registerMapillaryTest(api)
 	register(api, route{Method: http.MethodPost, Path: "/api/settings/test/ha", ID: "testHomeAssistant", Tag: "settings",
 		Summary: "Test the Home Assistant connection",
 		Description: "Calls `GET {url}/api/` with the token as a bearer credential, timing out after 5 seconds. " +
@@ -336,4 +344,40 @@ func distanceM(lat1, lon1, lat2, lon2 float64) float64 {
 	dp, dl := p2-p1, (lon2-lon1)*math.Pi/180
 	a := math.Sin(dp/2)*math.Sin(dp/2) + math.Cos(p1)*math.Cos(p2)*math.Sin(dl/2)*math.Sin(dl/2)
 	return 2 * r * math.Asin(math.Sqrt(a))
+}
+
+func (d Deps) registerMapillaryTest(api huma.API) {
+	register(api, route{Method: http.MethodPost, Path: "/api/settings/test/mapillary", ID: "testMapillary", Tag: "settings",
+		Summary: "Test the Mapillary token",
+		Description: "Makes one small Graph API request with the token as an OAuth credential in a header (never in a URL), " +
+			"timing out after 5 seconds. An empty `token` uses the stored one. The result is always HTTP 200; check `ok`. " +
+			"A 401 or 403 reports `token rejected (401)`. The token is never echoed back.",
+		Scope: auth.ScopeAdmin},
+		func(ctx context.Context, in *testMapillaryIn) (*testOut, error) {
+			start := time.Now()
+			s, err := d.Settings.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+			token := orStored(in.Body.Token, s.Mapillary.Token)
+			if token == "" {
+				return result(start, false, "no Mapillary token saved"), nil
+			}
+			ctx, cancel := context.WithTimeout(ctx, connTestTimeout)
+			defer cancel()
+			c := &mapillary.Client{GraphURL: s.Mapillary.GraphURL, TilesURL: s.Mapillary.TilesURL, HTTP: d.HTTPClient,
+				Token: func(context.Context) (string, error) { return token, nil }}
+			switch err := c.Ping(ctx); {
+			case err == nil:
+				return result(start, true, "Mapillary token accepted"), nil
+			case errors.Is(err, mapillary.ErrTokenRejected):
+				return result(start, false, "%s", err), nil // "token rejected (401)"
+			case errors.Is(err, mapillary.ErrRateLimited):
+				return result(start, false, "Mapillary is rate limiting requests, try again shortly"), nil
+			case ctx.Err() != nil:
+				return result(start, false, "Mapillary did not answer in time"), nil
+			default:
+				return result(start, false, "Mapillary is not reachable or answered unexpectedly"), nil
+			}
+		})
 }

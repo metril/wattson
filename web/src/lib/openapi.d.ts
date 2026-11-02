@@ -920,6 +920,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/test/mapillary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test the Mapillary token
+         * @description Makes one small Graph API request with the token as an OAuth credential in a header (never in a URL), timing out after 5 seconds. An empty `token` uses the stored one. The result is always HTTP 200; check `ok`. A 401 or 403 reports `token rejected (401)`. The token is never echoed back. Requires the `admin` scope.
+         */
+        post: operations["testMapillary"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/test/mqtt": {
         parameters: {
             query?: never;
@@ -1721,10 +1741,18 @@ export interface components {
             error?: string;
         };
         MapillaryOut: {
+            /** @description Mapillary Graph API base URL (http or https). */
+            graph_url: string;
+            /** @description Mapillary coverage vector tile base URL, without the /{z}/{x}/{y} suffix (http or https). */
+            tiles_url: string;
             /** @description Whether a Mapillary access token is stored. The token itself is never returned. */
             token_set: boolean;
         };
         MapillaryPatch: {
+            /** @description Mapillary Graph API base URL (http or https). Default https://graph.mapillary.com. */
+            graph_url?: string;
+            /** @description Mapillary coverage tile base URL (http or https). Default https://tiles.mapillary.com/maps/vtp/mly1_public/2. */
+            tiles_url?: string;
             /** @description Mapillary access token. Omit to keep the stored token; an empty string clears it. */
             token?: string;
         };
@@ -2671,6 +2699,10 @@ export interface components {
             url?: string;
             /** @description Username to test. Empty uses the stored username, but only when the URL is the stored one. */
             username?: string;
+        };
+        TestMapillaryInBody: {
+            /** @description Mapillary access token to test. Empty uses the stored token. */
+            token?: string;
         };
         TestResult: {
             /**
@@ -6752,6 +6784,75 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TestHAInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    testMapillary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestMapillaryInBody"];
             };
         };
         responses: {

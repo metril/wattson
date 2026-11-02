@@ -91,7 +91,11 @@ export function settingsFixture(
     general: { public_url: 'https://w.example' },
     ha: { token_set: true, url: 'http://ha.local' },
     heart_rate: { source: 'off', address: '', name: '', ha_entity: '' },
-    mapillary: { token_set: false },
+    mapillary: {
+      token_set: false,
+      graph_url: 'https://graph.mapillary.com',
+      tiles_url: 'https://tiles.mapillary.com/maps/vtp/mly1_public/2',
+    },
     mqtt: { discovery_prefix: 'homeassistant', password_set: false, tls_insecure_skip_verify: false, url: '', username: '' },
     strava: { client_id: '', client_secret_set: false },
   };

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -54,6 +55,8 @@ type route struct {
 	Errors                                      []int      // statuses beyond the defaults
 	// MaxBody bounds the request body in bytes; 0 means 1 MiB.
 	MaxBody int64
+	// ReadTimeout bounds how long the request body may take to arrive; 0 keeps huma's default.
+	ReadTimeout time.Duration
 	// Multipart marks a multipart/form-data upload (the input declares a
 	// huma.MultipartFormFiles RawBody): the JSON Content-Type pre-check is
 	// skipped and 400 is documented.
@@ -142,16 +145,17 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 		maxBody = 1 << 20
 	}
 	op := huma.Operation{
-		OperationID:   rt.ID,
-		Method:        rt.Method,
-		Path:          rt.Path,
-		Summary:       rt.Summary,
-		Description:   desc,
-		Tags:          []string{rt.Tag},
-		DefaultStatus: rt.Status,
-		MaxBodyBytes:  maxBody,
-		Security:      []map[string][]string{},
-		Errors:        routeErrors(rt, jsonBody || rt.Multipart, jsonBody),
+		OperationID:     rt.ID,
+		Method:          rt.Method,
+		Path:            rt.Path,
+		Summary:         rt.Summary,
+		Description:     desc,
+		Tags:            []string{rt.Tag},
+		DefaultStatus:   rt.Status,
+		MaxBodyBytes:    maxBody,
+		BodyReadTimeout: rt.ReadTimeout,
+		Security:        []map[string][]string{},
+		Errors:          routeErrors(rt, jsonBody || rt.Multipart, jsonBody),
 	}
 	if rt.Scope != "" {
 		op.Security = []map[string][]string{{"bearer": {}}, {"cookie": {}}}

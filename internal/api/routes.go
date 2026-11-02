@@ -169,6 +169,10 @@ func routeErr(ctx context.Context, err error) error {
 	case errors.Is(err, wroute.ErrTooLong):
 		return apiErr(http.StatusUnprocessableEntity, "route_too_long", "The route is longer than 500 km.")
 	case errors.Is(err, wroute.ErrElevationUnavailable):
+		if ctx.Err() != nil { // the client went away: not a service fault
+			loggerFrom(ctx).Debug("elevation lookup aborted, client gone", "err", err)
+			return ctx.Err()
+		}
 		loggerFrom(ctx).Warn("elevation lookup failed", "err", err)
 		return apiErrPublic(http.StatusBadGateway, "elevation_unavailable",
 			"The elevation service could not be reached. Try again later or disable OpenTopoData in Settings → Integrations.")
@@ -302,12 +306,12 @@ func (d Deps) registerRoutes(api huma.API) {
 		Description: "Changes the route's name. Only the route's owner or an admin may do this; anyone else gets 403 `not_owner`.",
 		Scope:       auth.ScopeControl},
 		func(ctx context.Context, in *patchRouteIn) (*routeDetailOut, error) {
+			if _, err := d.authorize(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			name := cleanName(in.Body.Name)
 			if name == "" {
 				return nil, apiErr(http.StatusBadRequest, "invalid_request", "name: must not be blank")
-			}
-			if _, err := d.authorize(ctx, in.ID); err != nil {
-				return nil, err
 			}
 			r, err := d.Store.RenameRoute(ctx, in.ID, name)
 			if errors.Is(err, store.ErrNotFound) {
@@ -350,7 +354,7 @@ func (d Deps) registerRoutes(api huma.API) {
 			"that is enabled in Settings. Errors: 400 `unsupported_format` or `no_track`; 413 `too_large`; " +
 			"422 `no_elevation` (enable OpenTopoData elevation in Settings → Integrations), `route_too_short` (under 50 m), " +
 			"`route_too_long` (over 500 km) or `too_many_points`; 502 `elevation_unavailable` (the elevation service failed).",
-		Scope: auth.ScopeControl, Status: http.StatusCreated, Multipart: true, MaxBody: MaxImportBytes,
+		Scope: auth.ScopeControl, Status: http.StatusCreated, Multipart: true, MaxBody: MaxImportBytes, ReadTimeout: 2 * time.Minute,
 		Errors: []int{http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity, http.StatusBadGateway}},
 		func(ctx context.Context, in *importRouteIn) (*routeDetailOut, error) {
 			ident, _ := auth.FromContext(ctx)

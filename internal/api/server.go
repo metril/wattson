@@ -116,7 +116,7 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	return r, nil
 }
 
-const csp = "default-src 'self'; connect-src 'self' ws: wss: https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; " +
+const csp = "default-src 'self'; connect-src 'self' https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; " +
 	"worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 
 func securityHeaders(next http.Handler) http.Handler {

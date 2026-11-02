@@ -326,6 +326,9 @@ func TestRoutesListAndOwnership(t *testing.T) {
 	if resp.StatusCode != 200 || decode[RouteDetail](t, b).Name != "By admin" {
 		t.Errorf("admin PATCH: %d %s", resp.StatusCode, b)
 	}
+	if resp, b = ts.do(t, bob, "PATCH", ap, map[string]any{"name": "  "}); resp.StatusCode != 403 {
+		t.Errorf("blank rename by non-owner must be 403 first: %d %s", resp.StatusCode, b)
+	}
 	if resp, b = ts.do(t, admin, "PATCH", bp, map[string]any{"name": "  "}); resp.StatusCode != 400 {
 		t.Errorf("blank rename: %d %s", resp.StatusCode, b)
 	}

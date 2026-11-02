@@ -149,3 +149,19 @@ func EnableLocalLogin(ctx context.Context, st *store.Store) error {
 	}
 	return st.PutSettings(ctx, map[string]string{"auth": string(b)})
 }
+
+// LocalLoginEnabled reports auth.allow_local_login from the raw auth section,
+// like EnableLocalLogin: it needs no secret.key and no other section.
+func LocalLoginEnabled(ctx context.Context, st *store.Store) (bool, error) {
+	rows, err := st.GetSettings(ctx)
+	if err != nil {
+		return false, err
+	}
+	a := Defaults().Auth
+	if raw, ok := rows["auth"]; ok {
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			return false, fmt.Errorf("settings: decode auth: %w", err)
+		}
+	}
+	return a.AllowLocalLogin, nil
+}

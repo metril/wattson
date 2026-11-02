@@ -87,6 +87,15 @@ func resetPassword(ctx context.Context, st *store.Store, user string, stdout, st
 		return 1
 	}
 	fmt.Fprintf(stdout, "password for %s: %s\n", user, pw)
+	if u.Disabled {
+		fmt.Fprintf(stderr, "warning: %s is disabled and cannot sign in until re-enabled\n", user)
+	}
+	if !u.IsBootstrap {
+		if on, err := settings.LocalLoginEnabled(ctx, st); err == nil && !on {
+			fmt.Fprintf(stderr, "warning: password sign-in is turned off, so %s cannot use this password; "+
+				"run `wattson admin disable-oidc` to turn it back on, or sign in as the bootstrap admin\n", user)
+		}
+	}
 	return 0
 }
 

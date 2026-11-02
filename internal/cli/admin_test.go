@@ -46,6 +46,61 @@ func TestAdminResetPassword(t *testing.T) {
 	}
 }
 
+func TestAdminResetPasswordWarnings(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ctx := context.Background()
+	box, err := secretbox.LoadOrCreateKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(dir, "wattson.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	boot, err := st.CreateBootstrapAdmin(ctx, "root", "Root", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []store.User{{Username: "gone", Disabled: true}, {Username: "bob"}} {
+		if _, err := st.CreateUser(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st.Close()
+	run := func(user string) string {
+		code, out, errb := runCLI(t, deps{}, "admin", "--data-dir", dir, "reset-password", user)
+		if code != 0 || !strings.HasPrefix(out, "password for "+user+": ") {
+			t.Fatalf("%s: exit %d, stdout %q, stderr %q", user, code, out, errb)
+		}
+		return errb
+	}
+	// Local login on (default): only a disabled user draws a warning.
+	if e := run("bob"); e != "" {
+		t.Errorf("enabled user, local login on: stderr %q, want none", e)
+	}
+	if e := run("gone"); !strings.Contains(e, "disabled") {
+		t.Errorf("disabled user: stderr %q, want a disabled warning", e)
+	}
+	st, err = store.Open(filepath.Join(dir, "wattson.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.NewService(st, box).Update(ctx, func(s *settings.Settings) error {
+		s.Auth.AllowLocalLogin = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	if e := run("bob"); !strings.Contains(e, "password sign-in is turned off") || !strings.Contains(e, "disable-oidc") {
+		t.Errorf("non-bootstrap, local login off: stderr %q, want the disable-oidc hint", e)
+	}
+	if e := run(boot.Username); e != "" {
+		t.Errorf("bootstrap admin, local login off: stderr %q, want none", e)
+	}
+}
+
 func TestAdminUsageAndMissingDB(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

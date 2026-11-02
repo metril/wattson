@@ -291,7 +291,9 @@ func TestServeRestartKeepsSessions(t *testing.T) {
 	if !bytes.Equal(key1, key2) {
 		t.Error("secret.key changed across restart")
 	}
-	if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm()&0o077 != 0 {
+	if fi, err := os.Stat(dir); err != nil {
+		t.Errorf("stat data dir: %v", err)
+	} else if fi.Mode().Perm()&0o077 != 0 {
 		t.Errorf("data dir mode = %v, want no group/other access", fi.Mode())
 	}
 }

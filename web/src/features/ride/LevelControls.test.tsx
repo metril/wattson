@@ -56,4 +56,21 @@ describe('LevelControls', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase level' }));
     expect(onError).toHaveBeenCalled();
   });
+
+  it('route mode: Easier/Harder send level_delta and the bias is shown', async () => {
+    const ticks = new TickStore();
+    const send = vi.fn().mockResolvedValue(undefined);
+    render(<LevelControls socket={{ send, ticks }} route />);
+    await userEvent.click(screen.getByRole('button', { name: 'Harder' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Easier' }));
+    expect(send.mock.calls).toEqual([
+      ['level_delta', 1],
+      ['level_delta', -1],
+    ]);
+    act(() => {
+      ticks.set(tickFixture({ bias: -2 }));
+      vi.runAllTimers();
+    });
+    expect(screen.getByText('Bias -2')).toBeInTheDocument();
+  });
 });

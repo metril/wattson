@@ -18,6 +18,9 @@ const pickCadence = (t: Tick) => fixed0(t.cadence_rpm);
 const pickSpeed = (t: Tick) => t.speed_kmh.toFixed(1);
 const pickDistance = (t: Tick) => km(t.distance_m);
 const pickTime = (t: Tick) => hms(t.elapsed_s);
+const pickGrade = (t: Tick) => t.grade_pct.toFixed(1);
+const pickAhead = (t: Tick) => t.grade_ahead_pct.toFixed(1);
+const pickRemaining = (t: Tick) => km(Math.max(0, t.route_length_m - t.distance_m));
 const pickLevel = (t: Tick) => `L${t.level} (${t.reported_level > 0 ? t.reported_level : '–'})`;
 
 /**
@@ -28,10 +31,13 @@ const pickLevel = (t: Tick) => `L${t.level} (${t.reported_level > 0 ? t.reported
 export function MetricGrid({
   ticks,
   showLevel = true,
+  route = false,
   children,
 }: {
   ticks: TickStore;
   showLevel?: boolean;
+  /** Route ride: adds grade now, grade ahead and the distance left. */
+  route?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -70,6 +76,31 @@ export function MetricGrid({
         </p>
         <Value ticks={ticks} pick={pickTime} className={`text-numeral-md ${tv}`} />
       </div>
+      {route && (
+        <>
+          <div className={tile}>
+            <p className={label}>
+              <span>Grade</span>
+              <span>%</span>
+            </p>
+            <Value ticks={ticks} pick={pickGrade} className={`text-numeral-md ${tv}`} />
+          </div>
+          <div className={tile}>
+            <p className={label}>
+              <span>Ahead</span>
+              <span>%</span>
+            </p>
+            <Value ticks={ticks} pick={pickAhead} className={`text-numeral-md ${tv}`} />
+          </div>
+          <div className={tile}>
+            <p className={label}>
+              <span>Remaining</span>
+              <span>km</span>
+            </p>
+            <Value ticks={ticks} pick={pickRemaining} className={`text-numeral-md ${tv}`} />
+          </div>
+        </>
+      )}
       {showLevel && (
         <div className={tile}>
           <p className={label}>

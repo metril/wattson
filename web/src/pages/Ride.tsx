@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useSearchParams } from 'react-router';
 import { Banner } from '@/components/Banner';
 import { BikeBar } from '@/features/ride/BikeBar';
 import { LevelControls } from '@/features/ride/LevelControls';
 import { MetricGrid } from '@/features/ride/MetricGrid';
 import { RideControls } from '@/features/ride/RideControls';
+import { RoutePicker } from '@/features/ride/RoutePicker';
+import { RouteView, useRouteId } from '@/features/ride/RouteView';
 import { notifyUnauthorized } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { createRideSocket } from '@/lib/ride-socket';
+import type { CommandName } from '@/lib/ws-types';
 
 const ALERT_MS = 10_000;
 
@@ -52,6 +56,19 @@ export function RidePage() {
   );
   const levelSocket = useMemo(() => ({ send, ticks: socket.ticks }), [send, socket]);
 
+  // Route mode: picked before Start (from ?route=), then whatever the ticks say.
+  const [params] = useSearchParams();
+  const [picked, setPicked] = useState<number | null>(() => {
+    const n = Number(params.get('route'));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  });
+  const routeId = useRouteId(socket.ticks);
+  const routeMode = routeId !== 0;
+  const control = useCallback(
+    (command: CommandName) => (command === 'start' && picked !== null ? send('start', 0, picked) : send(command)),
+    [send, picked],
+  );
+
   const { connected, state, bike } = status;
   const active = state === 'ready' || state === 'riding' || state === 'paused';
 
@@ -65,10 +82,22 @@ export function RidePage() {
         </Banner>
       )}
       {cmdError && <Banner tone="error">{cmdError}</Banner>}
-      <MetricGrid ticks={socket.ticks} showLevel={false}>
-        <LevelControls socket={levelSocket} disabled={!connected || !active} onError={onError} />
+      {state === 'ready' && <RoutePicker value={picked} onChange={setPicked} />}
+      {routeMode && state === 'finished' && (
+        <Banner tone="ok">
+          <p className="text-lg font-medium">Route complete</p>
+        </Banner>
+      )}
+      {routeMode && <RouteView routeId={routeId} ticks={socket.ticks} />}
+      <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode}>
+        <LevelControls
+          socket={levelSocket}
+          route={routeMode}
+          disabled={!connected || !active}
+          onError={onError}
+        />
       </MetricGrid>
-      <RideControls state={state} send={send} disabled={!connected} onError={onError} />
+      <RideControls state={state} send={control} disabled={!connected} onError={onError} />
     </div>
   );
 }

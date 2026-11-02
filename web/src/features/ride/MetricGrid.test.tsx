@@ -51,4 +51,30 @@ describe('MetricGrid', () => {
     expect(screen.getByText('controls')).toBeInTheDocument();
     expect(screen.queryByText('Level')).not.toBeInTheDocument();
   });
+
+  it('route mode adds grade, ahead and remaining tiles without re-rendering', () => {
+    const ticks = new TickStore();
+    let renders = 0;
+    render(
+      <Profiler id="g" onRender={() => renders++}>
+        <MetricGrid ticks={ticks} route />
+      </Profiler>,
+    );
+    act(() => {
+      ticks.set(
+        tickFixture({ route_id: 3, route_length_m: 900, distance_m: 300, grade_pct: 3.26, grade_ahead_pct: 6.04 }),
+      );
+      vi.runAllTimers();
+    });
+    expect(screen.getByText('3.3')).toBeInTheDocument();
+    expect(screen.getByText('6.0')).toBeInTheDocument();
+    expect(screen.getByText('0.60')).toBeInTheDocument();
+    expect(screen.getByText('Remaining')).toBeInTheDocument();
+    expect(renders).toBe(1);
+  });
+
+  it('free ride has no route tiles', () => {
+    render(<MetricGrid ticks={new TickStore()} />);
+    expect(screen.queryByText('Remaining')).not.toBeInTheDocument();
+  });
 });

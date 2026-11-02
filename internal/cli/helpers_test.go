@@ -86,3 +86,70 @@ func levelWrites(f *bluetest.Fake) []int {
 	}
 	return out
 }
+
+// newFTMSFake builds an FTMS bike. Set Target Resistance writes are echoed as
+// Indoor Bike Data with that resistance level. With answer, every Control Point
+// write is acknowledged (80 <op> 01).
+func newFTMSFake(answer bool) *bluetest.Fake {
+	var f *bluetest.Fake
+	dev := &bluetest.Device{
+		Adv: blue.Advertisement{Addr: testAddr, Name: "FTMS-BIKE", RSSI: -50, Services: []blue.UUID{bike.FTMSService}},
+		Services: []blue.Service{{UUID: bike.FTMSService, Chars: []blue.Characteristic{
+			{UUID: bike.FTMSIndoorBikeData, Props: blue.PropNotify},
+			{UUID: bike.FTMSControlPoint, Props: blue.PropWrite | blue.PropIndicate},
+			{UUID: bike.FTMSResistanceRange, Props: blue.PropRead},
+		}}},
+		// min 1.0, max 10.0, step 1.0 (0.1 units)
+		Values: map[blue.UUID][]byte{bike.FTMSResistanceRange: {10, 0, 100, 0, 10, 0}},
+	}
+	dev.OnWrite = func(ch blue.UUID, data []byte) {
+		if ch != bike.FTMSControlPoint || len(data) == 0 {
+			return
+		}
+		if data[0] == 0x04 && len(data) == 2 { // u8 tenths
+			ibd := []byte{0x65, 0x00, 120, 0, byte(data[1] / 10), 0, 80, 0} // cadence 60 rpm, level, 80 W
+			f.Notify(testAddr, bike.FTMSIndoorBikeData, ibd)
+		}
+		if answer {
+			f.Notify(testAddr, bike.FTMSControlPoint, []byte{0x80, data[0], 0x01})
+		}
+	}
+	f = bluetest.NewFake(dev)
+	return f
+}
+
+// flakyTransport wraps a Transport so tests can make level writes fail.
+type flakyTransport struct {
+	blue.Transport
+	failFrom   int         // fail level writes numbered >= failFrom (1-based); 0 = never
+	failOnly   bool        // fail only the failFrom-th level write
+	armed      atomic.Bool // when set, fail every level write
+	err        error
+	levelWrote atomic.Int32 // level writes seen
+}
+
+func (t *flakyTransport) Connect(ctx context.Context, a blue.Address) (blue.Conn, error) {
+	c, err := t.Transport.Connect(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return &flakyConn{Conn: c, t: t}, nil
+}
+
+type flakyConn struct {
+	blue.Conn
+	t *flakyTransport
+}
+
+func (c *flakyConn) Write(ctx context.Context, ch blue.UUID, data []byte, resp bool) error {
+	if len(data) == 7 && data[0] == 0x02 && data[1] == 0x44 && data[2] == 0x05 {
+		n := int(c.t.levelWrote.Add(1))
+		switch {
+		case c.t.armed.Load(),
+			c.t.failFrom > 0 && !c.t.failOnly && n >= c.t.failFrom,
+			c.t.failFrom > 0 && c.t.failOnly && n == c.t.failFrom:
+			return c.t.err
+		}
+	}
+	return c.Conn.Write(ctx, ch, data, resp)
+}

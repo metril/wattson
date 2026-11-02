@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"regexp"
@@ -10,6 +12,8 @@ import (
 	"time"
 
 	"github.com/metril/wattson/internal/bike"
+	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/blue/bluetest"
 )
 
 func driveArgs(extra ...string) []string {
@@ -172,5 +176,87 @@ func TestSummarizeModeOfLastHalf(t *testing.T) {
 	}
 	if r := summarize(2, nil, at(0), at(50), at(100)); r.Reported != 0 || r.confirmed() {
 		t.Fatalf("empty window: %+v", r)
+	}
+}
+
+func flaky(f *bluetest.Fake, t0 *flakyTransport) deps {
+	t0.Transport = f
+	return testDeps(t0)
+}
+
+func TestDriveWriteErrDisconnectedIsDropNotFailure(t *testing.T) {
+	t.Parallel()
+	f := fitPlusEcho()
+	ft := &flakyTransport{failFrom: 2, failOnly: true, err: fmt.Errorf("write: %w", blue.ErrDisconnected)}
+	code, _, errs := runCLI(t, flaky(f, ft), driveArgs("--max", "3")...)
+	if code != 1 || !strings.Contains(errs, "bike disconnected at level 1") || strings.Contains(errs, "command failed") {
+		t.Fatalf("exit %d stderr %q", code, errs)
+	}
+}
+
+func TestDriveFailedWriteReportsReturned(t *testing.T) {
+	t.Parallel()
+	f := fitPlusEcho()
+	ft := &flakyTransport{failFrom: 2, failOnly: true, err: errors.New("boom")}
+	code, _, errs := runCLI(t, flaky(f, ft), driveArgs("--max", "3")...)
+	if code != 1 || !strings.Contains(errs, "set level 2: boom") || !strings.Contains(errs, "bike returned to level 1") {
+		t.Fatalf("exit %d stderr %q", code, errs)
+	}
+}
+
+func TestDriveCloseFailureIsNotClaimedAsSafe(t *testing.T) {
+	t.Parallel()
+	f := fitPlusEcho()
+	ft := &flakyTransport{err: errors.New("radio dead")}
+	ctx, cancel := context.WithCancel(context.Background())
+	type res struct {
+		code int
+		errs string
+	}
+	done := make(chan res, 1)
+	go func() {
+		var out, errb strings.Builder
+		code := run(ctx, flaky(f, ft), driveArgs(), &out, &errb)
+		done <- res{code, errb.String()}
+	}()
+	for ft.levelWrote.Load() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	ft.armed.Store(true) // from now on the min-level write in Close fails
+	cancel()
+	select {
+	case r := <-done:
+		if r.code != 130 || !strings.Contains(r.errs, "failed to return bike to level 1: ") ||
+			!strings.Contains(r.errs, "radio dead") || strings.Contains(r.errs, "bike returned to level") {
+			t.Fatalf("exit %d stderr %q", r.code, r.errs)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("drive did not exit")
+	}
+}
+
+func TestDriveFTMS(t *testing.T) {
+	t.Parallel()
+	f := newFTMSFake(true)
+	rep := t.TempDir() + "/ftms.md"
+	code, out, errs := runCLI(t, testDeps(f), driveArgs("--proto", "ftms", "--ftms-enc", "u8", "--max", "3", "--report", rep)...)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	var got [][]byte
+	for _, w := range f.Writes(testAddr) {
+		got = append(got, w)
+	}
+	// request control, then resistance 1,2,3,2,1 as u8 tenths, then close at min.
+	want := [][]byte{{0x00}, {0x04, 10}, {0x04, 20}, {0x04, 30}, {0x04, 20}, {0x04, 10}, {0x04, 10}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("writes = %x, want %x", got, want)
+	}
+	if !strings.Contains(out, "protocol ftms") || !strings.Contains(out, "confirmed 5/5") {
+		t.Fatalf("stdout:\n%s", out)
+	}
+	b, _ := os.ReadFile(rep)
+	if n := len(regexp.MustCompile(`(?m)^\| \d+ \| \d+ \| yes \| 60\.0 \| 80\.0 \|$`).FindAllString(string(b), -1)); n != 5 || !strings.Contains(string(b), "- Protocol: ftms") {
+		t.Fatalf("report:\n%s", b)
 	}
 }

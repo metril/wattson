@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -147,14 +148,14 @@ func cmdDrive(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 	}
 	// Whatever happens below, drop to the minimum level and release the link.
 	var closeOnce sync.Once
-	closeBike := func() {
+	var closeErr error
+	closeBike := func() error {
 		closeOnce.Do(func() {
 			cctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 			defer cancel()
-			if err := b.Close(cctx); err != nil {
-				fmt.Fprintf(stderr, "wattson drive: warning: closing bike: %v\n", err)
-			}
+			closeErr = b.Close(cctx)
 		})
+		return closeErr
 	}
 	defer closeBike()
 
@@ -187,7 +188,7 @@ sweep:
 		case ctx.Err() != nil:
 			outcome = sweepInterrupted
 			break sweep
-		case isDone(conn):
+		case isDone(conn) || errors.Is(err, blue.ErrDisconnected):
 			outcome = sweepDropped
 			break sweep
 		default:
@@ -217,7 +218,7 @@ sweep:
 			row.Sent, row.reportedStr(), yesNo(row.confirmed()), row.cadenceStr(), row.powerStr())
 	}
 
-	closeBike()
+	cerr := closeBike()
 
 	status := "complete"
 	code := 0
@@ -225,19 +226,38 @@ sweep:
 	if cur > 0 {
 		curStr = fmt.Sprint(cur)
 	}
+	// Only claim the bike is back at its minimum when Close actually succeeded.
+	returned := func() {
+		if cerr != nil {
+			fmt.Fprintf(stderr, "wattson drive: failed to return bike to level %d: %v\n", lo, cerr)
+			if code == 0 {
+				code = 1
+			}
+			return
+		}
+		fmt.Fprintf(stderr, "bike returned to level %d\n", lo)
+	}
 	switch outcome {
 	case sweepInterrupted:
 		status = fmt.Sprintf("INCOMPLETE (interrupted at level %s)", curStr)
-		fmt.Fprintf(stderr, "interrupted at level %s; bike returned to level %d\n", curStr, lo)
+		fmt.Fprintf(stderr, "interrupted at level %s\n", curStr)
 		code = 130
+		returned()
 	case sweepDropped:
 		status = fmt.Sprintf("INCOMPLETE (bike disconnected at level %s)", curStr)
 		fmt.Fprintf(stderr, "bike disconnected at level %s\n", curStr)
 		code = 1
+		if cerr != nil {
+			returned()
+		}
 	case sweepFailed:
 		status = fmt.Sprintf("INCOMPLETE (command failed at level %s)", curStr)
-		fmt.Fprintf(stderr, "bike returned to level %d\n", lo)
 		code = 1
+		returned()
+	default:
+		if cerr != nil {
+			returned()
+		}
 	}
 
 	confirmed := 0

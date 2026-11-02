@@ -88,15 +88,6 @@ func cmdProbe(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 		return 2
 	}
 	sk := &sink{stdout: stdout}
-	if *out != "" {
-		f, err := os.Create(*out)
-		if err != nil {
-			fmt.Fprintf(stderr, "wattson probe: %v\n", err)
-			return 1
-		}
-		defer f.Close()
-		sk.file = f
-	}
 
 	tr, ok := openTransportCtx(ctx, d, tf, stderr)
 	if !ok {
@@ -111,6 +102,15 @@ func cmdProbe(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 	}
 	defer conn.Close()
 	defer sk.close()
+	if *out != "" { // only now: a failed connect must not truncate an earlier log
+		f, err := os.Create(*out)
+		if err != nil {
+			fmt.Fprintf(stderr, "wattson probe: %v\n", err)
+			return 1
+		}
+		defer f.Close()
+		sk.file = f
+	}
 
 	svcs := conn.Services()
 	proto := bike.Detect(svcs)
@@ -123,7 +123,11 @@ func cmdProbe(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 	sk.printf("%s", tree.String())
 
 	t0 := time.Now()
-	got := make(chan struct{}, 1)
+	// Selftest passes only on the characteristic that answers the handshake:
+	// FitPlus notify (fff1), or the FTMS control point (2ad9). A bike streaming
+	// 2ad2 must not satisfy it.
+	ansCh := selftestAnswerChar(proto)
+	got := make(chan []byte, 16)
 	subs := 0
 	for _, s := range svcs {
 		for _, c := range s.Chars {
@@ -133,9 +137,11 @@ func cmdProbe(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 			name := c.UUID.String()
 			if err := conn.Subscribe(ctx, c.UUID, func(b []byte) {
 				sk.hexLine(fmt.Sprintf("%d %s %s", time.Since(t0).Milliseconds(), name, hex.EncodeToString(b)))
-				select {
-				case got <- struct{}{}:
-				default:
+				if *selftest && c.UUID == ansCh {
+					select {
+					case got <- append([]byte(nil), b...):
+					default:
+					}
 				}
 			}); err != nil {
 				fmt.Fprintf(stderr, "wattson probe: subscribe %s: %v\n", name, err)
@@ -164,8 +170,10 @@ func cmdProbe(ctx context.Context, d deps, args []string, stdout, stderr io.Writ
 	return 0
 }
 
-// probeSelftest sends the harmless protocol opener and waits for any notification.
-func probeSelftest(ctx context.Context, d deps, conn blue.Conn, proto bike.Protocol, got chan struct{}, sk *sink) int {
+// probeSelftest sends the harmless protocol opener and waits for the answer
+// on the protocol's answer characteristic (see selftestAnswerChar).
+func probeSelftest(ctx context.Context, d deps, conn blue.Conn, proto bike.Protocol, got chan []byte, sk *sink) int {
+	ansCh := selftestAnswerChar(proto)
 	var ch blue.UUID
 	var frame []byte
 	switch proto {
@@ -177,9 +185,12 @@ func probeSelftest(ctx context.Context, d deps, conn blue.Conn, proto bike.Proto
 		sk.printf("selftest: FAIL (no supported protocol detected)\n")
 		return 1
 	}
-	select { // drop notifications that predate the write
-	case <-got:
-	default:
+	for drained := false; !drained; { // drop answers that predate the write
+		select {
+		case <-got:
+		default:
+			drained = true
+		}
 	}
 	start := time.Now()
 	wctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -191,18 +202,33 @@ func probeSelftest(ctx context.Context, d deps, conn blue.Conn, proto bike.Proto
 	}
 	timer := time.NewTimer(d.selftestTimeout)
 	defer timer.Stop()
-	select {
-	case <-got:
-		sk.printf("selftest: PASS (%s write answered by notification in %d ms)\n", proto, time.Since(start).Milliseconds())
-		return 0
-	case <-timer.C:
-		sk.printf("selftest: FAIL (no notification within %s)\n", d.selftestTimeout)
-	case <-ctx.Done():
-		sk.printf("selftest: interrupted\n")
-	case <-conn.Done():
-		sk.printf("selftest: FAIL (disconnected)\n")
+	for {
+		select {
+		case p := <-got:
+			if proto == bike.ProtoFTMS {
+				if r, err := bike.ParseControlResponse(p); err != nil || r.Op != 0x00 || r.Result != 0x01 {
+					continue // not the Request Control success response
+				}
+			}
+			sk.printf("selftest: PASS (%s write answered on %s in %d ms)\n", proto, ansCh, time.Since(start).Milliseconds())
+			return 0
+		case <-timer.C:
+			sk.printf("selftest: FAIL (no answer on %s within %s)\n", ansCh, d.selftestTimeout)
+		case <-ctx.Done():
+			sk.printf("selftest: interrupted\n")
+		case <-conn.Done():
+			sk.printf("selftest: FAIL (disconnected)\n")
+		}
+		return 1
 	}
-	return 1
+}
+
+// selftestAnswerChar is the characteristic that must answer the handshake.
+func selftestAnswerChar(p bike.Protocol) blue.UUID {
+	if p == bike.ProtoFTMS {
+		return bike.FTMSControlPoint
+	}
+	return bike.FitPlusNotify
 }
 
 // needsResponse mirrors the bike session: write with response unless the

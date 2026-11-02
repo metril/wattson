@@ -13,7 +13,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/esphomeapi"
+	"github.com/metril/wattson/internal/ridectl"
 )
 
 // connTestTimeout bounds every connection test.
@@ -40,6 +42,15 @@ type testESPHomeIn struct {
 	Body struct {
 		Host string `json:"host,omitempty" doc:"ESPHome proxy as host or host:port (default port 6053). Empty uses the stored host."`
 		Key  string `json:"key,omitempty" doc:"ESPHome API encryption key, base64 of 32 bytes. Empty uses the stored key."`
+	}
+}
+
+type testBLEIn struct {
+	Body struct {
+		Transport string `json:"transport,omitempty" enum:"local,esphome" doc:"local (this host's adapter) or esphome (a Bluetooth proxy). Empty uses the stored setting."`
+		Address   string `json:"address,omitempty" doc:"Bike Bluetooth address to look for, such as AA:BB:CC:DD:EE:FF. Empty uses the stored address; with none, only the adapter is checked."`
+		Host      string `json:"host,omitempty" doc:"ESPHome proxy as host or host:port. Empty uses the stored host."`
+		Key       string `json:"key,omitempty" doc:"ESPHome API encryption key, base64 of 32 bytes. Empty uses the stored key."`
 	}
 }
 
@@ -171,4 +182,56 @@ func (d Deps) registerConnTests(api huma.API) {
 			}
 			return result(start, true, "connected to %s (ESPHome %s)", info.Name, info.ESPHomeVersion), nil
 		})
+
+	register(api, route{Method: http.MethodPost, Path: "/api/settings/test/ble", ID: "testBLE", Tag: "settings",
+		Summary: "Test the Bluetooth adapter and bike",
+		Description: "Scans for 5 seconds with the local adapter or the ESPHome proxy and looks for the bike's address. " +
+			"Without an address it only reports how many devices were seen. Empty body fields fall back to the stored settings. " +
+			"The result is always HTTP 200; check `ok`. Refused with 409 `bike_busy` while a bike is connected, because one adapter cannot scan while holding a bike.",
+		Scope: auth.ScopeAdmin, Errors: []int{http.StatusConflict}},
+		func(ctx context.Context, in *testBLEIn) (*testOut, error) {
+			start := time.Now()
+			s, err := d.Settings.Get(ctx)
+			if err != nil {
+				return nil, err
+			}
+			addr := orStored(in.Body.Address, s.Bike.Address)
+			var want blue.Address
+			if addr != "" {
+				if want, err = blue.ParseAddress(addr); err != nil {
+					return result(start, false, "invalid bike address: %s", err), nil
+				}
+			}
+			ctx, cancel := context.WithTimeout(ctx, 3*connTestTimeout)
+			defer cancel()
+			devs, err := d.Bike.Scan(ctx, ridectl.ScanRequest{Transport: in.Body.Transport, Host: in.Body.Host,
+				Key: in.Body.Key, DurationS: int(connTestTimeout / time.Second)})
+			if err != nil {
+				if errors.Is(err, ridectl.ErrBusy) || errors.Is(err, ridectl.ErrClosed) {
+					return nil, bikeFailure(err)
+				}
+				return result(start, false, "%s. %s", err, ridectl.Hint(err)), nil
+			}
+			if addr == "" {
+				return result(start, true, "adapter ok, %d devices seen", len(devs)), nil
+			}
+			for _, dev := range devs {
+				if sameMAC(dev.Address, want) {
+					proto := dev.Protocol
+					if proto == "" {
+						proto = "unknown"
+					}
+					return result(start, true, "found %s (%s) RSSI %d dBm, protocol %s", dev.Address, dev.Name, dev.RSSI, proto), nil
+				}
+			}
+			return result(start, false, "not found: %s", ridectl.Hint(blue.ErrNotFound)), nil
+		})
+}
+
+// sameMAC reports whether the scanned address (with an optional /random
+// suffix) has the 48-bit address want.
+func sameMAC(scanned string, want blue.Address) bool {
+	mac, _, _ := strings.Cut(scanned, "/")
+	a, err := blue.ParseAddress(mac)
+	return err == nil && a.MAC == want.MAC
 }

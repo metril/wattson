@@ -13,11 +13,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/metril/wattson/internal/auth"
+	"github.com/metril/wattson/internal/blue"
 	"github.com/metril/wattson/internal/oidcauth/oidctest"
+	"github.com/metril/wattson/internal/ridectl"
 	"github.com/metril/wattson/internal/secretbox"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -32,6 +35,7 @@ type testServer struct {
 	Box      *secretbox.Box
 	Auth     *auth.Authenticator
 	Log      *syncBuf // everything the server logged
+	Bike     *ridectl.Manager
 }
 
 // syncBuf is a goroutine-safe log sink.
@@ -57,6 +61,18 @@ type tsOpt func(*tsConfig)
 type tsConfig struct {
 	extra      []func(huma.API)
 	riderInUse func(int64) bool
+	openLocal  func() (blue.Transport, error)
+	wsRecheck  time.Duration
+}
+
+// withOpenLocal injects the local BLE transport the bike manager opens.
+func withOpenLocal(f func() (blue.Transport, error)) tsOpt {
+	return func(c *tsConfig) { c.openLocal = f }
+}
+
+// withWSRecheck sets Deps.WSRecheck.
+func withWSRecheck(d time.Duration) tsOpt {
+	return func(c *tsConfig) { c.wsRecheck = d }
 }
 
 // withRiderInUse sets Deps.RiderInUse.
@@ -90,15 +106,18 @@ func newTS(t *testing.T, opts ...tsOpt) *testServer {
 		}
 		return s.General.PublicURL
 	}, logger)
+	mgr := ridectl.New(ridectl.Deps{Settings: svc.Get, OpenLocal: cfg.openLocal, Logger: logger,
+		TickEvery: 20 * time.Millisecond, SimPeriod: 20 * time.Millisecond})
 	d := Deps{Store: st, Settings: svc, Box: box, Auth: au, HTTPClient: http.DefaultClient,
-		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse}
+		Logger: logger, Version: "test", RiderInUse: cfg.riderInUse, Bike: mgr, WSRecheck: cfg.wsRecheck}
 	h, err := newRouter(d, cfg.extra...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs}
+	t.Cleanup(func() { _ = mgr.Close(context.Background()) }) // runs first: ends WebSocket handlers
+	return &testServer{URL: srv.URL, Store: st, Settings: svc, Box: box, Auth: au, Log: logs, Bike: mgr}
 }
 
 // client returns an HTTP client with a cookie jar that does not follow redirects.

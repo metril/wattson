@@ -50,19 +50,19 @@ type Command struct {
 // Tick is one published snapshot of the ride. While paused, Level is the
 // floor level the engine sent on pause, not the rider's manual level.
 type Tick struct {
-	At            time.Time `json:"at"`
-	State         State     `json:"state"`
-	Mode          string    `json:"mode"`
-	ElapsedS      float64   `json:"elapsed_s"`
-	DistanceM     float64   `json:"distance_m"`
-	SpeedKmh      float64   `json:"speed_kmh"`
-	PowerW        float64   `json:"power_w"`
-	CadenceRpm    float64   `json:"cadence_rpm"`
-	GradePct      float64   `json:"grade_pct"`
-	Level         int       `json:"level"`
-	ReportedLevel int       `json:"reported_level"`
-	Connected     bool      `json:"connected"`
-	Alert         string    `json:"alert,omitempty"`
+	At            time.Time `json:"at" doc:"When this snapshot was taken (RFC 3339)."`
+	State         State     `json:"state" doc:"Ride state: idle, connecting, ready, riding, paused or finished."`
+	Mode          string    `json:"mode" doc:"Ride mode name, for example free."`
+	ElapsedS      float64   `json:"elapsed_s" doc:"Riding time in seconds."`
+	DistanceM     float64   `json:"distance_m" doc:"Simulated distance covered, in metres."`
+	SpeedKmh      float64   `json:"speed_kmh" doc:"Simulated speed in kilometres per hour."`
+	PowerW        float64   `json:"power_w" doc:"Rider power in watts."`
+	CadenceRpm    float64   `json:"cadence_rpm" doc:"Pedalling cadence in revolutions per minute."`
+	GradePct      float64   `json:"grade_pct" doc:"Road grade of the current mode, in percent."`
+	Level         int       `json:"level" doc:"Resistance level (1 to 32) the engine last asked the bike for."`
+	ReportedLevel int       `json:"reported_level" doc:"Resistance level (1 to 32) the bike last reported; 0 when unknown."`
+	Connected     bool      `json:"connected" doc:"Whether the link to the bike is up right now."`
+	Alert         string    `json:"alert,omitempty" doc:"Warning for the rider, for example a stale reading; absent when none."`
 }
 
 type Config struct {

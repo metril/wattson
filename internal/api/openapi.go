@@ -156,6 +156,8 @@ func (d Deps) registerAPI(api huma.API) {
 	d.registerSettings(api)
 	d.registerRiders(api)
 	d.registerOIDCProviders(api)
+	d.registerBike(api)
+	d.registerRide(api)
 }
 
 // finalizeSpec removes the responses huma adds on its own that this API

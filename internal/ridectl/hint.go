@@ -21,3 +21,6 @@ func hintFor(err error) string {
 	}
 	return "Bike busy or unreachable. Close the Merach app or the Home Assistant integration, then retry."
 }
+
+// Hint returns advice for fixing err, the same text Status.Hint carries.
+func Hint(err error) string { return hintFor(err) }

@@ -18,6 +18,7 @@ import (
 
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/oidcauth"
+	"github.com/metril/wattson/internal/ridectl"
 	"github.com/metril/wattson/internal/secretbox"
 	"github.com/metril/wattson/internal/settings"
 	"github.com/metril/wattson/internal/store"
@@ -40,6 +41,12 @@ type Deps struct {
 	// connection (ridectl.Manager.RiderInUse); deleting that rider is refused
 	// with 409 rider_in_use. Nil means no rider is ever in use.
 	RiderInUse func(riderID int64) bool
+	// Bike is the single bike manager the bike, ride and WebSocket endpoints
+	// drive. When RiderInUse is nil, Bike.RiderInUse is used.
+	Bike *ridectl.Manager
+	// WSRecheck is how often an open WebSocket re-validates its credential;
+	// zero means 60 s.
+	WSRecheck time.Duration
 
 	oidcState *oidcauth.StateCodec // signs the OIDC state cookie; derived from Box
 }
@@ -62,6 +69,9 @@ func newRouter(d Deps, extra ...func(huma.API)) (http.Handler, error) {
 	}
 	if d.OIDC == nil {
 		d.OIDC = oidcauth.NewRegistry(d.HTTPClient)
+	}
+	if d.RiderInUse == nil && d.Bike != nil {
+		d.RiderInUse = d.Bike.RiderInUse
 	}
 	d.oidcState = newStateCodec(d)
 	r := chi.NewRouter()

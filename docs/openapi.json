@@ -139,6 +139,47 @@
         },
         "type": "object"
       },
+      "CommandInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "Ride command: start, pause, resume, stop, set_level (to value) or level_delta (by value).",
+            "enum": [
+              "start",
+              "pause",
+              "resume",
+              "stop",
+              "set_level",
+              "level_delta"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "Resistance level for set_level, or the change in levels for level_delta; ignored by other commands.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      },
+      "ConnectInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "rider_id": {
+            "description": "ID of one of your riders; the bike is bound to this rider until released.",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rider_id"
+        ],
+        "type": "object"
+      },
       "CreateProviderInBody": {
         "additionalProperties": false,
         "properties": {
@@ -388,6 +429,35 @@
           "scopes",
           "created_at",
           "last_used_at"
+        ],
+        "type": "object"
+      },
+      "Device": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Bluetooth address, with a /random suffix for random addresses.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Advertised local name, empty when none was seen.",
+            "type": "string"
+          },
+          "protocol": {
+            "description": "fitplus or ftms when the advertised services match a supported bike; empty otherwise.",
+            "type": "string"
+          },
+          "rssi": {
+            "description": "Strongest signal strength seen, in dBm.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "address",
+          "name",
+          "rssi",
+          "protocol"
         ],
         "type": "object"
       },
@@ -1071,6 +1141,52 @@
         ],
         "type": "object"
       },
+      "ScanInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_s": {
+            "default": 5,
+            "description": "How long to scan, in seconds, 1 to 30.",
+            "format": "int64",
+            "maximum": 30,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "host": {
+            "description": "ESPHome proxy as host or host:port; empty uses the saved setting.",
+            "type": "string"
+          },
+          "key": {
+            "description": "ESPHome API encryption key (base64); empty uses the saved setting.",
+            "type": "string"
+          },
+          "transport": {
+            "description": "local (this host's adapter) or esphome (a Bluetooth proxy); empty uses the saved setting.",
+            "enum": [
+              "local",
+              "esphome"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScanOut": {
+        "additionalProperties": false,
+        "properties": {
+          "devices": {
+            "description": "Devices seen while scanning, supported bikes first, then by signal strength.",
+            "items": {
+              "$ref": "#/components/schemas/Device"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices"
+        ],
+        "type": "object"
+      },
       "SettingsOut": {
         "additionalProperties": false,
         "properties": {
@@ -1198,6 +1314,51 @@
         ],
         "type": "object"
       },
+      "Status": {
+        "additionalProperties": false,
+        "properties": {
+          "connected": {
+            "description": "Whether a live link to the bike exists right now.",
+            "type": "boolean"
+          },
+          "driver": {
+            "description": "Driver from settings in use: auto, fitplus, ftms or sim.",
+            "type": "string"
+          },
+          "hint": {
+            "description": "Advice for fixing LastError when it is a connection problem.",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level.",
+            "type": "string"
+          },
+          "protocol": {
+            "description": "Protocol of the live bike session: fitplus, ftms or sim.",
+            "type": "string"
+          },
+          "rider_id": {
+            "description": "Rider bound to the bike; absent when idle.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "since": {
+            "description": "When State last changed (RFC 3339).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "description": "idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "connected",
+          "since"
+        ],
+        "type": "object"
+      },
       "StravaOut": {
         "additionalProperties": false,
         "properties": {
@@ -1225,6 +1386,32 @@
           },
           "client_secret": {
             "description": "Strava client secret. Omit to keep the stored secret; an empty string clears it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TestBLEInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Bike Bluetooth address to look for, such as AA:BB:CC:DD:EE:FF. Empty uses the stored address; with none, only the adapter is checked.",
+            "type": "string"
+          },
+          "host": {
+            "description": "ESPHome proxy as host or host:port. Empty uses the stored host.",
+            "type": "string"
+          },
+          "key": {
+            "description": "ESPHome API encryption key, base64 of 32 bytes. Empty uses the stored key.",
+            "type": "string"
+          },
+          "transport": {
+            "description": "local (this host's adapter) or esphome (a Bluetooth proxy). Empty uses the stored setting.",
+            "enum": [
+              "local",
+              "esphome"
+            ],
             "type": "string"
           }
         },
@@ -1279,6 +1466,87 @@
           "ok",
           "message",
           "latency_ms"
+        ],
+        "type": "object"
+      },
+      "Tick": {
+        "additionalProperties": false,
+        "properties": {
+          "alert": {
+            "description": "Warning for the rider, for example a stale reading; absent when none.",
+            "type": "string"
+          },
+          "at": {
+            "description": "When this snapshot was taken (RFC 3339).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "cadence_rpm": {
+            "description": "Pedalling cadence in revolutions per minute.",
+            "format": "double",
+            "type": "number"
+          },
+          "connected": {
+            "description": "Whether the link to the bike is up right now.",
+            "type": "boolean"
+          },
+          "distance_m": {
+            "description": "Simulated distance covered, in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "elapsed_s": {
+            "description": "Riding time in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "grade_pct": {
+            "description": "Road grade of the current mode, in percent.",
+            "format": "double",
+            "type": "number"
+          },
+          "level": {
+            "description": "Resistance level (1 to 32) the engine last asked the bike for.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "Ride mode name, for example free.",
+            "type": "string"
+          },
+          "power_w": {
+            "description": "Rider power in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "reported_level": {
+            "description": "Resistance level (1 to 32) the bike last reported; 0 when unknown.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "speed_kmh": {
+            "description": "Simulated speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "state": {
+            "description": "Ride state: idle, connecting, ready, riding, paused or finished.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "state",
+          "mode",
+          "elapsed_s",
+          "distance_m",
+          "speed_kmh",
+          "power_w",
+          "cadence_rpm",
+          "grade_pct",
+          "level",
+          "reported_level",
+          "connected"
         ],
         "type": "object"
       },
@@ -2333,6 +2601,565 @@
         ]
       }
     },
+    "/api/bike": {
+      "get": {
+        "description": "Returns the state of the single bike this server controls: idle, connecting, ready, riding, paused or finished, the bound rider, the live protocol and any connection problem with advice to fix it. Requires the `read` scope.",
+        "operationId": "getBike",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get the bike connection",
+        "tags": [
+          "bike"
+        ]
+      }
+    },
+    "/api/bike/connect": {
+      "post": {
+        "description": "Binds one of the caller's riders to the bike (or the simulator) and returns at once with state `connecting`; watch `GET /api/bike` or the WebSocket for `ready` or a connection problem. Any user with control may drive the single bike. Returns 409 `bike_busy` unless the bike is idle, 400 `no_bike_address` when the settings name no bike, and 404 for a rider that is not the caller's. Requires the `control` scope.",
+        "operationId": "connectBike",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Connect the bike",
+        "tags": [
+          "bike"
+        ]
+      }
+    },
+    "/api/bike/disconnect": {
+      "post": {
+        "description": "Returns the bike to the rider's minimum level and closes the link. Does nothing when idle. Refused with 409 `ride_active` while a ride is riding or paused; use release to end the ride too. Returns 424 `floor_unconfirmed` when the bike was released but not confirmed back at its minimum level. Requires the `control` scope.",
+        "operationId": "disconnectBike",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "424": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Failed Dependency"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Disconnect the bike",
+        "tags": [
+          "bike"
+        ]
+      }
+    },
+    "/api/bike/release": {
+      "post": {
+        "description": "Ends any ride, returns the bike to the rider's minimum level and closes the link. Idempotent: releasing an idle bike succeeds. Returns 424 `floor_unconfirmed` when the bike was released but could not be confirmed back at its minimum level; the rider must then lower the resistance at the console. Requires the `control` scope.",
+        "operationId": "releaseBike",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "424": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Failed Dependency"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Release the bike",
+        "tags": [
+          "bike"
+        ]
+      }
+    },
+    "/api/bike/scan": {
+      "post": {
+        "description": "Scans for Bluetooth devices for `duration_s` seconds (default 5) and lists them, supported bikes first. Empty transport fields use the saved settings. Refused with 409 `bike_busy` while a bike is connected or another scan runs; 424 `scan_failed` when the adapter or proxy cannot be used. Requires the `admin` scope.",
+        "operationId": "scanBikes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "424": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Failed Dependency"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Scan for bikes",
+        "tags": [
+          "bike"
+        ]
+      }
+    },
+    "/api/ride": {
+      "get": {
+        "description": "Returns the latest ride snapshot: state, speed, power, cadence, distance and resistance level. In state `idle` when no bike is connected. Requires the `read` scope.",
+        "operationId": "getRide",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tick"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get the current ride",
+        "tags": [
+          "ride"
+        ]
+      }
+    },
+    "/api/ride/command": {
+      "post": {
+        "description": "Starts, pauses, resumes or stops the ride, or changes the resistance level. Any user with control may drive the single bike. Returns 409 `no_bike` when no bike is connected and 409 `bad_state` when the command does not fit the ride state (for example resume while not paused). Requires the `control` scope.",
+        "operationId": "rideCommand",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Send a ride command",
+        "tags": [
+          "ride"
+        ]
+      }
+    },
     "/api/riders": {
       "get": {
         "description": "Returns the caller's riders, ordered by ID. A user with no rider gets a default one (named after their display name or username) created on the first call. An admin may pass `all=true` to list every user's riders; other users get 403. Requires the `read` scope.",
@@ -2937,6 +3764,106 @@
           }
         ],
         "summary": "Update settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/test/ble": {
+      "post": {
+        "description": "Scans for 5 seconds with the local adapter or the ESPHome proxy and looks for the bike's address. Without an address it only reports how many devices were seen. Empty body fields fall back to the stored settings. The result is always HTTP 200; check `ok`. Refused with 409 `bike_busy` while a bike is connected, because one adapter cannot scan while holding a bike. Requires the `admin` scope.",
+        "operationId": "testBLE",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestBLEInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Test the Bluetooth adapter and bike",
         "tags": [
           "settings"
         ]

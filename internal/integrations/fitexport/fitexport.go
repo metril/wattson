@@ -2,10 +2,12 @@
 package fitexport
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/muktihari/fit/encoder"
@@ -75,10 +77,14 @@ func Encode(w io.Writer, r store.Ride, ss []store.Sample) error {
 	if r.RouteID != 0 || r.Mode == "route" {
 		sub = typedef.SubSportVirtualActivity
 	}
-	elapsed := ss[len(ss)-1].At.Sub(ss[0].At).Seconds()
+	// The first sample already carries ElapsedS of riding time, so the
+	// session starts that long before it: total_elapsed_time then never falls
+	// below total_timer_time.
+	start := first.Add(-time.Duration(ss[0].ElapsedS * float64(time.Second))).Truncate(time.Second)
+	elapsed := last.Sub(start).Seconds()
 
 	act.Laps = append(act.Laps, mesgdef.NewLap(nil).
-		SetTimestamp(last).SetStartTime(first).
+		SetTimestamp(last).SetStartTime(start).
 		SetEvent(typedef.EventLap).SetEventType(typedef.EventTypeStop).
 		SetSport(sport).SetSubSport(sub).
 		SetTotalElapsedTimeScaled(elapsed).SetTotalTimerTimeScaled(sum.DurationS).
@@ -87,7 +93,7 @@ func Encode(w io.Writer, r store.Ride, ss []store.Sample) error {
 		SetTotalWork(u32(sum.KJ*1000)).SetAvgCadence(u8(sum.AvgCadenceRpm)).
 		SetEnhancedAvgSpeedScaled(sum.AvgSpeedKmh/3.6).SetEnhancedMaxSpeedScaled(sum.MaxSpeedKmh/3.6))
 	ses := mesgdef.NewSession(nil).
-		SetTimestamp(last).SetStartTime(first).
+		SetTimestamp(last).SetStartTime(start).
 		SetEvent(typedef.EventSession).SetEventType(typedef.EventTypeStop).
 		SetSport(sport).SetSubSport(sub).
 		SetTotalElapsedTimeScaled(elapsed).SetTotalTimerTimeScaled(sum.DurationS).
@@ -109,21 +115,23 @@ func Encode(w io.Writer, r store.Ride, ss []store.Sample) error {
 	_, off := last.In(time.Local).Zone()
 	act.Activity = mesgdef.NewActivity(nil).
 		SetTimestamp(last).SetLocalTimestamp(time.Unix(last.Unix()+int64(off), 0).UTC()).
+		SetTotalTimerTimeScaled(sum.DurationS).
 		SetType(typedef.ActivityManual).SetEvent(typedef.EventActivity).SetEventType(typedef.EventTypeStop).
 		SetNumSessions(1)
 
 	fit := act.ToFIT(nil)
-	fit.Messages = summariesLast(fit.Messages)
+	fit.Messages = arrange(fit.Messages)
 	if err := encoder.New(w).Encode(&fit); err != nil {
 		return fmt.Errorf("fitexport: encode: %w", err)
 	}
 	return nil
 }
 
-// summariesLast moves the lap, session and activity messages, which share the
-// final timestamp with the last record, after every record and event.
-func summariesLast(msgs []proto.Message) []proto.Message {
-	out := make([]proto.Message, 0, len(msgs))
+// arrange orders the messages as a reader expects: by timestamp, a timer
+// start event before the records of its second and a stop after them, then the
+// lap, session and activity (which share the final timestamp) last.
+func arrange(msgs []proto.Message) []proto.Message {
+	var body []proto.Message
 	var tail [3][]proto.Message // lap, session, activity
 	for _, m := range msgs {
 		switch m.Num {
@@ -134,13 +142,42 @@ func summariesLast(msgs []proto.Message) []proto.Message {
 		case mesgnum.Activity:
 			tail[2] = append(tail[2], m)
 		default:
-			out = append(out, m)
+			body = append(body, m)
 		}
 	}
-	for _, t := range tail {
-		out = append(out, t...)
+	rank := func(m proto.Message) int {
+		if m.Num != mesgnum.Event {
+			return 1
+		}
+		if mesgdef.NewEvent(&m).EventType == typedef.EventTypeStart {
+			return 0
+		}
+		return 2
 	}
-	return out
+	stamp := func(m proto.Message) (uint32, bool) {
+		f := m.FieldByNum(proto.FieldNumTimestamp)
+		if f == nil {
+			return 0, false
+		}
+		return f.Value.Uint32(), true
+	}
+	slices.SortStableFunc(body, func(a, b proto.Message) int {
+		ta, oka := stamp(a)
+		tb, okb := stamp(b)
+		switch {
+		case !oka && !okb:
+			return 0
+		case !oka:
+			return -1
+		case !okb:
+			return 1
+		}
+		return cmp.Or(cmp.Compare(ta, tb), cmp.Compare(rank(a), rank(b)))
+	})
+	for _, t := range tail {
+		body = append(body, t...)
+	}
+	return body
 }
 
 func record(s store.Sample) *mesgdef.Record {

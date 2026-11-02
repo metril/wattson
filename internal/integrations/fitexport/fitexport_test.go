@@ -123,6 +123,15 @@ func TestRoundTrip(t *testing.T) {
 				s.name, sport, sub, dist, timer, avg, mx, np, work, asc, hr)
 		}
 	}
+	if got := act.Sessions[0].TotalElapsedTimeScaled(); !near(got, 120, 0.001) {
+		t.Errorf("total elapsed = %v, want 120 (first sample carries 1 s of timer time)", got)
+	}
+	if !act.Sessions[0].StartTime.Equal(t0.Add(-time.Second)) {
+		t.Errorf("start time = %v", act.Sessions[0].StartTime)
+	}
+	if act.Activity != nil && !near(act.Activity.TotalTimerTimeScaled(), 120, 0.001) {
+		t.Errorf("activity timer = %v", act.Activity.TotalTimerTimeScaled())
+	}
 	if act.Sessions[0].NumLaps != 1 || act.Sessions[0].MaxHeartRate != 160 {
 		t.Errorf("session = laps %d maxhr %d", act.Sessions[0].NumLaps, act.Sessions[0].MaxHeartRate)
 	}
@@ -180,7 +189,7 @@ func TestPauseEvents(t *testing.T) {
 		t.Errorf("event times = %v", at)
 	}
 	s := act.Sessions[0]
-	if !near(s.TotalElapsedTimeScaled(), 179, 0.001) || !near(s.TotalTimerTimeScaled(), 120, 0.001) {
+	if !near(s.TotalElapsedTimeScaled(), 180, 0.001) || !near(s.TotalTimerTimeScaled(), 120, 0.001) {
 		t.Errorf("elapsed %v timer %v", s.TotalElapsedTimeScaled(), s.TotalTimerTimeScaled())
 	}
 }
@@ -229,6 +238,26 @@ func TestSummariesAreLast(t *testing.T) {
 	// file_id(0) first; lap(19), session(18), activity(34) last
 	if nums[0] != 0 || nums[n-3] != 19 || nums[n-2] != 18 || nums[n-1] != 34 {
 		t.Errorf("message order = first %d, last three %v", nums[0], nums[n-3:])
+	}
+	// The timer start precedes the first record and the stop follows the last.
+	const event, record = 21, 20
+	firstEv, firstRec, lastEv, lastRec := -1, -1, -1, -1
+	for i, m := range nums[:n-3] {
+		switch m {
+		case event:
+			if firstEv < 0 {
+				firstEv = i
+			}
+			lastEv = i
+		case record:
+			if firstRec < 0 {
+				firstRec = i
+			}
+			lastRec = i
+		}
+	}
+	if firstEv < 0 || firstEv > firstRec || lastEv < lastRec {
+		t.Errorf("events at %d..%d, records at %d..%d", firstEv, lastEv, firstRec, lastRec)
 	}
 }
 

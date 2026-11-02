@@ -140,6 +140,18 @@ func (s *Store) Rider(ctx context.Context, userID, id int64) (Rider, error) {
 	return r, nil
 }
 
+// RiderByID returns the rider whoever owns it, ErrNotFound if absent.
+func (s *Store) RiderByID(ctx context.Context, id int64) (Rider, error) {
+	r, err := scanRider(s.Read.QueryRowContext(ctx, `SELECT `+riderCols+` FROM riders WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Rider{}, ErrNotFound
+	}
+	if err != nil {
+		return Rider{}, fmt.Errorf("get rider: %w", err)
+	}
+	return r, nil
+}
+
 // ListRiders returns the user's riders ordered by id.
 func (s *Store) ListRiders(ctx context.Context, userID int64) ([]Rider, error) {
 	return s.listRiders(ctx, `WHERE user_id=?`, userID)

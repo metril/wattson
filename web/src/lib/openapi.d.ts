@@ -452,6 +452,70 @@ export interface paths {
         patch: operations["updateRider"];
         trace?: never;
     };
+    "/api/rides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List rides
+         * @description Returns finished rides of the caller's riders, newest first, without samples. Page by passing the previous page's `next_before` as `before`. With `rider_id` only that rider's rides are listed; a rider of another user returns 404 unless the caller is an admin. Requires the `read` scope.
+         */
+        get: operations["listRides"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rides/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a ride
+         * @description Returns one finished ride with its samples thinned to at most `points` points (default 600) by averaging. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `read` scope.
+         */
+        get: operations["getRideDetail"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a ride
+         * @description Deletes a finished ride and its samples. A Strava activity already created from it is not touched. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `control` scope.
+         */
+        delete: operations["deleteRideRecord"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rides/{id}/fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a ride as FIT
+         * @description Returns the ride as a FIT activity file (`application/vnd.ant.fit`) with a `Content-Disposition: attachment` header. It does not depend on Strava. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `read` scope.
+         */
+        get: operations["downloadRideFit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/routes": {
         parameters: {
             query?: never;
@@ -1433,6 +1497,227 @@ export interface components {
             /** @description Configured OIDC providers. */
             providers: components["schemas"]["ProviderButton"][];
         };
+        RideDetail: {
+            /**
+             * Format: double
+             * @description Total climbing in metres; 0 on a free ride.
+             */
+            ascent_m: number;
+            /**
+             * Format: double
+             * @description Average cadence in revolutions per minute.
+             */
+            avg_cadence_rpm: number;
+            /**
+             * Format: int64
+             * @description Average heart rate in beats per minute; 0 when no heart rate was recorded.
+             */
+            avg_hr_bpm: number;
+            /**
+             * Format: double
+             * @description Average power in watts.
+             */
+            avg_power_w: number;
+            /**
+             * Format: double
+             * @description Average speed in kilometres per hour.
+             */
+            avg_speed_kmh: number;
+            /**
+             * Format: double
+             * @description Distance ridden in metres.
+             */
+            distance_m: number;
+            /**
+             * Format: double
+             * @description Moving time in seconds, excluding pauses.
+             */
+            duration_s: number;
+            /**
+             * Format: double
+             * @description Riding time of the last sample in seconds, as the ride clock counted it.
+             */
+            elapsed_s: number;
+            /**
+             * Format: date-time
+             * @description End time, UTC; null while the ride is still recording.
+             */
+            ended_at: string | null;
+            /**
+             * Format: int64
+             * @description Ride ID.
+             */
+            id: number;
+            /**
+             * Format: double
+             * @description Work done in kilojoules.
+             */
+            kj: number;
+            /**
+             * Format: int64
+             * @description Highest heart rate in beats per minute; 0 when no heart rate was recorded.
+             */
+            max_hr_bpm: number;
+            /**
+             * Format: double
+             * @description Highest power of one sample in watts.
+             */
+            max_power_w: number;
+            /**
+             * Format: double
+             * @description Highest speed in kilometres per hour.
+             */
+            max_speed_kmh: number;
+            /** @description Ride mode, such as free or route. */
+            mode: string;
+            /**
+             * Format: double
+             * @description Normalized power in watts (30 s rolling average, fourth-power mean).
+             */
+            np_w: number;
+            /**
+             * Format: int64
+             * @description ID of the rider who rode.
+             */
+            rider_id: number;
+            /** @description Name of the rider. */
+            rider_name: string;
+            /**
+             * Format: int64
+             * @description ID of the route ridden; 0 for a free ride or when the route has been deleted.
+             */
+            route_id: number;
+            /** @description Name of the route when the ride started; empty for a free ride. */
+            route_name: string;
+            /**
+             * Format: int64
+             * @description Number of stored 1 Hz samples.
+             */
+            sample_count: number;
+            /** @description The ride's samples, thinned to at most the requested number of points. */
+            series: components["schemas"]["Series"];
+            /**
+             * Format: date-time
+             * @description Start time, UTC.
+             */
+            started_at: string;
+            /** @description Strava upload state of the ride. */
+            strava: components["schemas"]["StravaStatusOut"];
+        };
+        RideList: {
+            /**
+             * Format: int64
+             * @description Pass as before to get the next page; 0 when this is the last page.
+             */
+            next_before: number;
+            /** @description Finished rides, newest first. */
+            rides: components["schemas"]["RideOut"][];
+        };
+        RideOut: {
+            /**
+             * Format: double
+             * @description Total climbing in metres; 0 on a free ride.
+             */
+            ascent_m: number;
+            /**
+             * Format: double
+             * @description Average cadence in revolutions per minute.
+             */
+            avg_cadence_rpm: number;
+            /**
+             * Format: int64
+             * @description Average heart rate in beats per minute; 0 when no heart rate was recorded.
+             */
+            avg_hr_bpm: number;
+            /**
+             * Format: double
+             * @description Average power in watts.
+             */
+            avg_power_w: number;
+            /**
+             * Format: double
+             * @description Average speed in kilometres per hour.
+             */
+            avg_speed_kmh: number;
+            /**
+             * Format: double
+             * @description Distance ridden in metres.
+             */
+            distance_m: number;
+            /**
+             * Format: double
+             * @description Moving time in seconds, excluding pauses.
+             */
+            duration_s: number;
+            /**
+             * Format: double
+             * @description Riding time of the last sample in seconds, as the ride clock counted it.
+             */
+            elapsed_s: number;
+            /**
+             * Format: date-time
+             * @description End time, UTC; null while the ride is still recording.
+             */
+            ended_at: string | null;
+            /**
+             * Format: int64
+             * @description Ride ID.
+             */
+            id: number;
+            /**
+             * Format: double
+             * @description Work done in kilojoules.
+             */
+            kj: number;
+            /**
+             * Format: int64
+             * @description Highest heart rate in beats per minute; 0 when no heart rate was recorded.
+             */
+            max_hr_bpm: number;
+            /**
+             * Format: double
+             * @description Highest power of one sample in watts.
+             */
+            max_power_w: number;
+            /**
+             * Format: double
+             * @description Highest speed in kilometres per hour.
+             */
+            max_speed_kmh: number;
+            /** @description Ride mode, such as free or route. */
+            mode: string;
+            /**
+             * Format: double
+             * @description Normalized power in watts (30 s rolling average, fourth-power mean).
+             */
+            np_w: number;
+            /**
+             * Format: int64
+             * @description ID of the rider who rode.
+             */
+            rider_id: number;
+            /** @description Name of the rider. */
+            rider_name: string;
+            /**
+             * Format: int64
+             * @description ID of the route ridden; 0 for a free ride or when the route has been deleted.
+             */
+            route_id: number;
+            /** @description Name of the route when the ride started; empty for a free ride. */
+            route_name: string;
+            /**
+             * Format: int64
+             * @description Number of stored 1 Hz samples.
+             */
+            sample_count: number;
+            /**
+             * Format: date-time
+             * @description Start time, UTC.
+             */
+            started_at: string;
+            /** @description Strava upload state of the ride. */
+            strava: components["schemas"]["StravaStatusOut"];
+        };
         RiderOut: {
             /**
              * Format: double
@@ -1662,6 +1947,30 @@ export interface components {
              */
             length_m: number;
         };
+        Series: {
+            /** @description Cadence of each point in revolutions per minute. */
+            cadence_rpm: number[];
+            /** @description Distance of each point in metres. */
+            distance_m: number[];
+            /** @description Riding time of each point in seconds. */
+            elapsed_s: number[];
+            /** @description Elevation of each point in metres. Present only when every point has one. */
+            ele_m?: number[];
+            /** @description Road grade of each point in percent. */
+            grade_pct: number[];
+            /** @description Heart rate of each point in beats per minute; 0 where none was read. */
+            hr_bpm: number[];
+            /** @description Latitude of each point in degrees. Present only when every point has a position. */
+            lat?: number[];
+            /** @description Resistance level of each point, 1 to 32. */
+            level: number[];
+            /** @description Longitude of each point in degrees. Present only when every point has a position. */
+            lon?: number[];
+            /** @description Power of each point in watts (the mean of its bucket). */
+            power_w: number[];
+            /** @description Speed of each point in kilometres per hour. */
+            speed_kmh: number[];
+        };
         SettingsOut: {
             /** @description Sign-in settings. */
             auth: components["schemas"]["AuthOut"];
@@ -1753,6 +2062,27 @@ export interface components {
             client_id?: string;
             /** @description Strava client secret. Omit to keep the stored secret; an empty string clears it. */
             client_secret?: string;
+        };
+        StravaStatusOut: {
+            /**
+             * Format: int64
+             * @description Strava activity ID once done; 0 when there is none.
+             */
+            activity_id: number;
+            /** @description Link to the Strava activity once done; empty otherwise. */
+            activity_url: string;
+            /** @description Why the last upload failed; empty unless status is error. */
+            error: string;
+            /**
+             * @description Upload state: none (never uploaded), uploading, done or error.
+             * @enum {string}
+             */
+            status: "none" | "uploading" | "done" | "error";
+            /**
+             * Format: int64
+             * @description Strava upload ID while uploading or done; 0 when there is none.
+             */
+            upload_id: number;
         };
         SyntheticInBody: {
             /** @description Route name, 1 to 100 characters. */
@@ -3771,6 +4101,294 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRides: {
+        parameters: {
+            query?: {
+                /** @description Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders. */
+                rider_id?: number;
+                /** @description Only rides with an ID below this one; pass the previous page's next_before. 0 starts at the newest. */
+                before?: number;
+                /** @description Page size, 1 to 100. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RideList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRideDetail: {
+        parameters: {
+            query?: {
+                /** @description Most points in the series, 50 to 3600. A longer ride is thinned by averaging. */
+                points?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Ride ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RideDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteRideRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Ride ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    downloadRideFit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Ride ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ride as a FIT activity file. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.ant.fit": string;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 	"github.com/metril/wattson/internal/bike"
 	"github.com/metril/wattson/internal/bike/sim"
 	"github.com/metril/wattson/internal/blue"
+	"github.com/metril/wattson/internal/history"
 	"github.com/metril/wattson/internal/maptiles"
 	"github.com/metril/wattson/internal/oidcauth/oidctest"
 	"github.com/metril/wattson/internal/ridectl"
@@ -255,4 +257,42 @@ func (ts *testServer) oidcLogin(t testing.TB, c *http.Client, idp *oidctest.IDP,
 	}
 	resp.Body.Close()
 	return resp
+}
+
+// seedRide inserts a finished ride of n 1 Hz samples (power ramps with the
+// second; heart rate 120 from the 10th) for riderID. With route the samples
+// carry position and elevation; without, they are NaN.
+func (ts *testServer) seedRide(t testing.TB, riderID int64, n int, route bool) store.Ride {
+	t.Helper()
+	ctx := context.Background()
+	t0 := time.Date(2026, 5, 1, 8, 0, 0, 0, time.UTC)
+	nr := store.Ride{RiderID: riderID, Mode: "free", StartedAt: t0}
+	if route {
+		nr.Mode, nr.RouteName = "route", "Loop"
+	}
+	r, err := ts.Store.CreateRide(ctx, nr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss := make([]store.Sample, n)
+	for i := range ss {
+		s := store.Sample{Seq: i, At: t0.Add(time.Duration(i) * time.Second), ElapsedS: float64(i + 1),
+			DistanceM: float64(10 * (i + 1)), SpeedKmh: 36, PowerW: float64(100 + i%100), CadenceRpm: 80, Level: 5,
+			Lat: math.NaN(), Lon: math.NaN(), EleM: math.NaN()}
+		if i >= 10 {
+			s.HRBpm = 120
+		}
+		if route {
+			s.Lat, s.Lon, s.EleM = 45+float64(i)*1e-5, 5+float64(i)*1e-5, 200+float64(i%50)
+		}
+		ss[i] = s
+	}
+	if err := ts.Store.AppendSamples(ctx, r.ID, ss); err != nil {
+		t.Fatal(err)
+	}
+	r, err = ts.Store.FinishRide(ctx, r.ID, ss[n-1].At, history.Summarize(ss), n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

@@ -1357,6 +1357,323 @@
         ],
         "type": "object"
       },
+      "RideDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "ascent_m": {
+            "description": "Total climbing in metres; 0 on a free ride.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_cadence_rpm": {
+            "description": "Average cadence in revolutions per minute.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_hr_bpm": {
+            "description": "Average heart rate in beats per minute; 0 when no heart rate was recorded.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "avg_power_w": {
+            "description": "Average power in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_speed_kmh": {
+            "description": "Average speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "distance_m": {
+            "description": "Distance ridden in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "duration_s": {
+            "description": "Moving time in seconds, excluding pauses.",
+            "format": "double",
+            "type": "number"
+          },
+          "elapsed_s": {
+            "description": "Riding time of the last sample in seconds, as the ride clock counted it.",
+            "format": "double",
+            "type": "number"
+          },
+          "ended_at": {
+            "description": "End time, UTC; null while the ride is still recording.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Ride ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kj": {
+            "description": "Work done in kilojoules.",
+            "format": "double",
+            "type": "number"
+          },
+          "max_hr_bpm": {
+            "description": "Highest heart rate in beats per minute; 0 when no heart rate was recorded.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_power_w": {
+            "description": "Highest power of one sample in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "max_speed_kmh": {
+            "description": "Highest speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "mode": {
+            "description": "Ride mode, such as free or route.",
+            "type": "string"
+          },
+          "np_w": {
+            "description": "Normalized power in watts (30 s rolling average, fourth-power mean).",
+            "format": "double",
+            "type": "number"
+          },
+          "rider_id": {
+            "description": "ID of the rider who rode.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rider_name": {
+            "description": "Name of the rider.",
+            "type": "string"
+          },
+          "route_id": {
+            "description": "ID of the route ridden; 0 for a free ride or when the route has been deleted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "route_name": {
+            "description": "Name of the route when the ride started; empty for a free ride.",
+            "type": "string"
+          },
+          "sample_count": {
+            "description": "Number of stored 1 Hz samples.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "series": {
+            "$ref": "#/components/schemas/Series",
+            "description": "The ride's samples, thinned to at most the requested number of points."
+          },
+          "started_at": {
+            "description": "Start time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "strava": {
+            "$ref": "#/components/schemas/StravaStatusOut",
+            "description": "Strava upload state of the ride."
+          }
+        },
+        "required": [
+          "series",
+          "id",
+          "rider_id",
+          "rider_name",
+          "route_id",
+          "route_name",
+          "mode",
+          "started_at",
+          "ended_at",
+          "duration_s",
+          "elapsed_s",
+          "distance_m",
+          "ascent_m",
+          "avg_power_w",
+          "max_power_w",
+          "np_w",
+          "kj",
+          "avg_cadence_rpm",
+          "avg_hr_bpm",
+          "max_hr_bpm",
+          "avg_speed_kmh",
+          "max_speed_kmh",
+          "sample_count",
+          "strava"
+        ],
+        "type": "object"
+      },
+      "RideList": {
+        "additionalProperties": false,
+        "properties": {
+          "next_before": {
+            "description": "Pass as before to get the next page; 0 when this is the last page.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rides": {
+            "description": "Finished rides, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/RideOut"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rides",
+          "next_before"
+        ],
+        "type": "object"
+      },
+      "RideOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ascent_m": {
+            "description": "Total climbing in metres; 0 on a free ride.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_cadence_rpm": {
+            "description": "Average cadence in revolutions per minute.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_hr_bpm": {
+            "description": "Average heart rate in beats per minute; 0 when no heart rate was recorded.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "avg_power_w": {
+            "description": "Average power in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_speed_kmh": {
+            "description": "Average speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "distance_m": {
+            "description": "Distance ridden in metres.",
+            "format": "double",
+            "type": "number"
+          },
+          "duration_s": {
+            "description": "Moving time in seconds, excluding pauses.",
+            "format": "double",
+            "type": "number"
+          },
+          "elapsed_s": {
+            "description": "Riding time of the last sample in seconds, as the ride clock counted it.",
+            "format": "double",
+            "type": "number"
+          },
+          "ended_at": {
+            "description": "End time, UTC; null while the ride is still recording.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Ride ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kj": {
+            "description": "Work done in kilojoules.",
+            "format": "double",
+            "type": "number"
+          },
+          "max_hr_bpm": {
+            "description": "Highest heart rate in beats per minute; 0 when no heart rate was recorded.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_power_w": {
+            "description": "Highest power of one sample in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "max_speed_kmh": {
+            "description": "Highest speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "mode": {
+            "description": "Ride mode, such as free or route.",
+            "type": "string"
+          },
+          "np_w": {
+            "description": "Normalized power in watts (30 s rolling average, fourth-power mean).",
+            "format": "double",
+            "type": "number"
+          },
+          "rider_id": {
+            "description": "ID of the rider who rode.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rider_name": {
+            "description": "Name of the rider.",
+            "type": "string"
+          },
+          "route_id": {
+            "description": "ID of the route ridden; 0 for a free ride or when the route has been deleted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "route_name": {
+            "description": "Name of the route when the ride started; empty for a free ride.",
+            "type": "string"
+          },
+          "sample_count": {
+            "description": "Number of stored 1 Hz samples.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "description": "Start time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "strava": {
+            "$ref": "#/components/schemas/StravaStatusOut",
+            "description": "Strava upload state of the ride."
+          }
+        },
+        "required": [
+          "id",
+          "rider_id",
+          "rider_name",
+          "route_id",
+          "route_name",
+          "mode",
+          "started_at",
+          "ended_at",
+          "duration_s",
+          "elapsed_s",
+          "distance_m",
+          "ascent_m",
+          "avg_power_w",
+          "max_power_w",
+          "np_w",
+          "kj",
+          "avg_cadence_rpm",
+          "avg_hr_bpm",
+          "max_hr_bpm",
+          "avg_speed_kmh",
+          "max_speed_kmh",
+          "sample_count",
+          "strava"
+        ],
+        "type": "object"
+      },
       "RiderOut": {
         "additionalProperties": false,
         "properties": {
@@ -1733,6 +2050,110 @@
         ],
         "type": "object"
       },
+      "Series": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence_rpm": {
+            "description": "Cadence of each point in revolutions per minute.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "distance_m": {
+            "description": "Distance of each point in metres.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "elapsed_s": {
+            "description": "Riding time of each point in seconds.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "ele_m": {
+            "description": "Elevation of each point in metres. Present only when every point has one.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "grade_pct": {
+            "description": "Road grade of each point in percent.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "hr_bpm": {
+            "description": "Heart rate of each point in beats per minute; 0 where none was read.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "lat": {
+            "description": "Latitude of each point in degrees. Present only when every point has a position.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "level": {
+            "description": "Resistance level of each point, 1 to 32.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "lon": {
+            "description": "Longitude of each point in degrees. Present only when every point has a position.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "power_w": {
+            "description": "Power of each point in watts (the mean of its bucket).",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "speed_kmh": {
+            "description": "Speed of each point in kilometres per hour.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "elapsed_s",
+          "distance_m",
+          "power_w",
+          "cadence_rpm",
+          "speed_kmh",
+          "grade_pct",
+          "level",
+          "hr_bpm"
+        ],
+        "type": "object"
+      },
       "SettingsOut": {
         "additionalProperties": false,
         "properties": {
@@ -1949,6 +2370,47 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StravaStatusOut": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_id": {
+            "description": "Strava activity ID once done; 0 when there is none.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "activity_url": {
+            "description": "Link to the Strava activity once done; empty otherwise.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the last upload failed; empty unless status is error.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Upload state: none (never uploaded), uploading, done or error.",
+            "enum": [
+              "none",
+              "uploading",
+              "done",
+              "error"
+            ],
+            "type": "string"
+          },
+          "upload_id": {
+            "description": "Strava upload ID while uploading or done; 0 when there is none.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "upload_id",
+          "activity_id",
+          "activity_url",
+          "error"
+        ],
         "type": "object"
       },
       "SyntheticInBody": {
@@ -4715,6 +5177,434 @@
         "summary": "Update a rider",
         "tags": [
           "riders"
+        ]
+      }
+    },
+    "/api/rides": {
+      "get": {
+        "description": "Returns finished rides of the caller's riders, newest first, without samples. Page by passing the previous page's `next_before` as `before`. With `rider_id` only that rider's rides are listed; a rider of another user returns 404 unless the caller is an admin. Requires the `read` scope.",
+        "operationId": "listRides",
+        "parameters": [
+          {
+            "description": "Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders.",
+            "explode": false,
+            "in": "query",
+            "name": "rider_id",
+            "schema": {
+              "description": "Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only rides with an ID below this one; pass the previous page's next_before. 0 starts at the newest.",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "Only rides with an ID below this one; pass the previous page's next_before. 0 starts at the newest.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, 1 to 100.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "description": "Page size, 1 to 100.",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List rides",
+        "tags": [
+          "rides"
+        ]
+      }
+    },
+    "/api/rides/{id}": {
+      "delete": {
+        "description": "Deletes a finished ride and its samples. A Strava activity already created from it is not touched. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `control` scope.",
+        "operationId": "deleteRideRecord",
+        "parameters": [
+          {
+            "description": "Ride ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Ride ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete a ride",
+        "tags": [
+          "rides"
+        ]
+      },
+      "get": {
+        "description": "Returns one finished ride with its samples thinned to at most `points` points (default 600) by averaging. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `read` scope.",
+        "operationId": "getRideDetail",
+        "parameters": [
+          {
+            "description": "Ride ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Ride ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Most points in the series, 50 to 3600. A longer ride is thinned by averaging.",
+            "explode": false,
+            "in": "query",
+            "name": "points",
+            "schema": {
+              "default": 600,
+              "description": "Most points in the series, 50 to 3600. A longer ride is thinned by averaging.",
+              "format": "int64",
+              "maximum": 3600,
+              "minimum": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a ride",
+        "tags": [
+          "rides"
+        ]
+      }
+    },
+    "/api/rides/{id}/fit": {
+      "get": {
+        "description": "Returns the ride as a FIT activity file (`application/vnd.ant.fit`) with a `Content-Disposition: attachment` header. It does not depend on Strava. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `read` scope.",
+        "operationId": "downloadRideFit",
+        "parameters": [
+          {
+            "description": "Ride ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Ride ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.ant.fit": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The ride as a FIT activity file.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Download a ride as FIT",
+        "tags": [
+          "rides"
         ]
       }
     },

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bike, History, KeyRound, LogOut, Route, Settings, Unlink, Users } from 'lucide-react';
+import { Bike, Dumbbell, History, KeyRound, LogOut, Route, Settings, Unlink, Users } from 'lucide-react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
@@ -59,7 +59,7 @@ export function Layout() {
     <div className="flex min-h-dvh flex-col md:flex-row">
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-10 flex gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
+        className="fixed inset-x-0 bottom-0 z-10 flex overflow-x-auto gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:overflow-visible md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
       >
         <span className="numeral hidden px-1 pt-2 pb-4 text-center text-lg tracking-wide md:block">
           Wattson
@@ -82,6 +82,10 @@ export function Layout() {
             <NavLink to="/routes" className={link}>
               <Route aria-hidden className="size-6" />
               Routes
+            </NavLink>
+            <NavLink to="/workouts" className={link}>
+              <Dumbbell aria-hidden className="size-6" />
+              Workouts
             </NavLink>
             <NavLink to="/riders" className={link}>
               <Users aria-hidden className="size-6" />

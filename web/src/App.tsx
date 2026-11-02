@@ -25,6 +25,9 @@ const RouteSyntheticPage = lazy(() =>
   import('@/pages/RouteSynthetic').then((m) => ({ default: m.RouteSyntheticPage })),
 );
 
+const WorkoutsPage = lazy(() => import('@/pages/Workouts').then((m) => ({ default: m.WorkoutsPage })));
+const WorkoutEditPage = lazy(() => import('@/pages/WorkoutEdit').then((m) => ({ default: m.WorkoutEditPage })));
+
 const HistoryPage = lazy(() => import('@/pages/History').then((m) => ({ default: m.HistoryPage })));
 const RideDetailPage = lazy(() => import('@/pages/RideDetail').then((m) => ({ default: m.RideDetailPage })));
 
@@ -85,6 +88,9 @@ export function AppRoutes() {
         <Route path="routes/new/synthetic" element={lazyPage(<RouteSyntheticPage />)} />
         <Route path="routes/new/draw" element={lazyPage(<RouteDrawPage />)} />
         <Route path="routes/:id" element={lazyPage(<RouteDetailPage />)} />
+        <Route path="workouts" element={lazyPage(<WorkoutsPage />)} />
+        <Route path="workouts/new" element={lazyPage(<WorkoutEditPage />)} />
+        <Route path="workouts/:id" element={lazyPage(<WorkoutEditPage />)} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings"

@@ -794,25 +794,15 @@
         },
         "type": "object"
       },
-      "HRStatus": {
+      "HRInfo": {
         "additionalProperties": false,
         "properties": {
-          "bpm": {
-            "description": "Last reading in beats per minute; 0 when there has been none.",
-            "format": "int64",
-            "type": "integer"
-          },
           "connected": {
             "description": "True while the source is delivering or able to deliver readings.",
             "type": "boolean"
           },
           "error": {
             "description": "Last error from the source; absent when it is healthy.",
-            "type": "string"
-          },
-          "last_at": {
-            "description": "Time of the last reading; zero when there has been none.",
-            "format": "date-time",
             "type": "string"
           },
           "source": {
@@ -827,9 +817,7 @@
         "required": [
           "source",
           "target",
-          "connected",
-          "bpm",
-          "last_at"
+          "connected"
         ],
         "type": "object"
       },
@@ -2444,8 +2432,8 @@
             "type": "string"
           },
           "hr": {
-            "$ref": "#/components/schemas/HRStatus",
-            "description": "Heart rate source state; absent when heart_rate.source is off. Its bpm and last_at stay empty here: the live reading is heart_rate_bpm in each tick."
+            "$ref": "#/components/schemas/HRInfo",
+            "description": "Heart rate source state; absent when heart_rate.source is off or its settings are unusable. The live reading is heart_rate_bpm in each tick."
           },
           "last_error": {
             "description": "Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level.",

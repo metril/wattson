@@ -16,6 +16,12 @@ func hintFor(err error) string {
 		return "Another client (usually Home Assistant) holds this ESPHome proxy's Bluetooth. Remove this ESP32 from Home Assistant's ESPHome integration so it is dedicated to Wattson, then reconnect."
 	case errors.Is(err, hass.ErrAuth):
 		return "Home Assistant rejected the token. Create a long-lived access token in your HA profile and save it in Settings → Integrations."
+	case errors.Is(err, habike.ErrRange):
+		return "The Home Assistant resistance entity's min/max leaves no level in the rider's range. Change the entity's min/max in Home Assistant, or the rider's minimum and maximum level, then reconnect."
+	case errors.Is(err, ErrNoHAURL):
+		return "No Home Assistant URL is set. Enter it in Settings → Integrations, then reconnect."
+	case errors.Is(err, ErrNoHAToken):
+		return "No Home Assistant token is set. Create a long-lived access token in your HA profile and save it in Settings → Integrations, then reconnect."
 	case errors.Is(err, habike.ErrEntityUnavailable):
 		return "Home Assistant reports the bike entity unavailable. Its FTMS integration must be connected to the bike (FTMS bikes only), and nothing else may hold the bike's Bluetooth."
 	case errors.Is(err, blue.ErrNotFound):

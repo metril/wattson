@@ -33,6 +33,12 @@ var (
 	ErrNoHost    = errors.New("ridectl: no ESPHome host configured")
 	ErrClosed    = errors.New("ridectl: manager closed")
 
+	// ErrNoHAURL and ErrNoHAToken mean Home Assistant is needed (as the bike or
+	// the heart rate source) but not configured. Dial errors wrap them with
+	// bike.ErrConfig.
+	ErrNoHAURL   = errors.New("ridectl: no Home Assistant URL configured")
+	ErrNoHAToken = errors.New("ridectl: no Home Assistant token configured")
+
 	// ErrRouteNotFound is returned by StartRoute (and a Deps.LoadRoute) for a route that does not exist.
 	ErrRouteNotFound = errors.New("ridectl: route not found")
 )
@@ -54,16 +60,16 @@ type Deps struct {
 
 // Status is the bike connection as the UI shows it.
 type Status struct {
-	State            string            `json:"state" doc:"idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished."`
-	RiderID          int64             `json:"rider_id,omitempty" doc:"Rider bound to the bike; absent when idle."`
-	Driver           string            `json:"driver,omitempty" doc:"Driver from settings in use: auto, fitplus, ftms, ha or sim."`
-	Protocol         string            `json:"protocol,omitempty" doc:"Protocol of the live bike session: fitplus, ftms, ha or sim."`
-	Connected        bool              `json:"connected" doc:"Whether a live link to the bike exists right now."`
-	LastError        string            `json:"last_error,omitempty" doc:"Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level."`
-	Hint             string            `json:"hint,omitempty" doc:"Advice for fixing LastError when it is a connection problem."`
-	FloorUnconfirmed bool              `json:"floor_unconfirmed" doc:"True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed."`
-	HR               *sensors.HRStatus `json:"hr,omitempty" doc:"Heart rate source state; absent when heart_rate.source is off. Its bpm and last_at stay empty here: the live reading is heart_rate_bpm in each tick."`
-	Since            time.Time         `json:"since" doc:"When State last changed (RFC 3339)."`
+	State            string    `json:"state" doc:"idle when no bike is connected, otherwise the engine state: connecting, ready, riding, paused or finished."`
+	RiderID          int64     `json:"rider_id,omitempty" doc:"Rider bound to the bike; absent when idle."`
+	Driver           string    `json:"driver,omitempty" doc:"Driver from settings in use: auto, fitplus, ftms, ha or sim."`
+	Protocol         string    `json:"protocol,omitempty" doc:"Protocol of the live bike session: fitplus, ftms, ha or sim."`
+	Connected        bool      `json:"connected" doc:"Whether a live link to the bike exists right now."`
+	LastError        string    `json:"last_error,omitempty" doc:"Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level."`
+	Hint             string    `json:"hint,omitempty" doc:"Advice for fixing LastError when it is a connection problem."`
+	FloorUnconfirmed bool      `json:"floor_unconfirmed" doc:"True while the bike could not be confirmed back at its minimum level, so the rider should lower the resistance at the console; clears once a floor write is confirmed."`
+	HR               *HRInfo   `json:"hr,omitempty" doc:"Heart rate source state; absent when heart_rate.source is off or its settings are unusable. The live reading is heart_rate_bpm in each tick."`
+	Since            time.Time `json:"since" doc:"When State last changed (RFC 3339)."`
 }
 
 // statusEqual compares statuses (HR is a pointer).
@@ -73,6 +79,15 @@ func statusEqual(a, b Status) bool {
 	}
 	a.HR, b.HR = nil, nil
 	return a == b
+}
+
+// HRInfo is the heart rate source as the status shows it. The live reading is
+// not part of it: it changes every second and travels in the ticks.
+type HRInfo struct {
+	Source    string `json:"source" doc:"Heart rate source: ble (Bluetooth monitor) or ha (Home Assistant entity)."`
+	Target    string `json:"target" doc:"What the source reads: a Bluetooth address with optional monitor name, or a Home Assistant entity id."`
+	Connected bool   `json:"connected" doc:"True while the source is delivering or able to deliver readings."`
+	Error     string `json:"error,omitempty" doc:"Last error from the source; absent when it is healthy."`
 }
 
 // conn is one bike connection: a rider, one transport, and the sequence of
@@ -189,6 +204,9 @@ func (m *Manager) Connect(ctx context.Context, r store.Rider) (Status, error) {
 	p, err := planFor(s)
 	if err != nil {
 		return Status{}, err
+	}
+	if p.hrErr != nil { // heart rate is optional: ride without it
+		m.log.Warn("heart rate disabled", "err", p.hrErr)
 	}
 	r.MinLevel = max(r.MinLevel, 1)
 	r.MaxLevel = max(r.MaxLevel, r.MinLevel)

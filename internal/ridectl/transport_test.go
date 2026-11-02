@@ -62,7 +62,7 @@ func TestSharedOpensLazilyAndOnce(t *testing.T) {
 		}()
 		// A scan blocks until its ctx ends; end it via Close below.
 	}
-	time.Sleep(20 * time.Millisecond)
+	poll(t, 2*time.Second, "first open", func() bool { return opens.Load() >= 1 })
 	if n := opens.Load(); n != 1 {
 		t.Fatalf("opens = %d, want 1", n)
 	}

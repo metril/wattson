@@ -341,3 +341,33 @@ func TestHADialRefusesEntityMinAboveRiderMax(t *testing.T) {
 		t.Fatalf("calls %d", n)
 	}
 }
+
+// An entity whose range no longer meets the rider's range mid-session is
+// refused: no write may land outside both ranges.
+func TestHASetRefusesRangeLostMidSession(t *testing.T) {
+	t.Parallel()
+	s := newServer(t)
+	c := cfgFor(s, token)
+	c.MinLevel, c.MaxLevel = 1, 10
+	sess := open(t, s, c)
+	if _, err := sess.SetLevel(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	s.SetState("number.r", "7", map[string]any{"min": 15.0}) // above the rider's maximum
+	var err error
+	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if _, err = sess.Resend(context.Background(), 5); err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, habike.ErrRange) || !errors.Is(err, bike.ErrConfig) {
+		t.Fatalf("err = %v, want habike.ErrRange and bike.ErrConfig", err)
+	}
+	n := len(s.Calls())
+	if _, err := sess.SetLevel(context.Background(), 6); !errors.Is(err, habike.ErrRange) {
+		t.Fatalf("SetLevel = %v", err)
+	}
+	if got := len(s.Calls()); got != n {
+		t.Fatalf("a write reached Home Assistant after the refusal: %v", values(s))
+	}
+}

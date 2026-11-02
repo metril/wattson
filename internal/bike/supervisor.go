@@ -295,6 +295,9 @@ func (s *Supervisor) run(ctx context.Context) {
 		if err != nil {
 			s.emit(Event{Kind: EventDisconnected, Err: err})
 			wait = nextWait()
+			if errors.Is(err, ErrConfig) { // retrying sooner cannot help
+				wait, backoff = s.o.BackoffMax, s.o.BackoffMax
+			}
 			continue
 		}
 		if !s.serve(ctx, sess, &fwd, resetBackoff) {

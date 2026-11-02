@@ -26,6 +26,10 @@ import (
 // unknown; the returned error's message is "home assistant entity <id> is unavailable".
 var ErrEntityUnavailable error = entityErr{}
 
+// ErrRange means the resistance entity's own min/max leave no level the rider
+// range allows. It is also a bike.ErrConfig.
+var ErrRange = errors.New("habike: entity range excludes the rider range")
+
 type entityErr struct{ id string }
 
 func (e entityErr) Error() string {
@@ -214,7 +218,7 @@ func (s *Session) rangeErr() error {
 		}
 	}
 	if hi > 0 && lo > hi {
-		return fmt.Errorf("habike: entity %s allows levels from %d but the allowed maximum is %d", s.cfg.Resistance, lo, hi)
+		return bike.ConfigError(fmt.Errorf("%w: entity %s allows levels from %d but the allowed maximum is %d", ErrRange, s.cfg.Resistance, lo, hi))
 	}
 	return nil
 }
@@ -278,6 +282,11 @@ func (s *Session) set(ctx context.Context, level int, force bool) (int, error) {
 	case <-s.done:
 		return 0, s.Err()
 	default:
+	}
+	// The entity's range can change mid-session: with no level both safe for
+	// the rider and accepted by the entity, write nothing.
+	if err := s.rangeErr(); err != nil {
+		return 0, err
 	}
 	lo, hi := s.bounds()
 	level = s.snap(bike.ClampLevel(level, lo, hi), lo, hi)

@@ -2,6 +2,8 @@ package ridectl
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -180,4 +182,16 @@ func TestReleaseStopsHR(t *testing.T) {
 			t.Fatalf("status = %+v", st)
 		}
 	})
+}
+
+// The status carries the source's connection only; readings travel in ticks.
+func TestStatusHRHasNoReading(t *testing.T) {
+	t.Parallel()
+	b, err := json.Marshal(Status{HR: &HRInfo{Source: "ble", Target: "AA", Connected: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(b); strings.Contains(s, "bpm") || strings.Contains(s, "last_at") {
+		t.Fatalf("status JSON %s carries a reading", s)
+	}
 }

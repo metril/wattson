@@ -347,6 +347,29 @@ func TestBackoffDoublesAndCaps(t *testing.T) {
 	})
 }
 
+// A configuration error cannot fix itself between retries, so the supervisor
+// waits the maximum backoff from the first failure.
+func TestConfigErrorBacksOffToMax(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		d := &fakeDial{}
+		bad := ConfigError(errors.New("bad range"))
+		d.push(dialResult{err: bad}, dialResult{err: bad}, dialResult{s: newFakeSession(ProtoFitPlus, 16)})
+		sup := NewSupervisor(d.dial, SupervisorOptions{WatchdogTimeout: 24 * time.Hour})
+		sup.Connect(context.Background())
+		time.Sleep(2 * time.Minute)
+		synctest.Wait()
+		want := []time.Duration{30 * time.Second, 30 * time.Second}
+		if g := d.gaps(); !slices.Equal(g, want) {
+			t.Fatalf("gaps %v want %v", g, want)
+		}
+		if !errors.Is(bad, ErrConfig) {
+			t.Fatal("ConfigError does not match ErrConfig")
+		}
+		sup.Close(context.Background())
+	})
+}
+
 func TestTelemetryAcrossReconnect(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

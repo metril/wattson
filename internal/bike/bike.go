@@ -21,7 +21,23 @@ var (
 	ErrSilence = errors.New("bike: telemetry silence")
 	// ErrControlRejected means the FTMS control point answered with a non-success result.
 	ErrControlRejected = errors.New("bike: control point rejected request")
+	// ErrConfig marks an error caused by the settings rather than the link: no
+	// retry can fix it until the settings change, which applies only at the
+	// next connect. Wrap with ConfigError. The Supervisor still redials such a
+	// failure (the rider may be fixing the bridge), but waits its maximum
+	// backoff every time instead of climbing to it.
+	ErrConfig = errors.New("bike: configuration error")
 )
+
+// ConfigError marks err as a configuration error (errors.Is(…, ErrConfig));
+// the message and any wrapped error stay reachable.
+func ConfigError(err error) error { return configError{err} }
+
+type configError struct{ err error }
+
+func (e configError) Error() string        { return e.err.Error() }
+func (e configError) Unwrap() error        { return e.err }
+func (e configError) Is(target error) bool { return target == ErrConfig }
 
 const (
 	defaultKeepalive      = 200 * time.Millisecond

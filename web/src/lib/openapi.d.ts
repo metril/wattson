@@ -1369,21 +1369,11 @@ export interface components {
             /** @description Home Assistant base URL (no user:pass@); empty clears it. */
             url?: string;
         };
-        HRStatus: {
-            /**
-             * Format: int64
-             * @description Last reading in beats per minute; 0 when there has been none.
-             */
-            bpm: number;
+        HRInfo: {
             /** @description True while the source is delivering or able to deliver readings. */
             connected: boolean;
             /** @description Last error from the source; absent when it is healthy. */
             error?: string;
-            /**
-             * Format: date-time
-             * @description Time of the last reading; zero when there has been none.
-             */
-            last_at: string;
             /** @description Heart rate source: ble (Bluetooth monitor) or ha (Home Assistant entity). */
             source: string;
             /** @description What the source reads: a Bluetooth address with optional monitor name, or a Home Assistant entity id. */
@@ -2202,8 +2192,8 @@ export interface components {
             floor_unconfirmed: boolean;
             /** @description Advice for fixing LastError when it is a connection problem. */
             hint?: string;
-            /** @description Heart rate source state; absent when heart_rate.source is off. Its bpm and last_at stay empty here: the live reading is heart_rate_bpm in each tick. */
-            hr?: components["schemas"]["HRStatus"];
+            /** @description Heart rate source state; absent when heart_rate.source is off or its settings are unusable. The live reading is heart_rate_bpm in each tick. */
+            hr?: components["schemas"]["HRInfo"];
             /** @description Most recent problem: a failed connection, an idle release, or a bike that could not be confirmed back at its minimum level. */
             last_error?: string;
             /** @description Protocol of the live bike session: fitplus, ftms, ha or sim. */

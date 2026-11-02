@@ -11,26 +11,18 @@ import (
 // change worth publishing in the status.
 const hrPoll = 250 * time.Millisecond
 
-// hrKey is the part of an HRStatus that appears in Status; readings
-// (BPM, LastAt) change every second and travel in the ticks instead.
-type hrKey struct {
-	source, target, errText string
-	connected               bool
-}
-
-func keyOf(s sensors.HRStatus) hrKey {
-	return hrKey{source: s.Source, target: s.Target, errText: s.Error, connected: s.Connected}
+func infoOf(s sensors.HRStatus) HRInfo {
+	return HRInfo{Source: s.Source, Target: s.Target, Connected: s.Connected, Error: s.Error}
 }
 
 // hrStatus is the heart rate part of the connection's status, nil when
-// the source is off. The live reading is left out (see hrKey).
-func (c *conn) hrStatus() *sensors.HRStatus {
+// the source is off.
+func (c *conn) hrStatus() *HRInfo {
 	if c.hrMon == nil {
 		return nil
 	}
-	st := c.hrMon.Status()
-	st.BPM, st.LastAt = 0, time.Time{}
-	return &st
+	i := infoOf(c.hrMon.Status())
+	return &i
 }
 
 // startHR runs the connection's heart rate source from now until stopHR. It
@@ -57,7 +49,7 @@ func (m *Manager) startHR(c *conn) {
 	}()
 	go func() {
 		defer m.wg.Done()
-		last := keyOf(mon.Status())
+		last := infoOf(mon.Status())
 		t := time.NewTicker(hrPoll)
 		defer t.Stop()
 		for {
@@ -66,7 +58,7 @@ func (m *Manager) startHR(c *conn) {
 				return
 			case <-t.C:
 			}
-			if k := keyOf(mon.Status()); k != last {
+			if k := infoOf(mon.Status()); k != last {
 				last = k
 				m.mu.Lock()
 				if m.cur == c && !c.finished {

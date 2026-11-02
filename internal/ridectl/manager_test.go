@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -878,10 +879,58 @@ func TestHintForMore(t *testing.T) {
 		{fmt.Errorf("x: %w", blue.ErrProxyHeld), "Another client (usually Home Assistant) holds this ESPHome proxy's Bluetooth."},
 		{fmt.Errorf("x: %w", hass.ErrAuth), "Home Assistant rejected the token."},
 		{fmt.Errorf("x: %w", habike.ErrEntityUnavailable), "Home Assistant reports the bike entity unavailable."},
+		{bike.ConfigError(fmt.Errorf("x: %w", habike.ErrRange)), "The Home Assistant resistance entity's min/max"},
+		{fmt.Errorf("x: %w", ErrNoHAURL), "No Home Assistant URL is set."},
+		{fmt.Errorf("x: %w", ErrNoHAToken), "No Home Assistant token is set."},
 	}
 	for _, c := range cases {
 		if got := hintFor(c.err); !strings.HasPrefix(got, c.want) {
 			t.Errorf("hintFor(%v) = %q, want prefix %q", c.err, got, c.want)
 		}
 	}
+}
+
+// A bad heart rate setting never stops the bike: Connect succeeds and the ride
+// runs without a heart rate source.
+func TestBadHRConfigConnectsWithoutHR(t *testing.T) {
+	t.Parallel()
+	for name, mod := range map[string]func(*settings.Settings){
+		"bad address": func(s *settings.Settings) { s.HeartRate = settings.HeartRate{Source: "ble", Address: "nonsense"} },
+		"no proxy host": func(s *settings.Settings) {
+			s.Bike.Transport, s.Bike.ESPHomeHost = "esphome", ""
+			s.HeartRate = settings.HeartRate{Source: "ble", Address: hrAddr.String()}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var logs logBuf
+			m := newMgr(&simRec{}, 20*time.Millisecond, mod, Deps{Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+			defer m.Close(context.Background())
+			if _, err := m.Connect(t.Context(), testRider); err != nil {
+				t.Fatalf("Connect = %v", err)
+			}
+			poll(t, 2*time.Second, "ready", func() bool { return m.Status().State == "ready" })
+			if st := m.Status(); st.HR != nil {
+				t.Fatalf("HR = %+v, want none", st.HR)
+			}
+			if !strings.Contains(logs.String(), "heart rate disabled") {
+				t.Fatalf("no warning logged: %s", logs.String())
+			}
+		})
+	}
+}
+
+// No Home Assistant URL or token is a configuration error the bike driver
+// reports with its own hint.
+func TestHAMissingURLHint(t *testing.T) {
+	t.Parallel()
+	m := newMgr(nil, 20*time.Millisecond, func(st *settings.Settings) {
+		st.Bike.Driver = "ha"
+		st.Bike.HAResistanceEntity = "number.bike"
+	}, Deps{HAPeriod: 20 * time.Millisecond})
+	defer m.Close(context.Background())
+	if _, err := m.Connect(t.Context(), testRider); err != nil {
+		t.Fatal(err)
+	}
+	poll(t, 2*time.Second, "missing-URL hint", func() bool { return strings.HasPrefix(m.Status().Hint, "No Home Assistant URL is set.") })
 }

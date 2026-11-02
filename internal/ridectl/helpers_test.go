@@ -3,6 +3,7 @@ package ridectl
 import (
 	"context"
 	"encoding/binary"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -170,7 +171,25 @@ func hrDevice() *bluetest.Device {
 	}
 }
 
-// bpmByte is a heart rate measurement notification for v bpm (8-bit format).
+// logBuf is a goroutine-safe log sink.
+type logBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *logBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// bpmFrame is a heart rate measurement notification for v bpm (8-bit format).
 func bpmFrame(v byte) []byte { return []byte{0x00, v} }
 
 // withHR enables a BLE heart rate source at hrAddr.

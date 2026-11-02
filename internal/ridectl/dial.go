@@ -41,6 +41,7 @@ type plan struct {
 	hrAddr   blue.Address
 	hrName   string
 	hrEntity string
+	hrErr    error // unusable heart rate settings; hrSource is then ""
 }
 
 func (p plan) isSim() bool { return p.driver == "sim" }
@@ -60,11 +61,14 @@ func planFor(s settings.Settings) (plan, error) {
 		haResistance: b.HAResistanceEntity, haPower: b.HAPowerEntity, haCadence: b.HACadenceEntity}
 	switch hr := s.HeartRate; hr.Source {
 	case "ble":
+		// Heart rate is optional: unusable settings are reported in hrErr and
+		// the bike connects without it.
 		a, err := blue.ParseAddress(hr.Address)
 		if err != nil {
-			return plan{}, fmt.Errorf("heart rate address: %w", err)
+			p.hrErr = fmt.Errorf("heart rate address: %w", err)
+		} else {
+			p.hrSource, p.hrAddr, p.hrName = "ble", a, hr.Name
 		}
-		p.hrSource, p.hrAddr, p.hrName = "ble", a, hr.Name
 	case "ha":
 		p.hrSource, p.hrEntity = "ha", hr.HAEntity
 	}
@@ -79,7 +83,11 @@ func planFor(s settings.Settings) (plan, error) {
 		p.addr = a
 	}
 	if p.needsTransport() && p.transport == "esphome" && strings.TrimSpace(p.host) == "" {
-		return plan{}, ErrNoHost
+		if p.bleBike() {
+			return plan{}, ErrNoHost
+		}
+		// Only the heart rate monitor wanted the proxy.
+		p.hrSource, p.hrErr = "", fmt.Errorf("heart rate: %w", ErrNoHost)
 	}
 	return p, nil
 }
@@ -121,7 +129,15 @@ func (m *Manager) sharedFor(p plan) blue.Transport {
 // openHA returns the Home Assistant dialer the bike driver and the heart rate
 // monitor use; each caller owns the client it gets.
 func (m *Manager) openHA(p plan) func(ctx context.Context) (*hass.Client, error) {
-	return func(ctx context.Context) (*hass.Client, error) { return m.d.OpenHA(ctx, p.haURL, p.haToken) }
+	return func(ctx context.Context) (*hass.Client, error) {
+		switch {
+		case strings.TrimSpace(p.haURL) == "":
+			return nil, bike.ConfigError(ErrNoHAURL)
+		case p.haToken == "":
+			return nil, bike.ConfigError(ErrNoHAToken)
+		}
+		return m.d.OpenHA(ctx, p.haURL, p.haToken)
+	}
 }
 
 // dialFor builds the session dial for rider r. tr is the connection's shared

@@ -316,6 +316,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diagnostics/bluetooth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check the Bluetooth path
+         * @description Checks the host's Bluetooth adapter or the ESPHome Bluetooth proxy that the bike and heart rate monitor use, with the exact fix for each problem found, and lists the configured devices. While a bike is connected the check reuses its live transport; when idle it opens a temporary one and closes it again, and a bike connect or scan arriving meanwhile gets 409 `bike_busy`. It never returns 409 itself: a running scan is reported as code `busy`. With `scan_s` above 0 it scans for that long and reports each device's signal strength (`rssi`), absent when the device was not seen. It briefly subscribes to an idle ESPHome proxy, which takes the proxy from another client (such as Home Assistant) until it closes. No secret appears in the result. Requires the `admin` scope.
+         */
+        get: operations["getBluetoothDiagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ha/entities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Home Assistant entities
+         * @description Lists the number or sensor entities of the saved Home Assistant, sorted by entity id and capped at 1000, for the settings pickers. It always uses the saved URL and token, never ones from the request. Returns 400 `ha_not_configured` without a saved URL and token and 502 `ha_unavailable` when Home Assistant cannot be reached or rejects the token (the message says which). Requires the `admin` scope.
+         */
+        get: operations["listHAEntities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/maps/tiles": {
         parameters: {
             query?: never;
@@ -1290,6 +1330,46 @@ export interface components {
              */
             rssi: number;
         };
+        DeviceDiag: {
+            /** @description Configured Bluetooth address; empty when none is set. */
+            address: string;
+            /** @description Whether a live link to the device exists right now. */
+            connected: boolean;
+            /** @description Most recent connection problem. */
+            error?: string;
+            /** @description Advice for fixing the problem. */
+            hint?: string;
+            /**
+             * @description bike or hr (heart rate monitor).
+             * @enum {string}
+             */
+            role: "bike" | "hr";
+            /**
+             * Format: int64
+             * @description Signal strength in dBm seen during this check's scan; absent when the device was not seen or no scan was requested.
+             */
+            rssi?: number;
+            /** @description idle when no bike is connected, otherwise the connection state (bike: connecting, ready, riding, paused or finished; heart rate monitor: connected or searching). */
+            state: string;
+        };
+        Diagnostics: {
+            /**
+             * Format: date-time
+             * @description When the check ran (RFC 3339).
+             */
+            checked_at: string;
+            /** @description The configured Bluetooth bike and heart rate monitor. */
+            devices: components["schemas"]["DeviceDiag"][];
+            /** @description Adapter check; present when transport is local. */
+            local?: components["schemas"]["LocalDiag"];
+            /** @description Proxy check; present when transport is esphome. */
+            proxy?: components["schemas"]["ProxyDiag"];
+            /**
+             * @description Bluetooth path that was checked: local (this host's adapter), esphome (a Bluetooth proxy) or none when neither the bike nor the heart rate monitor uses Bluetooth.
+             * @enum {string}
+             */
+            transport: "local" | "esphome" | "none";
+        };
         DirOut: {
             /** @description Whether the directory exists. */
             exists: boolean;
@@ -1357,6 +1437,24 @@ export interface components {
             /** @description External base URL of this server (http or https, no path); empty clears it. */
             public_url?: string;
         };
+        HAEntities: {
+            /** @description Matching entities sorted by entity_id, at most 1000. */
+            entities: components["schemas"]["HAEntity"][];
+            /** @description True when more than 1000 entities matched and the list was cut; narrow it with device_class. */
+            truncated: boolean;
+        };
+        HAEntity: {
+            /** @description Device class, empty when none. */
+            device_class: string;
+            /** @description Entity id, such as sensor.bike_power. */
+            entity_id: string;
+            /** @description Friendly name, or the entity id when it has none. */
+            name: string;
+            /** @description Current state as Home Assistant reports it, such as 150 or unavailable. */
+            state: string;
+            /** @description Unit of measurement, empty when none. */
+            unit: string;
+        };
         HAOut: {
             /** @description Whether a long-lived access token is stored. The token itself is never returned. */
             token_set: boolean;
@@ -1413,6 +1511,19 @@ export interface components {
              * @enum {string}
              */
             type: "LineString";
+        };
+        LocalDiag: {
+            /** @description Machine-readable cause when status is error: dbus_socket_missing, dbus_denied, bluez_not_running, no_adapter or adapter_error. */
+            code?: string;
+            /** @description Exact steps that fix the problem; absent when status is ok or the cause is unknown. */
+            fix?: string;
+            /** @description What was found, or the raw error. */
+            message: string;
+            /**
+             * @description ok when the adapter opened, otherwise error.
+             * @enum {string}
+             */
+            status: "ok" | "error";
         };
         LoginInBody: {
             /** @description Password. */
@@ -1650,6 +1761,46 @@ export interface components {
             needs_setup: boolean;
             /** @description Configured OIDC providers. */
             providers: components["schemas"]["ProviderButton"][];
+        };
+        ProxyDiag: {
+            /** @description Addresses of the devices holding a slot. */
+            allocated: string[];
+            /** @description Machine-readable cause when status is error: unreachable, bad_key, plaintext, no_proxy, held or no_slots. */
+            code?: string;
+            /** @description Exact steps that fix the problem; absent when status is ok. */
+            fix?: string;
+            /** @description Bluetooth proxy features the firmware reports: passive_scan, active_connections, remote_caching, pairing, cache_clearing, raw_advertisements, state_and_mode. */
+            flags: string[];
+            /**
+             * Format: int64
+             * @description Free connection slots.
+             */
+            free: number;
+            /**
+             * Format: int64
+             * @description Total connection slots.
+             */
+            limit: number;
+            /** @description The device's MAC address. */
+            mac?: string;
+            /** @description What was found, or the raw error. */
+            message: string;
+            /** @description Features Wattson needs that the firmware lacks: active_connections and raw_advertisements. */
+            missing_flags: string[];
+            /** @description The device's ESPHome name. */
+            name?: string;
+            /**
+             * @description ok when the proxy is usable, otherwise error.
+             * @enum {string}
+             */
+            status: "ok" | "error";
+            /**
+             * @description ok while Wattson receives the proxy's Bluetooth data; held_by_other when another client (usually Home Assistant) took it; unknown when Wattson has no connection open yet, so it just subscribed and cannot tell.
+             * @enum {string}
+             */
+            subscription: "ok" | "held_by_other" | "unknown";
+            /** @description ESPHome version running on the device. */
+            version?: string;
         };
         RideDetail: {
             /**
@@ -3582,6 +3733,126 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBluetoothDiagnostics: {
+        parameters: {
+            query?: {
+                /** @description Seconds to scan for the configured bike and heart rate monitor to read their signal strength, 0 to 10. 0 skips the scan. */
+                scan_s?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Diagnostics"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHAEntities: {
+        parameters: {
+            query: {
+                /** @description Entity domain to list: number or sensor. */
+                domain: "number" | "sensor";
+                /** @description Only entities with this device_class attribute, such as power or heart_rate. Empty lists all. */
+                device_class?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HAEntities"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

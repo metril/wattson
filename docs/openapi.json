@@ -560,6 +560,91 @@
         ],
         "type": "object"
       },
+      "DeviceDiag": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "description": "Configured Bluetooth address; empty when none is set.",
+            "type": "string"
+          },
+          "connected": {
+            "description": "Whether a live link to the device exists right now.",
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Most recent connection problem.",
+            "type": "string"
+          },
+          "hint": {
+            "description": "Advice for fixing the problem.",
+            "type": "string"
+          },
+          "role": {
+            "description": "bike or hr (heart rate monitor).",
+            "enum": [
+              "bike",
+              "hr"
+            ],
+            "type": "string"
+          },
+          "rssi": {
+            "description": "Signal strength in dBm seen during this check's scan; absent when the device was not seen or no scan was requested.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "description": "idle when no bike is connected, otherwise the connection state (bike: connecting, ready, riding, paused or finished; heart rate monitor: connected or searching).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "address",
+          "state",
+          "connected"
+        ],
+        "type": "object"
+      },
+      "Diagnostics": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "description": "When the check ran (RFC 3339).",
+            "format": "date-time",
+            "type": "string"
+          },
+          "devices": {
+            "description": "The configured Bluetooth bike and heart rate monitor.",
+            "items": {
+              "$ref": "#/components/schemas/DeviceDiag"
+            },
+            "type": "array"
+          },
+          "local": {
+            "$ref": "#/components/schemas/LocalDiag",
+            "description": "Adapter check; present when transport is local."
+          },
+          "proxy": {
+            "$ref": "#/components/schemas/ProxyDiag",
+            "description": "Proxy check; present when transport is esphome."
+          },
+          "transport": {
+            "description": "Bluetooth path that was checked: local (this host's adapter), esphome (a Bluetooth proxy) or none when neither the bike nor the heart rate monitor uses Bluetooth.",
+            "enum": [
+              "local",
+              "esphome",
+              "none"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "transport",
+          "devices",
+          "checked_at"
+        ],
+        "type": "object"
+      },
       "DirOut": {
         "additionalProperties": false,
         "properties": {
@@ -762,6 +847,60 @@
         },
         "type": "object"
       },
+      "HAEntities": {
+        "additionalProperties": false,
+        "properties": {
+          "entities": {
+            "description": "Matching entities sorted by entity_id, at most 1000.",
+            "items": {
+              "$ref": "#/components/schemas/HAEntity"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "description": "True when more than 1000 entities matched and the list was cut; narrow it with device_class.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entities",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "HAEntity": {
+        "additionalProperties": false,
+        "properties": {
+          "device_class": {
+            "description": "Device class, empty when none.",
+            "type": "string"
+          },
+          "entity_id": {
+            "description": "Entity id, such as sensor.bike_power.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Friendly name, or the entity id when it has none.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Current state as Home Assistant reports it, such as 150 or unavailable.",
+            "type": "string"
+          },
+          "unit": {
+            "description": "Unit of measurement, empty when none.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "name",
+          "state",
+          "unit",
+          "device_class"
+        ],
+        "type": "object"
+      },
       "HAOut": {
         "additionalProperties": false,
         "properties": {
@@ -916,6 +1055,36 @@
         "required": [
           "type",
           "coordinates"
+        ],
+        "type": "object"
+      },
+      "LocalDiag": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Machine-readable cause when status is error: dbus_socket_missing, dbus_denied, bluez_not_running, no_adapter or adapter_error.",
+            "type": "string"
+          },
+          "fix": {
+            "description": "Exact steps that fix the problem; absent when status is ok or the cause is unknown.",
+            "type": "string"
+          },
+          "message": {
+            "description": "What was found, or the raw error.",
+            "type": "string"
+          },
+          "status": {
+            "description": "ok when the adapter opened, otherwise error.",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
         ],
         "type": "object"
       },
@@ -1467,6 +1636,94 @@
           "needs_setup",
           "local_login",
           "providers"
+        ],
+        "type": "object"
+      },
+      "ProxyDiag": {
+        "additionalProperties": false,
+        "properties": {
+          "allocated": {
+            "description": "Addresses of the devices holding a slot.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "code": {
+            "description": "Machine-readable cause when status is error: unreachable, bad_key, plaintext, no_proxy, held or no_slots.",
+            "type": "string"
+          },
+          "fix": {
+            "description": "Exact steps that fix the problem; absent when status is ok.",
+            "type": "string"
+          },
+          "flags": {
+            "description": "Bluetooth proxy features the firmware reports: passive_scan, active_connections, remote_caching, pairing, cache_clearing, raw_advertisements, state_and_mode.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "free": {
+            "description": "Free connection slots.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "limit": {
+            "description": "Total connection slots.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mac": {
+            "description": "The device's MAC address.",
+            "type": "string"
+          },
+          "message": {
+            "description": "What was found, or the raw error.",
+            "type": "string"
+          },
+          "missing_flags": {
+            "description": "Features Wattson needs that the firmware lacks: active_connections and raw_advertisements.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "The device's ESPHome name.",
+            "type": "string"
+          },
+          "status": {
+            "description": "ok when the proxy is usable, otherwise error.",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "type": "string"
+          },
+          "subscription": {
+            "description": "ok while Wattson receives the proxy's Bluetooth data; held_by_other when another client (usually Home Assistant) took it; unknown when Wattson has no connection open yet, so it just subscribed and cannot tell.",
+            "enum": [
+              "ok",
+              "held_by_other",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "description": "ESPHome version running on the device.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "flags",
+          "missing_flags",
+          "subscription",
+          "free",
+          "limit",
+          "allocated"
         ],
         "type": "object"
       },
@@ -4457,6 +4714,189 @@
         "summary": "Scan for bikes",
         "tags": [
           "bike"
+        ]
+      }
+    },
+    "/api/diagnostics/bluetooth": {
+      "get": {
+        "description": "Checks the host's Bluetooth adapter or the ESPHome Bluetooth proxy that the bike and heart rate monitor use, with the exact fix for each problem found, and lists the configured devices. While a bike is connected the check reuses its live transport; when idle it opens a temporary one and closes it again, and a bike connect or scan arriving meanwhile gets 409 `bike_busy`. It never returns 409 itself: a running scan is reported as code `busy`. With `scan_s` above 0 it scans for that long and reports each device's signal strength (`rssi`), absent when the device was not seen. It briefly subscribes to an idle ESPHome proxy, which takes the proxy from another client (such as Home Assistant) until it closes. No secret appears in the result. Requires the `admin` scope.",
+        "operationId": "getBluetoothDiagnostics",
+        "parameters": [
+          {
+            "description": "Seconds to scan for the configured bike and heart rate monitor to read their signal strength, 0 to 10. 0 skips the scan.",
+            "explode": false,
+            "in": "query",
+            "name": "scan_s",
+            "schema": {
+              "default": 0,
+              "description": "Seconds to scan for the configured bike and heart rate monitor to read their signal strength, 0 to 10. 0 skips the scan.",
+              "format": "int64",
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnostics"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Check the Bluetooth path",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/ha/entities": {
+      "get": {
+        "description": "Lists the number or sensor entities of the saved Home Assistant, sorted by entity id and capped at 1000, for the settings pickers. It always uses the saved URL and token, never ones from the request. Returns 400 `ha_not_configured` without a saved URL and token and 502 `ha_unavailable` when Home Assistant cannot be reached or rejects the token (the message says which). Requires the `admin` scope.",
+        "operationId": "listHAEntities",
+        "parameters": [
+          {
+            "description": "Entity domain to list: number or sensor.",
+            "explode": false,
+            "in": "query",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "description": "Entity domain to list: number or sensor.",
+              "enum": [
+                "number",
+                "sensor"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entities with this device_class attribute, such as power or heart_rate. Empty lists all.",
+            "explode": false,
+            "in": "query",
+            "name": "device_class",
+            "schema": {
+              "description": "Only entities with this device_class attribute, such as power or heart_rate. Empty lists all.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HAEntities"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List Home Assistant entities",
+        "tags": [
+          "settings"
         ]
       }
     },

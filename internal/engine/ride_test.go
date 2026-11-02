@@ -192,12 +192,20 @@ func TestFreeModeLevels(t *testing.T) {
 			}
 		}
 		check(8)
-		do(t, e, "set_level", 10)
-		check(8, 10)
-		do(t, e, "level_delta", -3)
-		check(8, 10, 7)
-		do(t, e, "set_level", 0)
-		check(8, 10, 7, 1)
+		for _, st := range []struct {
+			kind  CmdKind
+			v     int
+			calls []int
+		}{
+			{"set_level", 10, []int{8, 10}},
+			{"level_delta", -3, []int{8, 10, 7}},
+			{"set_level", 0, []int{8, 10, 7, 1}},
+		} {
+			if err := do(t, e, st.kind, st.v); err != nil {
+				t.Fatalf("%s %d: %v", st.kind, st.v, err)
+			}
+			check(st.calls...)
+		}
 	})
 }
 
@@ -209,11 +217,15 @@ func TestLevelDeltaSaturates(t *testing.T) {
 		_, stop := start(t, e)
 		defer stop()
 		riding(t, f, e)
-		do(t, e, "level_delta", 5)
+		if err := do(t, e, "level_delta", 5); err != nil {
+			t.Fatal(err)
+		}
 		if got := e.Snapshot().Level; got != 16 {
 			t.Fatalf("level %d, want 16", got)
 		}
-		do(t, e, "level_delta", -1)
+		if err := do(t, e, "level_delta", -1); err != nil {
+			t.Fatal(err)
+		}
 		if got := e.Snapshot().Level; got != 15 {
 			t.Fatalf("level %d, want 15", got)
 		}
@@ -308,20 +320,28 @@ func TestPauseSendsMinAndFreezes(t *testing.T) {
 		if before.SpeedKmh <= 0 || before.DistanceM <= 0 {
 			t.Fatalf("not moving: %+v", before)
 		}
-		do(t, e, "pause", 0)
+		if err := do(t, e, "pause", 0); err != nil {
+			t.Fatal(err)
+		}
 		if c := f.Calls(); c[len(c)-1] != 1 {
 			t.Fatalf("calls %v, want trailing 1", c)
 		}
 		dist := e.Snapshot().DistanceM
 		for range 5 {
 			f.tel <- bike.Telemetry{Level: 1, Cadence: 80, PowerW: 200}
-			for _, tk := range advance(time.Second, sub) {
+			ts := advance(time.Second, sub)
+			if len(ts) != 1 {
+				t.Fatalf("got %d ticks per second, want 1", len(ts))
+			}
+			for _, tk := range ts {
 				if tk.SpeedKmh != 0 || tk.DistanceM != dist {
 					t.Fatalf("not frozen: %+v (dist %v)", tk, dist)
 				}
 			}
 		}
-		do(t, e, "resume", 0)
+		if err := do(t, e, "resume", 0); err != nil {
+			t.Fatal(err)
+		}
 		if c := f.Calls(); c[len(c)-1] != 8 {
 			t.Fatalf("calls %v, want trailing 8", c)
 		}

@@ -13,7 +13,9 @@ import (
 const (
 	staleAfter   = 3 * time.Second
 	closeTimeout = 3 * time.Second
-	maxTickDT    = 5 * time.Second
+	// maxTickDT caps the time integrated in one tick so a stalled process
+	// (laptop suspend, long GC or SIGSTOP) cannot teleport the rider forward.
+	maxTickDT = 5 * time.Second
 )
 
 type State string
@@ -43,7 +45,8 @@ type Command struct {
 	Value int
 }
 
-// Tick is one published snapshot of the ride.
+// Tick is one published snapshot of the ride. While paused, Level is the
+// floor level the engine sent on pause, not the rider's manual level.
 type Tick struct {
 	At            time.Time `json:"at"`
 	State         State     `json:"state"`

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import { forwardRef, type ButtonHTMLAttributes } from 'react';
 
 type Variant = 'primary' | 'secondary' | 'danger';
 
@@ -9,17 +9,16 @@ const variants: Record<Variant, string> = {
 };
 
 /** Touch-sized button (48 px). Defaults to type="button". */
-export function Button({
-  variant = 'secondary',
-  className = '',
-  type = 'button',
-  ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }>(function Button(
+  { variant = 'secondary', className = '', type = 'button', ...rest },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type={type}
       className={`inline-flex min-h-touch min-w-touch items-center justify-center gap-2 rounded-control px-4 font-medium disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
       {...rest}
     />
   );
-}
+});

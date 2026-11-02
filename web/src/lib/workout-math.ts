@@ -78,8 +78,8 @@ export function blockErrors(t: WorkoutType, bs: Block[]): Record<string, string>
         e[k('ftp_pct')] = '% FTP must be 20 to 200.';
       }
     }
-    if ((b.cadence?.length ?? 0) > 32) e[k('cadence')] = 'At most 32 characters.';
-    if ((b.label?.length ?? 0) > 40) e[k('label')] = 'At most 40 characters.';
+    if ([...(b.cadence ?? '')].length > 32) e[k('cadence')] = 'At most 32 characters.';
+    if ([...(b.label ?? '')].length > 40) e[k('label')] = 'At most 40 characters.';
   });
   if (!e.blocks && totalS(bs) > MAX_TOTAL_S) e.blocks = `Total must not exceed ${mmss(MAX_TOTAL_S)}.`;
   return e;

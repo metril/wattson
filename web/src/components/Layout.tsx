@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Bike, Dumbbell, History, KeyRound, LogOut, Route, Settings, Unlink, Users } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Bike, Dumbbell, Ellipsis, History, KeyRound, LogOut, Route, Settings, Unlink, Users } from 'lucide-react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
@@ -33,9 +33,33 @@ export function Layout() {
 
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
+  // "More" holds the rarely used items so the bottom bar fits a 360 px phone.
+  const [more, setMore] = useState(false);
+  const moreBox = useRef<HTMLDivElement>(null);
+  const moreBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const away = (e: PointerEvent) => {
+      if (!moreBox.current?.contains(e.target as Node)) setMore(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMore(false);
+      moreBtn.current?.focus();
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [more]);
+  useEffect(() => setMore(false), [loc.pathname]);
+
   // Only leave once the server confirmed the session is gone; otherwise the
   // session stays valid and the user must know they are still signed in.
   async function signOut() {
+    setMore(false);
     setSignOutError(null);
     try {
       unwrap(await api.POST('/api/auth/logout'));
@@ -59,7 +83,7 @@ export function Layout() {
     <div className="flex min-h-dvh flex-col md:flex-row">
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-10 flex overflow-x-auto gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:overflow-visible md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
+        className="fixed inset-x-0 bottom-0 z-30 flex gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
       >
         <span className="numeral hidden px-1 pt-2 pb-4 text-center text-lg tracking-wide md:block">
           Wattson
@@ -97,14 +121,41 @@ export function Layout() {
                 Settings
               </NavLink>
             )}
-            <NavLink to="/settings/tokens" className={link}>
-              <KeyRound aria-hidden className="size-6" />
-              Tokens
-            </NavLink>
-            <button type="button" onClick={signOut} className={`${link} md:mt-auto`}>
-              <LogOut aria-hidden className="size-6" />
-              Sign out
-            </button>
+            <div ref={moreBox} className="relative flex flex-1 md:mt-auto md:flex-none">
+              <button
+                ref={moreBtn}
+                type="button"
+                aria-expanded={more}
+                aria-controls="more-menu"
+                onClick={() => setMore((v) => !v)}
+                className={`${link} w-full ${more || loc.pathname === '/settings/tokens' ? 'bg-raised text-chalk' : ''}`}
+              >
+                <Ellipsis aria-hidden className="size-6" />
+                More
+              </button>
+              {more && (
+                <div
+                  id="more-menu"
+                  className="absolute right-0 bottom-full z-20 mb-1 flex w-44 flex-col gap-1 rounded-panel border border-line bg-panel p-1 shadow-lg md:bottom-0 md:left-full md:mb-0 md:ml-2 md:right-auto"
+                >
+                  <NavLink
+                    to="/settings/tokens"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-raised"
+                  >
+                    <KeyRound aria-hidden className="size-5" />
+                    Tokens
+                  </NavLink>
+                  <button
+                    type="button"
+                    onClick={signOut}
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 text-left font-medium text-chalk hover:bg-raised"
+                  >
+                    <LogOut aria-hidden className="size-5" />
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
           </>
         )}
       </nav>

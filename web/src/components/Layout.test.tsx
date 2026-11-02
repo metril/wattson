@@ -36,10 +36,38 @@ async function signOut() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  await userEvent.click(await screen.findByRole('button', { name: 'More' }));
   await userEvent.click(await screen.findByRole('button', { name: /sign out/i }));
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('Layout More menu', () => {
+  it('holds Tokens and Sign out, opens and closes with the keyboard', async () => {
+    stub(() => new Response(null, { status: 204 }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/riders']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const more = await screen.findByRole('button', { name: 'More' });
+    expect(screen.queryByRole('link', { name: 'Tokens' })).not.toBeInTheDocument();
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Tokens' })).toHaveAttribute('href', '/settings/tokens');
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('link', { name: 'Tokens' })).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+    await userEvent.click(more);
+    await userEvent.click(document.body);
+    expect(screen.queryByRole('link', { name: 'Tokens' })).not.toBeInTheDocument();
+  });
+});
 
 describe('Layout sign out', () => {
   it('navigates to /login after a successful logout', async () => {

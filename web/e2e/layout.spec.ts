@@ -48,6 +48,8 @@ for (const size of SIZES) {
       }
 
       await page.goto('/');
+      await page.getByRole('button', { name: 'More' }).click();
+      await expectGoodLayout(page, 'more menu');
       await page.getByRole('button', { name: 'Sign out' }).click();
       await expect(page).toHaveURL(/\/login/);
       await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();

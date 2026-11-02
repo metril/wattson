@@ -41,6 +41,41 @@ describe('BlockEditor', () => {
     expect(last(log)).toEqual([{ duration_s: 90, level: 9 }]);
   });
 
+  it('keeps focus on the moved block across repeated Move down presses', async () => {
+    const log: Block[][] = [];
+    const bs: Block[] = [30, 60, 90].map((d) => ({ duration_s: d, level: 5 }));
+    render(<Harness type="interval" blocks={bs} log={log} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Move down block 1' }));
+    expect(screen.getByRole('button', { name: 'Move down block 2' })).toHaveFocus();
+    expect(screen.getByLabelText('Block 2 duration')).toHaveValue('0:30');
+    expect(screen.getByText('Block 1 moved to position 2')).toBeInTheDocument();
+    await userEvent.keyboard('{Enter}');
+    expect(last(log).map((b) => b.duration_s)).toEqual([60, 90, 30]);
+    // At the end the Move down button disables, so focus moves to the sibling Move up.
+    expect(screen.getByRole('button', { name: 'Move up block 3' })).toHaveFocus();
+    expect(screen.getByText('Block 2 moved to position 3')).toBeInTheDocument();
+    await userEvent.keyboard('{Enter}');
+    expect(last(log).map((b) => b.duration_s)).toEqual([60, 30, 90]);
+    expect(screen.getByRole('button', { name: 'Move up block 2' })).toHaveFocus();
+  });
+
+  it('moves typed text and the remembered kind with the block', async () => {
+    const log: Block[][] = [];
+    render(<Harness type="erg" blocks={[{ duration_s: 60, power_w: 100 }, { duration_s: 60, ftp_pct: 80 }]} log={log} />);
+    await userEvent.clear(screen.getByLabelText('Block 2 % FTP value'));
+    await userEvent.click(screen.getByRole('button', { name: 'Move up block 2' }));
+    expect(screen.getByLabelText('Block 1 target')).toHaveValue('ftp_pct');
+    expect(screen.getByLabelText('Block 2 target')).toHaveValue('power_w');
+  });
+
+  it('focuses the next block\'s Remove after removing one', async () => {
+    const bs: Block[] = [30, 60, 90].map((d) => ({ duration_s: d, level: 5 }));
+    render(<Harness type="interval" blocks={bs} log={[]} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove block 2' }));
+    expect(screen.getByRole('button', { name: 'Remove block 2' })).toHaveFocus();
+    expect(screen.getByLabelText('Block 2 duration')).toHaveValue('1:30');
+  });
+
   it('disables moves at the ends and Remove on the last block', () => {
     render(<Harness type="interval" blocks={[{ duration_s: 30, level: 5 }]} log={[]} />);
     expect(screen.getByRole('button', { name: 'Move up block 1' })).toBeDisabled();
@@ -73,7 +108,7 @@ describe('BlockEditor', () => {
     const log: Block[][] = [];
     render(<Harness type="erg" blocks={[{ duration_s: 60, power_w: 200 }]} log={log} />);
     await userEvent.selectOptions(screen.getByLabelText('Block 1 target'), '% FTP');
-    const v = screen.getByLabelText('Block 1 % ftp value');
+    const v = screen.getByLabelText('Block 1 % FTP value');
     await userEvent.clear(v);
     await userEvent.type(v, '80');
     expect(last(log)).toEqual([{ duration_s: 60, ftp_pct: 80 }]);
@@ -83,7 +118,7 @@ describe('BlockEditor', () => {
   it('keeps the chosen kind while the number is cleared', async () => {
     const log: Block[][] = [];
     render(<Harness type="erg" blocks={[{ duration_s: 60, ftp_pct: 80 }]} log={log} />);
-    await userEvent.clear(screen.getByLabelText('Block 1 % ftp value'));
+    await userEvent.clear(screen.getByLabelText('Block 1 % FTP value'));
     expect(last(log)).toEqual([{ duration_s: 60 }]);
     expect(screen.getByLabelText('Block 1 target')).toHaveValue('ftp_pct');
   });

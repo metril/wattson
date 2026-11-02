@@ -83,6 +83,10 @@ describe('workout-math', () => {
       const many = Array.from({ length: 4 }, () => ({ duration_s: 7200, level: 3 }));
       expect(blockErrors('interval', many)).toHaveProperty('blocks');
     });
+    it('counts cadence and label by characters, not UTF-16 units', () => {
+      const ok = blockErrors('interval', [{ duration_s: 60, level: 3, cadence: '😀'.repeat(32), label: '😀'.repeat(40) }]);
+      expect(ok).toEqual({});
+    });
     it('flags long cadence and label', () => {
       const e = blockErrors('interval', [{ duration_s: 60, level: 3, cadence: 'x'.repeat(33), label: 'y'.repeat(41) }]);
       expect(e).toHaveProperty(['blocks[0].cadence']);

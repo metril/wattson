@@ -106,7 +106,7 @@ describe('WorkoutEditPage', () => {
     await userEvent.clear(dur);
     await userEvent.type(dur, '2:00');
     await userEvent.selectOptions(screen.getByLabelText('Block 1 target'), 'Level');
-    const v = screen.getByLabelText('Block 1 level value');
+    const v = screen.getByLabelText('Block 1 Level value');
     await userEvent.clear(v);
     await userEvent.type(v, '6');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -121,7 +121,7 @@ describe('WorkoutEditPage', () => {
     await userEvent.type(await screen.findByLabelText('Name'), 'Mine');
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save).toBeEnabled();
-    await userEvent.clear(screen.getByLabelText('Block 1 offset value'));
+    await userEvent.clear(screen.getByLabelText('Block 1 Offset value'));
     expect(save).toBeDisabled();
     expect(screen.getByText('Set a level or an offset.')).toBeInTheDocument();
   });
@@ -198,6 +198,34 @@ describe('WorkoutEditPage', () => {
     expect(await screen.findByText('100 W', { selector: 'title' })).toBeInTheDocument();
     await userEvent.selectOptions(await screen.findByLabelText('Preview for rider'), 'Bo');
     expect(await screen.findByText('150 W', { selector: 'title' })).toBeInTheDocument();
+  });
+
+  it('warns when a % FTP block clamps to the 50 W minimum, even with a non-zero FTP', async () => {
+    base({
+      'GET /api/riders': [200, [rider({ ftp_w: 100 })]],
+      'GET /api/workouts/7': [200, workout({ type: 'erg', blocks: [{ duration_s: 60, ftp_pct: 30 }] })],
+    });
+    renderWithClient(ui, '/workouts/7');
+    expect(await screen.findByText(/raised to 50 W/)).toBeInTheDocument();
+  });
+
+  it('does not warn when every % FTP block is in range', async () => {
+    base({ 'GET /api/workouts/7': [200, workout({ type: 'erg', blocks: [{ duration_s: 60, ftp_pct: 80 }] })] });
+    renderWithClient(ui, '/workouts/7');
+    await screen.findByText('160 W', { selector: 'title' });
+    expect(screen.queryByText(/raised to 50 W/)).not.toBeInTheDocument();
+  });
+
+  it('does not flash the read-only notice before the session has loaded', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    base({ 'GET /api/auth/me': async () => (await gate, me()) });
+    renderWithClient(ui, '/workouts/7');
+    await screen.findByLabelText('Block 1 duration');
+    expect(screen.queryByText(/Only the owner or an admin/)).not.toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    expect(screen.queryByText(/Only the owner or an admin/)).not.toBeInTheDocument();
   });
 
   it('shows a gone message for a missing workout', async () => {

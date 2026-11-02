@@ -7,7 +7,7 @@ import { useMe } from '@/lib/auth';
 import { errMessage } from '@/lib/errors';
 import { getSelectedRiderId } from '@/lib/rider';
 import type { components } from '@/lib/openapi';
-import { blockErrors, defaultBlock, mmss, totalS, type Block, type WorkoutType } from '@/lib/workout-math';
+import { blockErrors, defaultBlock, MAX_TARGET_W, MIN_TARGET_W, mmss, totalS, type Block, type WorkoutType } from '@/lib/workout-math';
 import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -38,6 +38,11 @@ function Gone() {
   );
 }
 
+const isClamped = (pct: number, ftp: number) => {
+  const w = Math.round((pct * ftp) / 100);
+  return w < MIN_TARGET_W || w > MAX_TARGET_W;
+};
+
 function Form({ workout }: { workout?: Workout }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -62,7 +67,8 @@ function Form({ workout }: { workout?: Workout }) {
   const errors = useMemo(() => blockErrors(type, blocks), [type, blocks]);
   const invalid = Object.keys(errors).length > 0;
   const canEdit = !workout || (!!me.data && (me.data.user.is_admin || me.data.user.id === workout.owner_id));
-  const noFtp = type === 'erg' && picked?.ftp_w === 0 && blocks.some((b) => b.ftp_pct !== undefined);
+  // A % FTP block outside 50..1000 W is clamped when ridden, whatever the reason (no FTP, low FTP, huge FTP).
+  const clamped = type === 'erg' ? blocks.filter((b) => b.ftp_pct !== undefined && isClamped(b.ftp_pct, rider.ftp_w)) : [];
 
   const save = useMutation({
     mutationFn: async () => {
@@ -115,7 +121,7 @@ function Form({ workout }: { workout?: Workout }) {
         </Link>
       </div>
 
-      {!canEdit && <Banner tone="info">Only the owner or an admin can change this workout. You can still ride it.</Banner>}
+      {me.data && !canEdit && <Banner tone="info">Only the owner or an admin can change this workout. You can still ride it.</Banner>}
 
       <Card className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -169,7 +175,16 @@ function Form({ workout }: { workout?: Workout }) {
             ))}
           </Select>
         )}
-        {noFtp && <Banner tone="warn">This rider has no FTP set, so % FTP blocks resolve to the 50 W minimum. Set FTP on the Riders page.</Banner>}
+        {riders.isSuccess && list.length === 0 && (
+          <Banner tone="info">No rider yet, so the preview uses an example rider (FTP {DEFAULT_RIDER.ftp_w} W).</Banner>
+        )}
+        {clamped.length > 0 && (
+          <Banner tone="warn">
+            {clamped.length === 1 ? '1 % FTP block falls' : `${clamped.length} % FTP blocks fall`} outside {MIN_TARGET_W} to {MAX_TARGET_W} W
+            at {rider.ftp_w > 0 ? `an FTP of ${rider.ftp_w} W` : 'no FTP'} and would be raised to 50 W or capped at {MAX_TARGET_W} W. Check FTP on the Riders
+            page, or use watts.
+          </Banner>
+        )}
         <WorkoutChart type={type} blocks={blocks} rider={rider} />
       </Card>
 

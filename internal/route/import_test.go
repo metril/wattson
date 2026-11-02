@@ -8,8 +8,10 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func readFixture(t testing.TB, name string) []byte {
@@ -212,6 +214,71 @@ func TestParseBounds(t *testing.T) {
 			t.Fatalf("pts = %+v, err = %v", pts, err)
 		}
 	})
+}
+
+// Not parallel: it reads process-wide allocation counters.
+func TestParseStopsEarlyAndBoundsAllocation(t *testing.T) {
+	const filePts = 200_000
+	gpxDoc := `<gpx version="1.1"><trk><trkseg>` + strings.Repeat(`<trkpt lat="1" lon="2"><ele>3</ele></trkpt>`, filePts) + `</trkseg></trk></gpx>`
+	tcxDoc := `<TrainingCenterDatabase><Courses><Course><Track>` +
+		strings.Repeat(`<Trackpoint><Position><LatitudeDegrees>1</LatitudeDegrees><LongitudeDegrees>2</LongitudeDegrees></Position></Trackpoint>`, filePts) +
+		`</Track></Course></Courses></TrainingCenterDatabase>`
+	for f, doc := range map[Format]string{FormatGPX: gpxDoc, FormatTCX: tcxDoc} {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		_, _, err := parse(f, strings.NewReader(doc), limits{points: 1000, bytes: MaxFileBytes})
+		runtime.ReadMemStats(&after)
+		if !errors.Is(err, ErrTooManyPoints) {
+			t.Fatalf("%s: err = %v", f, err)
+		}
+		if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 8<<20 {
+			t.Errorf("%s: allocated %d MiB for a %d-point file with a 1000-point limit", f, alloc>>20, filePts)
+		}
+	}
+}
+
+func TestParseDeepNestingIsRejectedQuickly(t *testing.T) {
+	t.Parallel()
+	deep := strings.Repeat("<a>", 2<<20) // ~6 MiB
+	for f, doc := range map[Format]string{
+		FormatGPX: `<gpx>` + deep,
+		FormatTCX: `<TrainingCenterDatabase>` + deep,
+	} {
+		start := time.Now()
+		_, _, err := Parse(f, strings.NewReader(doc))
+		if !errors.Is(err, errTooDeep) {
+			t.Errorf("%s: err = %v, want errTooDeep", f, err)
+		}
+		if el := time.Since(start); el > 2*time.Second {
+			t.Errorf("%s: took %v", f, el)
+		}
+	}
+	// 60 levels of unknown wrappers are still fine.
+	g := `<gpx>` + strings.Repeat("<x>", 60) + `<trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk>` + strings.Repeat("</x>", 60) + `</gpx>`
+	if pts, _, err := ParseGPX(strings.NewReader(g)); err != nil || len(pts) != 1 {
+		t.Errorf("moderate nesting: %d, %v", len(pts), err)
+	}
+}
+
+func TestParseLatin1AndNames(t *testing.T) {
+	t.Parallel()
+	g := "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><gpx version=\"1.1\"><metadata><name>Meta</name></metadata>" +
+		"<wpt lat=\"5\" lon=\"5\"><name>wpt</name></wpt><trk><name>Caf\xe9</name><trkseg><trkpt lat=\"1\" lon=\"2\"/></trkseg></trk></gpx>"
+	pts, name, err := ParseGPX(strings.NewReader(g))
+	if err != nil || len(pts) != 1 || name != "Café" {
+		t.Fatalf("pts=%d name=%q err=%v", len(pts), name, err)
+	}
+	_, _, err = ParseGPX(strings.NewReader(`<?xml version="1.0" encoding="KOI8-X"?><gpx/>`))
+	if err == nil {
+		t.Error("unknown charset accepted")
+	}
+	// GPX 1.0 root name; rtept ignored when a track exists.
+	g = `<gpx version="1.0"><name>Root</name><rte><rtept lat="9" lon="9"/></rte><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>`
+	pts, name, err = ParseGPX(strings.NewReader(g))
+	if err != nil || len(pts) != 1 || pts[0].Lat != 1 || name != "Root" {
+		t.Fatalf("1.0: %+v %q %v", pts, name, err)
+	}
 }
 
 func FuzzParse(f *testing.F) {

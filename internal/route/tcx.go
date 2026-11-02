@@ -5,16 +5,16 @@ import (
 	"errors"
 	"io"
 	"math"
-	"strings"
+	"strconv"
 )
 
-type tcxTrackpoint struct {
-	Position *struct {
-		Lat *float64 `xml:"LatitudeDegrees"`
-		Lon *float64 `xml:"LongitudeDegrees"`
-	} `xml:"Position"`
-	Altitude *float64 `xml:"AltitudeMeters"`
-}
+const (
+	tcxCapLat = iota + 1
+	tcxCapLon
+	tcxCapAlt
+	tcxCapCourseName
+	tcxCapNotes
+)
 
 // ParseTCX streams a TCX file: Courses/Course/Track/Trackpoint, else
 // Activities/Activity/Lap/Track/Trackpoint. Points without Position are skipped.
@@ -22,21 +22,21 @@ type tcxTrackpoint struct {
 func ParseTCX(r io.Reader) ([]Point, string, error) { return parseTCX(r, MaxRawPoints) }
 
 func parseTCX(r io.Reader, maxPts int) ([]Point, string, error) {
-	dec := xml.NewDecoder(r)
+	dec := newXMLDecoder(r)
 	var (
 		course, activity []Point
 		courseName       string
 		activityNotes    string
-		stack            []string // local names of open elements
+		stack            elemStack
+		capt             textCapture
+		inCourse         int // open Course / Activity elements
+		inActivity       int
+		inPt             bool
+		ptDepth          int
+		ptInCourse       bool
+		lat, lon, alt    float64
+		gotLat, gotLon   bool
 	)
-	inside := func(n string) bool {
-		for _, s := range stack {
-			if s == n {
-				return true
-			}
-		}
-		return false
-	}
 	for {
 		tok, err := dec.Token()
 		if errors.Is(err, io.EOF) {
@@ -47,53 +47,88 @@ func parseTCX(r io.Reader, maxPts int) ([]Point, string, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
+			if err := stack.push(t.Name.Local); err != nil {
+				return nil, "", err
+			}
+			parent := stack.parent()
 			switch t.Name.Local {
+			case "Course":
+				inCourse++
+			case "Activity":
+				inActivity++
 			case "Trackpoint":
-				var tp tcxTrackpoint
-				if err := dec.DecodeElement(&tp, &t); err != nil {
-					return nil, "", err
+				if !inPt && parent == "Track" && (inCourse > 0 || inActivity > 0) {
+					inPt, ptDepth, ptInCourse = true, stack.depth(), inCourse > 0
+					alt, gotLat, gotLon = math.NaN(), false, false
 				}
-				if tp.Position == nil || tp.Position.Lat == nil || tp.Position.Lon == nil {
-					continue
+			case "LatitudeDegrees":
+				if inPt && parent == "Position" && stack.depth() == ptDepth+2 {
+					capt.start(tcxCapLat, stack.depth())
 				}
-				ele := math.NaN()
-				if tp.Altitude != nil {
-					ele = *tp.Altitude
+			case "LongitudeDegrees":
+				if inPt && parent == "Position" && stack.depth() == ptDepth+2 {
+					capt.start(tcxCapLon, stack.depth())
 				}
-				p, ok := newPoint(*tp.Position.Lat, *tp.Position.Lon, ele)
-				if !ok {
-					continue
+			case "AltitudeMeters":
+				if inPt && stack.depth() == ptDepth+1 {
+					capt.start(tcxCapAlt, stack.depth())
 				}
-				if len(course)+len(activity) >= maxPts {
-					return nil, "", ErrTooManyPoints
+			case "Name":
+				if parent == "Course" && courseName == "" {
+					capt.start(tcxCapCourseName, stack.depth())
 				}
-				if inside("Course") {
-					course = append(course, p)
-				} else if inside("Activity") {
-					activity = append(activity, p)
-				}
-				continue // DecodeElement consumed the end element
-			case "Name", "Notes":
-				if n := len(stack); n > 0 && courseName == "" && t.Name.Local == "Name" && stack[n-1] == "Course" ||
-					n > 0 && activityNotes == "" && t.Name.Local == "Notes" && stack[n-1] == "Activity" {
-					var s string
-					if err := dec.DecodeElement(&s, &t); err != nil {
-						return nil, "", err
-					}
-					s = strings.TrimSpace(s)
-					if t.Name.Local == "Name" {
-						courseName = s
-					} else {
-						activityNotes = s
-					}
-					continue
+			case "Notes":
+				if parent == "Activity" && activityNotes == "" {
+					capt.start(tcxCapNotes, stack.depth())
 				}
 			}
-			stack = append(stack, t.Name.Local)
+		case xml.CharData:
+			capt.add(stack.depth(), t)
 		case xml.EndElement:
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
+			kind, text := capt.finish(stack.depth())
+			switch kind {
+			case tcxCapLat, tcxCapLon, tcxCapAlt:
+				v, err := strconv.ParseFloat(text, 64)
+				if err != nil {
+					break
+				}
+				switch kind {
+				case tcxCapLat:
+					lat, gotLat = v, true
+				case tcxCapLon:
+					lon, gotLon = v, true
+				default:
+					alt = v
+				}
+			case tcxCapCourseName:
+				courseName = text
+			case tcxCapNotes:
+				activityNotes = text
 			}
+			switch t.Name.Local {
+			case "Course":
+				inCourse--
+			case "Activity":
+				inActivity--
+			case "Trackpoint":
+				if inPt && stack.depth() == ptDepth {
+					inPt = false
+					if !gotLat || !gotLon {
+						break
+					}
+					if p, ok := newPoint(lat, lon, alt); ok {
+						if len(course)+len(activity) >= maxPts {
+							return nil, "", ErrTooManyPoints
+						}
+						if ptInCourse {
+							course = append(course, p)
+						} else {
+							activity = append(activity, p)
+						}
+					}
+				}
+			}
+			stack.pop()
 		}
 	}
 	if len(course) > 0 {

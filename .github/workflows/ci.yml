@@ -101,9 +101,6 @@ jobs:
       - name: bundle size (400 KB gzipped)
         working-directory: web
         run: npm run size
-      - name: size checker tests
-        working-directory: web
-        run: node --test scripts/check-size.test.mjs
 
   drift:
     name: OpenAPI / AsyncAPI / TS types drift

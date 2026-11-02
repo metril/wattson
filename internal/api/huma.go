@@ -84,6 +84,26 @@ func withLogger(l *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+type humaCtxKey struct{}
+
+// httpRequest returns the underlying request of a handler context.
+func httpRequest(ctx context.Context) *http.Request {
+	hc, ok := ctx.Value(humaCtxKey{}).(huma.Context)
+	if !ok {
+		return nil
+	}
+	r, _ := humachi.Unwrap(hc)
+	return r
+}
+
+// setHeader sets a response header from a handler, including one that
+// returns an error (huma writes the status after the handler returns).
+func setHeader(ctx context.Context, k, v string) {
+	if hc, ok := ctx.Value(humaCtxKey{}).(huma.Context); ok {
+		hc.SetHeader(k, v)
+	}
+}
+
 func loggerFrom(ctx context.Context) *slog.Logger {
 	if l, ok := ctx.Value(loggerKey{}).(*slog.Logger); ok {
 		return l
@@ -141,7 +161,7 @@ func register[I, O any](api huma.API, rt route, h func(context.Context, *I) (*O,
 			writeRaw(ctx, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json")
 			return
 		}
-		next(ctx)
+		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), humaCtxKey{}, ctx)))
 	}}
 	huma.Register(api, op, func(ctx context.Context, in *I) (*O, error) {
 		out, err := h(ctx, in)

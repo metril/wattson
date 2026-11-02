@@ -148,7 +148,9 @@ func addDocsOnly(api huma.API) {
 // registerAPI registers every typed operation. Later tasks add their
 // register* calls here.
 func (d Deps) registerAPI(api huma.API) {
-	_ = api
+	d.registerSetup(api)
+	d.registerAuthn(api)
+	d.registerUsers(api)
 }
 
 // finalizeSpec removes the responses huma adds on its own that this API

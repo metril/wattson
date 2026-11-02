@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Machine-readable error code",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable explanation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody",
+            "description": "Error details."
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
       "HealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -16,6 +47,232 @@
         "required": [
           "status",
           "version"
+        ],
+        "type": "object"
+      },
+      "LoginInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "description": "Password.",
+            "type": "string"
+          },
+          "username": {
+            "description": "Login name (case-insensitive).",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "MeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "scopes": {
+            "description": "Scopes held by this credential: read, control, admin.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut",
+            "description": "The authenticated user."
+          },
+          "via": {
+            "description": "How the caller authenticated.",
+            "enum": [
+              "session",
+              "token"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "scopes",
+          "via"
+        ],
+        "type": "object"
+      },
+      "PasswordInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "description": "The current password.",
+            "type": "string"
+          },
+          "new_password": {
+            "description": "The new password, 10 to 256 bytes.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "type": "object"
+      },
+      "PatchUserInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "disabled": {
+            "description": "Disable or re-enable the account. Disabling deletes the user's sessions.",
+            "type": "boolean"
+          },
+          "is_admin": {
+            "description": "Grant or revoke the admin scope.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderButton": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "description": "Text for the sign-in button.",
+            "type": "string"
+          },
+          "login_url": {
+            "description": "Path that starts the sign-in redirect.",
+            "type": "string"
+          },
+          "slug": {
+            "description": "Provider slug.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "display_name",
+          "login_url"
+        ],
+        "type": "object"
+      },
+      "ProvidersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "local_login": {
+            "description": "Whether username and password sign-in is enabled.",
+            "type": "boolean"
+          },
+          "needs_setup": {
+            "description": "True while first-run setup is still needed.",
+            "type": "boolean"
+          },
+          "providers": {
+            "description": "Configured OIDC providers.",
+            "items": {
+              "$ref": "#/components/schemas/ProviderButton"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "needs_setup",
+          "local_login",
+          "providers"
+        ],
+        "type": "object"
+      },
+      "SetupInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "description": "Name shown in the UI. Defaults to the username.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "password": {
+            "description": "Password of the first admin, 10 to 256 bytes.",
+            "type": "string"
+          },
+          "public_url": {
+            "description": "External base URL of this server (http or https, no path), used for OIDC redirects, CSRF checks and the Secure cookie flag.",
+            "type": "string"
+          },
+          "username": {
+            "description": "Login name of the first admin: 3 to 64 letters, digits, dot, underscore or hyphen.",
+            "pattern": "^[A-Za-z0-9._-]{3,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "SetupStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "needs_setup": {
+            "description": "True while no user exists and the setup wizard must run.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "needs_setup"
+        ],
+        "type": "object"
+      },
+      "UserOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "description": "Creation time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "disabled": {
+            "description": "Whether sign-in and every credential of the user is refused.",
+            "type": "boolean"
+          },
+          "display_name": {
+            "description": "Name shown in the UI.",
+            "type": "string"
+          },
+          "email": {
+            "description": "Email address, empty when unknown.",
+            "type": "string"
+          },
+          "id": {
+            "description": "User ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "is_admin": {
+            "description": "Whether the user holds the admin scope.",
+            "type": "boolean"
+          },
+          "is_bootstrap": {
+            "description": "Whether this is the first-run admin, who can never be demoted or disabled.",
+            "type": "boolean"
+          },
+          "oidc": {
+            "description": "Whether the account is linked to an OIDC identity.",
+            "type": "boolean"
+          },
+          "username": {
+            "description": "Unique login name (case-insensitive).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "email",
+          "is_admin",
+          "is_bootstrap",
+          "disabled",
+          "oidc",
+          "created_at"
         ],
         "type": "object"
       }
@@ -41,6 +298,598 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/auth/login": {
+      "post": {
+        "description": "Verifies a local username and password and sets the session cookie. Attempts are rate limited per remote IP address and username (10 failures in 10 minutes) and per remote IP (50 failures); a refused attempt returns 429 `rate_limited` with a `Retry-After` header in seconds. Unknown user, wrong password, disabled user and password-less (OIDC) users all return the same 401 `invalid_credentials`. Returns 403 `local_login_disabled` when password sign-in is turned off and the user is not the bootstrap admin. No authentication required.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "description": "Session cookie.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [],
+        "summary": "Sign in with a password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Deletes the current session, if any, and clears the session cookie. No authentication required.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "description": "Session cookie.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Sign out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "description": "Returns the authenticated user, the scopes of the credential in use, and whether it is a session or a token. Requires the `read` scope.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Current identity",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/password": {
+      "post": {
+        "description": "Changes the signed-in user's password. Session only: an API token gets 403 `session_required`. A wrong current password returns 400 `invalid_current_password`. All of the user's sessions are deleted and a fresh session cookie is set. Requires the `read` scope.",
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "description": "Session cookie.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change own password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/providers": {
+      "get": {
+        "description": "Lists the ways to sign in: whether setup is pending, whether password sign-in is enabled, and the OIDC provider buttons. No authentication required.",
+        "operationId": "listAuthProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvidersOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "Sign-in options",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/setup": {
+      "post": {
+        "description": "Creates the bootstrap admin, optionally saves the public URL, and signs the new admin in with a session cookie. Fails with 409 `already_setup` once any user exists. No authentication required.",
+        "operationId": "runSetup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Created",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "description": "Session cookie for the new admin.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [],
+        "summary": "Create the first admin",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/setup/status": {
+      "get": {
+        "description": "Reports whether first-run setup is still needed. No authentication required.",
+        "operationId": "getSetupStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "Setup status",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/users": {
+      "get": {
+        "description": "Returns every user account, ordered by ID. Requires the `admin` scope.",
+        "operationId": "listUsers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserOut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List users",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/users/{id}": {
+      "patch": {
+        "description": "Changes a user's admin or disabled flag. Disabling a user deletes all of that user's sessions. The bootstrap admin cannot be demoted or disabled (409 `bootstrap_protected`), and the last enabled admin cannot be removed (409 `last_admin`). Requires the `admin` scope.",
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "description": "User ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "User ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchUserInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "description": "Returns 200 while the server is running. No authentication required.",

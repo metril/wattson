@@ -106,7 +106,6 @@ Good to know:
 
 - **Privacy: the token stays on the server.** Your Wattson server talks to Mapillary and passes the pictures on; browsers and TVs never see the token or contact Mapillary. Mapillary learns the route's area and your server's address, not who is riding.
 - **Panoramas show as flat images.** A 360 degree photo is shown as the plain picture it was stored as, not as a look-around view.
-- Photos are licensed CC BY-SA 4.0 and the photographer and Mapillary are credited on screen, as the licence requires.
 - Roads without coverage say "No street photos along this route", and a gap in the middle of a route says "No street photo for this stretch". If Mapillary is unreachable, the panel says "Street photos unavailable right now" and keeps the last photo.
 - Without a token the option explains how to add one.
 

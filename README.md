@@ -54,7 +54,7 @@ On a route ride the **View** button switches between the 2D map, a 3D terrain fl
 
 TV remote: Up and Down change the level while focus is on the page or on Start, Pause, Resume or Stop (on any other control they move the focus), Left and Right move the focus, Enter presses the focused control (Start, Pause, Resume; Stop needs it twice) and Back or Escape closes menus. Back on the ride screen with no menu open leaves the screen; the ride itself keeps running on the server, so open the ride screen again to carry on. Every ride action is reachable this way, so a paired TV needs no keyboard (Settings, Tokens, Pair a display).
 
-**Street photos** need a Mapillary client token (Settings, Integrations, Street imagery). The server fetches the photos; the token never reaches a browser. Photos are CC BY-SA 4.0 and credited on screen; panoramas show as flat images.
+**Street photos** need a Mapillary client token (Settings, Integrations, Street imagery). The server fetches the photos; the token never reaches a browser. Panoramas show as flat images.
 
 **Offline map cache**: the browser saves the map tiles along a route you pick, so the ride keeps its map if the internet drops. This needs HTTPS or localhost; over plain `http://` on a LAN address there is no cache and maps still work online.
 

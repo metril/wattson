@@ -5,32 +5,16 @@ import type { TickStore } from '@/lib/tick-store';
 
 const FADE_MS = 600;
 const MAX_URLS = 6;
-const DEFAULT_CREATOR = 'Mapillary contributors';
-
-type Loaded = { url: string; creator: string };
-type Shown = { id: string; creator: string; capturedAt: number };
-
-function creatorOf(header: string | null): string {
-  if (!header) return DEFAULT_CREATOR;
-  try {
-    return decodeURIComponent(header) || DEFAULT_CREATOR;
-  } catch {
-    return header;
-  }
-}
+type Loaded = { url: string };
+type Shown = { id: string };
 
 async function fetchPhoto(id: string, onUnauthorized: () => void): Promise<Loaded> {
   const tok = getKioskToken();
   const res = await fetch(`/api/mapillary/images/${encodeURIComponent(id)}`, tok ? { headers: { Authorization: `Bearer ${tok}` } } : undefined);
   if (res.status === 401) onUnauthorized(); // revoked kiosk token or expired session
   if (!res.ok) throw new Error(`photo ${res.status}`);
-  const creator = creatorOf(res.headers.get('X-Photo-Creator'));
   const blob = await res.blob();
-  return { url: URL.createObjectURL(blob), creator };
-}
-
-function month(ms: number): string {
-  return new Date(ms).toLocaleDateString('en', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  return { url: URL.createObjectURL(blob) };
 }
 
 /**
@@ -121,7 +105,7 @@ export default function PhotoView({
     const present = async (p: Photo, l: Loaded, my: number) => {
       finish?.();
       if (front >= 0 && ids[front] === p.id) {
-        setShown((s) => (s && s.id === p.id ? s : { id: p.id, creator: l.creator, capturedAt: p.captured_at }));
+        setShown((s) => (s && s.id === p.id ? s : { id: p.id }));
         return;
       }
       const back = front === 0 ? 1 : 0;
@@ -138,7 +122,7 @@ export default function PhotoView({
       img.style.zIndex = '2';
       if (front >= 0) layers[front].style.zIndex = '1';
       img.style.opacity = '1';
-      setShown({ id: p.id, creator: l.creator, capturedAt: p.captured_at });
+      setShown({ id: p.id });
       const old = front;
       front = back;
       finish = () => {
@@ -212,31 +196,6 @@ export default function PhotoView({
       {failed && !none && (
         <p role="status" className="absolute left-2 top-2 z-10 rounded-control bg-ground/80 px-3 py-1 text-sm text-chalk">
           Street photos unavailable right now
-        </p>
-      )}
-      {shown && !none && (
-        // The licence needs a visible credit, so a small inset keeps this one-line form.
-        <p
-          data-testid="photo-credit-short"
-          className="photo-credit-short absolute bottom-1 left-1 z-10 hidden max-w-[calc(100%-0.5rem)] truncate rounded-control bg-ground/70 px-1.5 text-xs text-chalk"
-        >
-          © {shown.creator} · Mapillary
-        </p>
-      )}
-      {shown && !none && (
-        <p data-testid="photo-credit" className="photo-credit absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center rounded-control bg-ground/80 px-3 text-sm text-chalk">
-          <span>
-            Photo © {shown.creator} on{' '}
-            <a
-              href={`https://www.mapillary.com/app/?pKey=${encodeURIComponent(shown.id)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-touch min-w-touch items-center underline"
-            >
-              Mapillary
-            </a>
-            , CC BY-SA 4.0 · {month(shown.capturedAt)}
-          </span>
         </p>
       )}
     </div>

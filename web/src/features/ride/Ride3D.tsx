@@ -94,7 +94,7 @@ export default function Ride3D(p: {
           interactive: false,
           fadeDuration: 0,
           canvasContextAttributes: { antialias: false },
-          attributionControl: { compact: true },
+          attributionControl: false,
         });
       } catch {
         fail('webgl');
@@ -128,7 +128,6 @@ export default function Ride3D(p: {
           encoding: 'terrarium',
           tileSize: 256,
           maxzoom: t === 'lite' ? 11 : DEM_MAX_ZOOM,
-          attribution: 'Terrain: Mapzen, AWS Open Data',
         });
         map.setTerrain({ source: 'terrain', exaggeration: cb.current.exaggeration });
         map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: line } });

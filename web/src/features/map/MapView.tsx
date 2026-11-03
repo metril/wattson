@@ -62,7 +62,7 @@ export default function MapView(p: {
           style: STYLE_URL,
           center: cb.current.center ?? [0, 30],
           zoom: cb.current.zoom ?? 1.5,
-          attributionControl: { compact: true },
+          attributionControl: false,
         });
       } catch {
         if (!dead) setFailed(true); // no WebGL

@@ -197,7 +197,7 @@ describe('IntegrationsForm Mapillary', () => {
     renderWithClient(<IntegrationsForm />);
     await screen.findByLabelText('Mapillary access token');
     expect(
-      screen.getByText(/Street photos are fetched by the Wattson server; the token never reaches viewers' browsers\. Photos are CC BY-SA 4\.0 and credited on screen\./),
+      screen.getByText(/Street photos are fetched by the Wattson server; the token never reaches viewers' browsers\./),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /test mapillary/i }));
     expect(await screen.findByRole('status')).toHaveTextContent('Mapillary token accepted');

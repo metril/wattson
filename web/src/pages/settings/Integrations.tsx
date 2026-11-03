@@ -224,7 +224,7 @@ function Body({ s }: { s: SettingsOut }) {
           isSet={s.mapillary.token_set}
           onChange={f.secret('mapillary.token')}
           error={f.fieldError('mapillary.token')}
-          hint="Street photos are fetched by the Wattson server; the token never reaches viewers' browsers. Photos are CC BY-SA 4.0 and credited on screen."
+          hint="Street photos are fetched by the Wattson server; the token never reaches viewers' browsers."
         />
         <TestButton
           label="Test Mapillary"

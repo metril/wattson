@@ -58,30 +58,14 @@ function setup(reducedMotion = false, list = photos) {
 }
 
 describe('PhotoView', () => {
-  it('shows the photo for the current distance, with the kiosk bearer and attribution', async () => {
+  it('shows the photo for the current distance, with the kiosk bearer', async () => {
     setKioskToken('wat_k');
     const { store } = setup();
     await at(store, 22);
     await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1030'));
     const f = fetches.find((x) => x.url.endsWith('/api/mapillary/images/1030'))!;
     expect(f.headers.get('Authorization')).toBe('Bearer wat_k');
-    expect(screen.getByText(/Photo © ana on/)).toHaveTextContent('Photo © ana on Mapillary, CC BY-SA 4.0 · Mar 2024');
-    expect(screen.getByRole('link', { name: 'Mapillary' })).toHaveAttribute('href', 'https://www.mapillary.com/app/?pKey=1030');
-  });
-
-  it('credits Mapillary contributors when the creator is unknown', async () => {
-    respond = () => new Response(new Blob(['x']), { status: 200 });
-    const { store } = setup();
-    await at(store, 3);
-    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1000'));
-    expect(screen.getByText(/Photo © Mapillary contributors on/)).toBeInTheDocument();
-  });
-
-  it('decodes a percent-encoded creator', async () => {
-    respond = () => new Response(new Blob(['x']), { status: 200, headers: { 'X-Photo-Creator': 'Jos%C3%A9' } });
-    const { store } = setup();
-    await at(store, 3);
-    await waitFor(() => expect(screen.getByText(/Photo © José on/)).toBeInTheDocument());
+    expect(screen.queryByTestId('photo-credit')).toBeNull();
   });
 
   it('revokes old object URLs and keeps at most 6 alive', async () => {
@@ -106,7 +90,6 @@ describe('PhotoView', () => {
     await at(store, 260); // not among the prefetched photos
     expect(await screen.findByText('Street photos unavailable right now')).toBeInTheDocument();
     expect(view()).toHaveAttribute('data-photo-id', '1030');
-    expect(screen.getByText(/Photo © ana on/)).toBeInTheDocument();
     // retries on the next index change
     respond = () => new Response(new Blob(['x']), { status: 200, headers: { 'X-Photo-Creator': 'bo' } });
     await at(store, 290);

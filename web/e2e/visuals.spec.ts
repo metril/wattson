@@ -112,7 +112,7 @@ test('reduced motion turns the 3D option off', async ({ page, routeId }) => {
   await expect(page.getByText('Off because reduced motion is on')).toBeVisible();
 });
 
-test('street photos follow the ride, credit Mapillary, never touch it from the browser and survive an outage', async ({
+test('street photos follow the ride, never touch it from the browser and survive an outage', async ({
   page,
   routeId,
   fakeMapillary,
@@ -134,8 +134,7 @@ test('street photos follow the ride, credit Mapillary, never touch it from the b
   const photo = page.getByTestId('photo-view');
   await expect(photo).toHaveAttribute('data-photo-id', /^\d+$/, { timeout: 10_000 });
   const first = await photo.getAttribute('data-photo-id');
-  await expect(photo).toContainText('on Mapillary, CC BY-SA 4.0');
-  await expect(photo).toContainText('e2e');
+  await expect(page.getByTestId('photo-credit')).toHaveCount(0);
 
   await expect.poll(() => photo.getAttribute('data-photo-id'), { timeout: 15_000 }).not.toBe(first);
 
@@ -219,22 +218,16 @@ test('combined photo and map views show both, swap, and stack on a phone', async
     return b.width * b.height;
   };
   expect(await area(photo)).toBeGreaterThan(await area(map));
-  // The inset map keeps only the attribution icon, even when MapLibre expands it.
-  await map.locator('.maplibregl-ctrl-attrib').evaluate((el) => el.classList.add('maplibregl-compact-show'));
-  await expect(map.locator('.maplibregl-ctrl-attrib-inner')).toBeHidden();
+  // No on-screen attribution anywhere.
+  await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveCount(0);
+  await expect(page.getByTestId('photo-credit')).toHaveCount(0);
   // The zoom buttons exist but are hidden in the inset.
   await expect(map.locator('.maplibregl-ctrl-zoom-in')).toBeAttached();
   await expect(map.locator('.maplibregl-ctrl-zoom-in')).toBeHidden();
-  // The large photo shows its full credit.
-  await expect(photo.getByTestId('photo-credit')).toBeVisible();
-  await expect(photo.getByTestId('photo-credit-short')).toBeHidden();
   const swap = page.getByTestId('inset-swap');
   await swap.focus();
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await area(map)) > (await area(photo))).toBe(true);
-  // The small photo keeps only the one-line credit.
-  await expect(photo.getByTestId('photo-credit')).toBeHidden();
-  await expect(photo.getByTestId('photo-credit-short')).toBeVisible();
   // MapLibre's canvas follows its container after the swap.
   await expect
     .poll(async () => {

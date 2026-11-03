@@ -14,3 +14,4 @@
 /web/test-results/
 /web/playwright-report/
 /web/lighthouse-report/
+.playwright-mcp/

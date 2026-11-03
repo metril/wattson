@@ -157,14 +157,13 @@ func base64Key(b byte) string {
 func TestMapillaryTest(t *testing.T) {
 	t.Parallel()
 	const tok = "MLY|secret-token-1"
-	var sawAuth, sawURL atomic.Value
+	var sawPath atomic.Value
 	graph := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawAuth.Store(r.Header.Get("Authorization"))
-		sawURL.Store(r.URL.String())
-		switch r.Header.Get("Authorization") {
-		case "OAuth " + tok:
-			_, _ = w.Write([]byte(`{"data":[]}`))
-		case "OAuth forbidden":
+		sawPath.Store(r.URL.Path)
+		switch r.URL.Query().Get("access_token") {
+		case tok:
+			w.WriteHeader(http.StatusNotFound) // no coverage still means accepted
+		case "forbidden":
 			w.WriteHeader(http.StatusForbidden)
 		default:
 			w.WriteHeader(http.StatusUnauthorized)
@@ -188,7 +187,7 @@ func TestMapillaryTest(t *testing.T) {
 	if r := post(map[string]any{}); r.OK || r.Message != "no Mapillary token saved" {
 		t.Errorf("no token = %+v", r)
 	}
-	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"graph_url": graph.URL}}); resp.StatusCode != 200 {
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"tiles_url": graph.URL}}); resp.StatusCode != 200 {
 		t.Fatalf("patch: %d %s", resp.StatusCode, b)
 	}
 	// Token from the body.
@@ -208,11 +207,11 @@ func TestMapillaryTest(t *testing.T) {
 	if r := post(map[string]any{}); !r.OK {
 		t.Errorf("stored token = %+v", r)
 	}
-	if v, _ := sawURL.Load().(string); strings.Contains(v, tok) || strings.Contains(v, "access_token") {
-		t.Errorf("token in request URL: %q", v)
+	if v, _ := sawPath.Load().(string); v != "/14/8802/5373" {
+		t.Errorf("request path = %q", v)
 	}
 	// Unreachable server: a plain message without the token.
-	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"graph_url": "http://127.0.0.1:1"}}); resp.StatusCode != 200 {
+	if resp, b := ts.do(t, admin, "PATCH", "/api/settings", map[string]any{"mapillary": map[string]any{"tiles_url": "http://127.0.0.1:1"}}); resp.StatusCode != 200 {
 		t.Fatalf("patch: %d %s", resp.StatusCode, b)
 	}
 	if r := post(map[string]any{}); r.OK || r.Message == "" {

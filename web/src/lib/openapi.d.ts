@@ -971,7 +971,7 @@ export interface paths {
         put?: never;
         /**
          * Test the Mapillary token
-         * @description Makes one small Graph API request with the token as an OAuth credential in a header (never in a URL), timing out after 5 seconds. An empty `token` uses the stored one. The result is always HTTP 200; check `ok`. A 401 or 403 reports `token rejected (401)`. The token is never echoed back. Requires the `admin` scope.
+         * @description Requests one z14 coverage vector tile (central Berlin) from the Mapillary tiles host, the same call used to build street photos, timing out after 5 seconds. An empty `token` uses the stored one. The result is always HTTP 200; check `ok`. A 401 or 403 reports `token rejected (401)`. The token is never echoed back. Requires the `admin` scope.
          */
         post: operations["testMapillary"];
         delete?: never;

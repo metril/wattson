@@ -33,14 +33,16 @@ var (
 	ErrNoToken       = errors.New("mapillary: no access token configured")
 	ErrTokenRejected = errors.New("token rejected")
 	ErrRateLimited   = errors.New("mapillary: rate limited")
+	ErrTileTooLarge  = errors.New("mapillary: coverage tile too large")
 	ErrBadImageHost  = errors.New("mapillary: image URL host not allowed")
 )
 
 const (
-	maxAttempts  = 3
-	maxTileBytes = 8 << 20
-	maxJSONBytes = 1 << 20
-	redactedVal  = "REDACTED"
+	maxAttempts    = 3
+	maxTileBytes   = 32 << 20 // raw (possibly gzipped) tile body
+	maxTileDecoded = 64 << 20 // after gunzip
+	maxJSONBytes   = 1 << 20
+	redactedVal    = "REDACTED"
 )
 
 // Client reads Mapillary. The zero value is not usable: set GraphURL, TilesURL
@@ -56,8 +58,9 @@ type Client struct {
 	// the Graph host, *.fbcdn.net or *.mapillary.com.
 	ImageHostOK func(host string) bool
 
-	sleep func(time.Duration) // tests only; default waits on a timer or ctx
-	now   func() time.Time    // tests only; default time.Now
+	maxRaw, maxDecoded int                 // test overrides for the tile size caps
+	sleep              func(time.Duration) // tests only; default waits on a timer or ctx
+	now                func() time.Time    // tests only; default time.Now
 
 	metaMu    sync.Mutex
 	meta      map[string]metaEntry // image id -> thumbnail location (see cache.go)
@@ -256,6 +259,20 @@ func (c *Client) wait(ctx context.Context, d time.Duration) error {
 	}
 }
 
+func (c *Client) rawLimit() int {
+	if c.maxRaw > 0 {
+		return c.maxRaw
+	}
+	return maxTileBytes
+}
+
+func (c *Client) decodedLimit() int {
+	if c.maxDecoded > 0 {
+		return c.maxDecoded
+	}
+	return maxTileDecoded
+}
+
 // Coverage lists the images in the z/x/y coverage tile (zoom 14 carries
 // individual images). A tile without coverage is nil, nil.
 func (c *Client) Coverage(ctx context.Context, z, x, y int) ([]Candidate, error) {
@@ -276,12 +293,12 @@ func (c *Client) Coverage(ctx context.Context, z, x, y int) ([]Candidate, error)
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTileBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(c.rawLimit())+1))
 	if err != nil {
 		return nil, fmt.Errorf("mapillary: read tile: %s", scrub(err.Error(), tok))
 	}
-	if len(body) > maxTileBytes {
-		return nil, errors.New("mapillary: coverage tile too large")
+	if len(body) > c.rawLimit() {
+		return nil, ErrTileTooLarge
 	}
 	var layers mvt.Layers
 	if len(body) > 2 && body[0] == 0x1f && body[1] == 0x8b {
@@ -289,8 +306,11 @@ func (c *Client) Coverage(ctx context.Context, z, x, y int) ([]Candidate, error)
 		if err != nil {
 			return nil, fmt.Errorf("mapillary: decode tile: %w", err)
 		}
-		body, err = io.ReadAll(io.LimitReader(zr, maxTileBytes+1))
-		if err != nil || len(body) > maxTileBytes {
+		body, err = io.ReadAll(io.LimitReader(zr, int64(c.decodedLimit())+1))
+		if err == nil && len(body) > c.decodedLimit() {
+			return nil, ErrTileTooLarge
+		}
+		if err != nil {
 			return nil, errors.New("mapillary: decode tile: bad gzip")
 		}
 	}
@@ -435,24 +455,29 @@ func (c *Client) imageHostOK(ctx context.Context, raw string) bool {
 	return strings.HasSuffix(h, ".fbcdn.net") || strings.HasSuffix(h, ".mapillary.com")
 }
 
-// Ping makes a cheap authenticated Graph API call; nil means the token works.
+// Ping fetches one z14 coverage tile (central Berlin) with the token; nil means
+// the token is accepted. A tile with no coverage (404) still counts. The tiles
+// host answers in well under a second, unlike the Graph API image search.
 func (c *Client) Ping(ctx context.Context) error {
 	tok, err := c.token(ctx)
 	if err != nil {
 		return err
 	}
-	graph, _ := c.urls(ctx)
-	u, err := endpoint(graph, "/images", url.Values{"fields": {"id"}, "limit": {"1"}, "bbox": {"13.40,52.51,13.41,52.52"}})
+	_, tiles := c.urls(ctx)
+	u, err := endpoint(tiles, fmt.Sprintf("/14/%d/%d", pingTileX, pingTileY), url.Values{"access_token": {tok}})
 	if err != nil {
 		return err
 	}
-	resp, err := c.do(ctx, u, tok, true)
+	resp, err := c.do(ctx, u, tok, false)
 	if err != nil {
 		return err
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return errors.New("mapillary: Graph API not found at the configured URL")
-	}
 	return nil
 }
+
+// z14 tile covering central Berlin (13.405, 52.52), used by Ping.
+const (
+	pingTileX = 8802
+	pingTileY = 5373
+)

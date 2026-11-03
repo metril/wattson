@@ -349,7 +349,7 @@ func distanceM(lat1, lon1, lat2, lon2 float64) float64 {
 func (d Deps) registerMapillaryTest(api huma.API) {
 	register(api, route{Method: http.MethodPost, Path: "/api/settings/test/mapillary", ID: "testMapillary", Tag: "settings",
 		Summary: "Test the Mapillary token",
-		Description: "Makes one small Graph API request with the token as an OAuth credential in a header (never in a URL), " +
+		Description: "Requests one z14 coverage vector tile (central Berlin) from the Mapillary tiles host, the same call used to build street photos, " +
 			"timing out after 5 seconds. An empty `token` uses the stored one. The result is always HTTP 200; check `ok`. " +
 			"A 401 or 403 reports `token rejected (401)`. The token is never echoed back.",
 		Scope: auth.ScopeAdmin},

@@ -39,6 +39,7 @@ const (
 	msgRejected    = "Mapillary rejected the token. Check it in Settings → Integrations."
 	msgRateLimited = "Mapillary is rate limiting requests. Try again in a few minutes."
 	msgUnreachable = "Mapillary could not be reached. Try again in a few minutes."
+	msgTileLarge   = "Mapillary coverage along this route is too dense to load. Try a shorter route."
 	msgRouteBroken = "The route could not be read."
 	msgTooLong     = "This route is too long for street photos"
 )
@@ -337,6 +338,8 @@ func (b *Builder) build(id int64) (redo bool) {
 			row.Error = msgRejected
 		case errors.Is(err, ErrRateLimited):
 			row.Error = msgRateLimited
+		case errors.Is(err, ErrTileTooLarge):
+			row.Error = msgTileLarge
 		case errors.Is(err, errRouteUnreadable):
 			row.Error = msgRouteBroken
 		case errors.Is(err, errTooLong):

@@ -1,6 +1,8 @@
 package mapillary
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -164,7 +166,7 @@ func TestTokenRejected(t *testing.T) {
 			t.Errorf("ping %d err = %v", code, err)
 		}
 	}
-	// Graph API reports an invalid token as 400 OAuthException.
+	// An invalid token can also be reported as 400 OAuthException.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 		_, _ = w.Write([]byte(`{"error":{"message":"Invalid OAuth access token.","type":"OAuthException","code":190}}`))
@@ -178,8 +180,7 @@ func TestTokenRejected(t *testing.T) {
 func TestPing(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/images" || r.Header.Get("Authorization") != "OAuth "+testToken ||
-			r.URL.Query().Get("limit") != "1" || r.URL.Query().Get("bbox") != "13.40,52.51,13.41,52.52" {
+		if r.URL.Path != "/tiles/14/8802/5373" || r.URL.Query().Get("access_token") != testToken {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -347,5 +348,29 @@ func TestTilesURLWithQuery(t *testing.T) {
 	}
 	if gotPath != "/tiles/14/5/6" || gotQ.Get("x") != "1" || gotQ.Get("access_token") != testToken {
 		t.Errorf("path %q query %v", gotPath, gotQ)
+	}
+}
+
+func TestCoverageTileTooLarge(t *testing.T) {
+	t.Parallel()
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write(make([]byte, 4096)) // tiny when gzipped, large when decoded
+	_ = zw.Close()
+	small := gz.Bytes()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tiles/14/1/1" {
+			_, _ = w.Write(make([]byte, 2048))
+			return
+		}
+		_, _ = w.Write(small)
+	}))
+	t.Cleanup(srv.Close)
+	c := newClient(srv)
+	c.maxRaw, c.maxDecoded = 1024, 1024
+	for _, y := range []int{1, 2} { // raw too big, then decoded too big
+		if _, err := c.Coverage(context.Background(), 14, 1, y); !errors.Is(err, ErrTileTooLarge) {
+			t.Errorf("y=%d err = %v", y, err)
+		}
 	}
 }

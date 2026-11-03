@@ -37,7 +37,7 @@ Docs: [user guide](docs/user-guide.md), [authentication and OIDC](docs/auth.md),
 ## Docker
 
 ```
-docker compose up -d --build        # http://localhost:8080 shows the setup wizard
+docker compose up -d                # http://localhost:8070 shows the setup wizard (pulls ghcr.io/metril/wattson:latest)
 ```
 
 The image is distroless (about 28 MB, runs as uid 65532) and needs no environment variables: state lives in the `wattson-data` volume, mounted at `/data`. The built-in simulator needs nothing else, so the web UI works at once with no bike.
@@ -45,6 +45,10 @@ The image is distroless (about 28 MB, runs as uid 65532) and needs no environmen
 For a bike on this host's Bluetooth adapter, the container talks to the host's BlueZ over the D-Bus socket that `compose.yml` mounts, and needs the host's numeric `bluetooth` group id; see [Docker in the hardware runbook](docs/hardware-runbook.md#docker). An ESPHome proxy needs neither. The container never uses host networking.
 
 Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` starts with it and reads the map regions that Wattson downloads into the shared `brouter-segments` volume (Settings, Map regions). BRouter is built from upstream source pinned to the v1.7.10 commit (no image is published past v1.7.8, and brouter.de segments need lookup v11, BRouter 1.7.9 or newer), so the first `docker compose up --build` takes a few minutes and works on amd64 and arm64; alternatively delete the `brouter` service and point Settings, BRouter URL at a BRouter elsewhere, leaving the segments directory empty.
+
+## Releases & images
+
+Multi-arch (amd64, arm64) images are published to GHCR: `ghcr.io/metril/wattson:latest` is the newest release, `:X.Y.Z` pins one, and `:edge` tracks `main`. Versions come from [conventional commits](https://www.conventionalcommits.org/) on `main`: release-please keeps a release PR open, and merging it tags the release and publishes the image. To build from source instead, uncomment `build: .` in `compose.yml` and run `docker compose up -d --build`.
 
 ## Ride screen (web)
 

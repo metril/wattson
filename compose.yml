@@ -1,7 +1,9 @@
 services:
   wattson:
-    build: .
-    image: wattson:local
+    # Pulled from GHCR (latest release; use :edge for main). To build locally instead:
+    #   docker compose build --pull   after uncommenting `build: .`
+    # build: .
+    image: ghcr.io/metril/wattson:latest
     ports: ["8070:8080"]
     volumes:
       - wattson-data:/data

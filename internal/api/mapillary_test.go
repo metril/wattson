@@ -372,7 +372,7 @@ func TestSettingsChangeRestartsBuild(t *testing.T) {
 		t.Fatalf("after restart: %+v", out)
 	}
 	row, err := ts.Store.GetRoutePhotos(context.Background(), id)
-	if err != nil || row.TokenFP != ts.fp(mlyToken+"-2") {
+	if err != nil || !strings.HasPrefix(row.TokenFP, ts.fp(mlyToken+"-2")+":") {
 		t.Errorf("row built under the old token: %+v %v", row, err)
 	}
 }

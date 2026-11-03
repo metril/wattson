@@ -90,6 +90,9 @@ test('fallback simulation: a slow display drops 3D to 2D and says why', async ({
   // The test hook shortens the warm-up and windows, and a threshold no display reaches makes every window slow.
   await page.addInitScript(() => {
     (window as unknown as { __wattsonFps: object }).__wattsonFps = { warmupMs: 200, windowMs: 300, threshold: 1e6 };
+    // The first tier guess depends on the host (a 4-core CI runner starts at lite and never stores a tier), so pin a capable device.
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
   });
   await ride(page, routeId);
 

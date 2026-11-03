@@ -10,6 +10,7 @@ import {
   detectTier,
   effectiveView,
   hasSavedTier,
+  isCombined,
   loadPrefs,
   savePrefs,
   type Caps,
@@ -49,6 +50,16 @@ function photoNote(d: PhotosOut | undefined): string | null {
     default:
       return null;
   }
+}
+
+const INSET_CLS =
+  'absolute bottom-3 right-3 h-32 w-44 md:h-40 md:w-60 min-[1600px]:h-56 min-[1600px]:w-80';
+
+/** Class of the photo or map panel: split halves, or the large/inset pair of "Photos + map". */
+function panelCls(view: ViewMode, swapped: boolean, which: 'photo' | 'map'): string {
+  if (view === 'split') return 'h-60 min-w-0 md:h-[var(--view-h)] md:min-h-56';
+  const large = (which === 'map') === swapped;
+  return large ? 'absolute inset-0' : `${INSET_CLS} ride-inset z-10 overflow-hidden`;
 }
 
 function probeWebgl(): boolean {
@@ -109,7 +120,9 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     enabled: hasMap,
     retry: false,
     staleTime: 60_000,
-    refetchInterval: (q) => (q.state.data?.status === 'building' ? 3000 : false),
+    // The server retries a failed build only when asked >=10 min after the failure, so keep asking.
+    refetchInterval: (q) => (q.state.data?.status === 'building' ? 3000 : q.state.data?.status === 'error' ? 60_000 : false),
+    refetchOnWindowFocus: (q) => q.state.data?.status === 'error',
     queryFn: async () => unwrap(await api.GET('/api/routes/{id}/mapillary', { params: { path: { id: routeId } } })),
   });
 
@@ -118,6 +131,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const [exaggeration, setExaggeration] = useState(prefs.exaggeration);
   const [tier, setTier] = useState(() => (hasSavedTier() ? prefs.tier : detectTier(navigator)));
   const [note, setNote] = useState<string | null>(null);
+  const [swapped, setSwapped] = useState(false); // combined views: the map is the large one
   const [webgl] = useState(probeWebgl);
   const reducedMotion = useMedia('(prefers-reduced-motion: reduce)');
   const tv = useMedia('(min-width: 1600px)');
@@ -137,11 +151,13 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   };
   const view = effectiveView(want, caps);
   // The 2D map's API is only valid while its MapView is mounted.
-  const map = view === '2d' ? mapApi : null;
+  const combined = isCombined(view);
+  const mapShown = view === '2d' || (combined && (showMap || wide));
+  const map = mapShown ? mapApi : null;
 
   useEffect(() => {
-    if (view !== '2d') setMap(null);
-  }, [view]);
+    setMap(null); // a new MapView mounts (or none): drop the old api until it reports ready
+  }, [view, mapShown]);
 
   useEffect(() => {
     if (!note) return;
@@ -173,7 +189,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     if (!map || !r) return;
     map.setLine(r.geojson);
     if (r.bbox.length === 4) map.fit(r.bbox as [number, number, number, number]);
-  }, [map, r]);
+  }, [map, r, swapped]);
 
   useEffect(() => {
     if (!map || !prof) return;
@@ -227,7 +243,34 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
         {hasMap && (
           <div ref={wrap} data-testid="route-map" className={showMap ? 'block' : 'hidden md:block'}>
             <Suspense fallback={<div className="h-64 rounded-panel border border-line bg-panel" />}>
-              {view === 'photo' ? (
+              {combined ? (
+                showMap || wide ? (
+                  <div
+                    className={
+                      view === 'split'
+                        ? 'grid gap-3 md:grid-cols-2'
+                        : 'ride-viewbox relative'
+                    }
+                  >
+                    <div className={panelCls(view, swapped, 'photo')}>
+                      <PhotoView photos={photoList} ticks={ticks} reducedMotion={reducedMotion} fill />
+                    </div>
+                    <div className={panelCls(view, swapped, 'map')}>
+                      <MapView className="size-full" onReady={setMap} />
+                    </div>
+                    {view === 'photo-inset' && (
+                      <button
+                        type="button"
+                        data-nav
+                        data-testid="inset-swap"
+                        aria-label={swapped ? 'Show street photo large' : 'Show map large'}
+                        onClick={() => setSwapped((s) => !s)}
+                        className={`${INSET_CLS} z-20 rounded-panel border-2 border-chalk/60 bg-transparent`}
+                      />
+                    )}
+                  </div>
+                ) : null
+              ) : view === 'photo' ? (
                 showMap || wide ? (
                   <PhotoView photos={photoList} ticks={ticks} reducedMotion={reducedMotion} />
                 ) : null

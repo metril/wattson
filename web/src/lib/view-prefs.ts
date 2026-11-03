@@ -1,4 +1,6 @@
-export type ViewMode = '2d' | '3d' | 'photo';
+export type ViewMode = '2d' | '3d' | 'photo' | 'photo-inset' | 'split';
+/** Views that show the street photo and the 2D map together. */
+export const isCombined = (v: ViewMode) => v === 'photo-inset' || v === 'split';
 /** map is false for synthetic routes (no geography). */
 export type Caps = {
   webgl: boolean;
@@ -33,7 +35,7 @@ export function loadPrefs(): Prefs {
   const x = Number(get(K.exaggeration));
   const e = get(K.exaggeration) !== null && Number.isFinite(x) ? Math.min(3, Math.max(1, x)) : DEFAULTS.exaggeration;
   return {
-    view: v === '3d' || v === 'photo' || v === '2d' ? v : DEFAULTS.view,
+    view: v === '3d' || v === 'photo' || v === 'photo-inset' || v === 'split' || v === '2d' ? v : DEFAULTS.view,
     exaggeration: e,
     tier: t === 'lite' || t === 'full' ? t : DEFAULTS.tier,
   };
@@ -58,6 +60,7 @@ export function savePrefs(p: Partial<Prefs>): void {
 export function effectiveView(want: ViewMode, c: Caps): ViewMode {
   if (want === '3d' && c.webgl && !c.reducedMotion && c.map) return '3d';
   if (want === 'photo' && c.photos) return 'photo';
+  if (isCombined(want) && c.photos && c.map) return want;
   return '2d';
 }
 
@@ -67,7 +70,7 @@ export function unavailableReason(v: ViewMode, c: Caps): string | null {
     if (c.reducedMotion) return 'Off because reduced motion is on';
     if (!c.map) return '3D needs a route with a map';
   }
-  if (v === 'photo' && !c.photos) return c.photoNote || 'No street photos for this route';
+  if ((v === 'photo' || isCombined(v)) && !c.photos) return c.photoNote || 'No street photos for this route';
   return null;
 }
 

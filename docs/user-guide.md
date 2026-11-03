@@ -28,13 +28,15 @@ To ride one, open the route and tap **Ride this route** (or choose it in the **R
 
 ## Ride views
 
-On a route ride, **View** (next to the map) switches between three views. Wattson remembers the choice on each device separately: the TV can fly over terrain while your phone shows the 2D map.
+On a route ride, **View** (next to the map) switches between five views. Wattson remembers the choice on each device separately: the TV can fly over terrain while your phone shows the 2D map.
 
 | View | What you see |
 | --- | --- |
 | **2D map** | The route on a map with your position, and the elevation profile below. |
 | **3D flyover** | A camera follows you along the route over real terrain. |
 | **Street photos** | The photo taken nearest to where you are on the route, changing as you ride. |
+| **Photos + map** | The street photo fills the view with a small map in the corner. Tap the small map (or focus it with the remote and press OK) to swap: the map becomes large and the photo small. |
+| **Photos \| map** | The street photo and the map side by side, or stacked with the photo on top on a phone held upright. |
 
 ![The ride screen on a tablet, 2D map and profile](images/ride-tablet-2d.png)
 
@@ -45,7 +47,7 @@ On a route ride, **View** (next to the map) switches between three views. Wattso
 - the browser has no WebGL ("3D isn't supported on this display"; see Troubleshooting);
 - the device asks for **reduced motion** (an accessibility setting in the system): 3D and the photo crossfade are off, and your saved choice is untouched.
 
-**Street photos** are described under [Street photos](#street-photos).
+**Street photos**, **Photos + map** and **Photos | map** need street photos for the route and are described under [Street photos](#street-photos).
 
 ## Using a TV
 
@@ -98,7 +100,7 @@ To switch them on:
 
 1. Create a free Mapillary account, open the developer dashboard and register an application. Copy its **client token** (it starts with `MLY|`).
 2. In Wattson open **Settings, Integrations**, find **Street imagery**, paste the token in **Mapillary access token**, tap **Test Mapillary** and then **Save**.
-3. Ride a route and choose **View, Street photos**. The first time, Wattson looks up the photos along the route in the background ("Finding street photos…"); the option turns on when they are ready.
+3. Ride a route and choose **View, Street photos**. The first time, Wattson looks up the photos along the route in the background ("Finding street photos…"); the three photo options turn on when they are ready. If the lookup failed, Wattson asks again about once a minute while the ride screen is open (Mapillary is only retried about 10 minutes after a failure), so the options turn on by themselves once it works.
 
 Good to know:
 

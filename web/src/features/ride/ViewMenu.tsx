@@ -6,6 +6,8 @@ const OPTIONS: { v: ViewMode; label: string }[] = [
   { v: '2d', label: '2D map' },
   { v: '3d', label: '3D flyover' },
   { v: 'photo', label: 'Street photos' },
+  { v: 'photo-inset', label: 'Photos + map' },
+  { v: 'split', label: 'Photos | map' },
 ];
 
 /**

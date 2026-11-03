@@ -43,10 +43,13 @@ export default function PhotoView({
   photos,
   ticks,
   reducedMotion,
+  fill,
 }: {
   photos: Photo[];
   ticks: TickStore;
   reducedMotion: boolean;
+  /** Fill the parent instead of using the ride view height. */
+  fill?: boolean;
 }) {
   const layerA = useRef<HTMLImageElement>(null);
   const layerB = useRef<HTMLImageElement>(null);
@@ -197,7 +200,7 @@ export default function PhotoView({
       data-photo-id={shown?.id}
       role="group"
       aria-label="Street photo"
-      className="ride-viewbox relative overflow-hidden rounded-panel border border-line bg-panel"
+      className={`${fill ? 'size-full' : 'ride-viewbox'} relative overflow-hidden rounded-panel border border-line bg-panel`}
     >
       <img ref={layerA} alt="" className="absolute inset-0 size-full object-cover" />
       <img ref={layerB} alt="" className="absolute inset-0 size-full object-cover" />
@@ -212,7 +215,16 @@ export default function PhotoView({
         </p>
       )}
       {shown && !none && (
-        <p className="absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center rounded-control bg-ground/80 px-3 text-sm text-chalk">
+        // The licence needs a visible credit, so a small inset keeps this one-line form.
+        <p
+          data-testid="photo-credit-short"
+          className="photo-credit-short absolute bottom-1 left-1 z-10 hidden max-w-[calc(100%-0.5rem)] truncate rounded-control bg-ground/70 px-1.5 text-xs text-chalk"
+        >
+          © {shown.creator} · Mapillary
+        </p>
+      )}
+      {shown && !none && (
+        <p data-testid="photo-credit" className="photo-credit absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center rounded-control bg-ground/80 px-3 text-sm text-chalk">
           <span>
             Photo © {shown.creator} on{' '}
             <a

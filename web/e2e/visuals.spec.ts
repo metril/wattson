@@ -15,7 +15,7 @@ const test = base.extend<{ routeId: number }>({
 });
 
 test.beforeEach(({}, info) => {
-  test.skip(info.project.name === 'phone', 'needs room for the map; tablet and tv cover the views');
+  test.skip(info.project.name === 'phone' && !info.title.includes('combined'), 'needs room for the map; tablet and tv cover the views');
 });
 
 /** Connects the simulator, starts the route and waits for the ride. */
@@ -34,7 +34,7 @@ async function pedalHarder(page: import('@playwright/test').Page) {
   for (let i = 0; i < 12; i++) await harder.click();
 }
 
-async function chooseView(page: import('@playwright/test').Page, name: '2D map' | '3D flyover' | 'Street photos') {
+async function chooseView(page: import('@playwright/test').Page, name: '2D map' | '3D flyover' | 'Street photos' | 'Photos + map' | 'Photos | map') {
   await page.getByRole('button', { name: 'View' }).click();
   await page.getByRole('radio', { name }).click();
 }
@@ -199,4 +199,55 @@ test('on a TV the view fills the left of a rail layout and View is in the top ba
   expect(view.y + view.height, 'View sits above the view').toBeLessThanOrEqual(map.y);
   expect(rail.x, 'controls are in a right-hand rail').toBeGreaterThan(map.x + map.width);
   expect(rail.y + rail.height, 'inside the screen with its overscan margin').toBeLessThanOrEqual(1080 * 0.95 + 1);
+});
+
+test('combined photo and map views show both, swap, and stack on a phone', async ({ page, routeId }, info) => {
+  test.setTimeout(60_000);
+  await ride(page, routeId);
+  await pedalHarder(page);
+  if (info.project.name === 'phone') await page.getByRole('button', { name: 'Map', exact: true }).click();
+
+  await page.getByRole('button', { name: 'View' }).click();
+  await expect(page.getByRole('radio', { name: /Photos \+ map/ })).toBeEnabled({ timeout: 20_000 });
+  await page.getByRole('radio', { name: 'Photos + map' }).click();
+  const photo = page.getByTestId('photo-view');
+  const map = page.locator('.maplibregl-map');
+  await expect(photo).toHaveAttribute('data-photo-id', /^\d+$/, { timeout: 10_000 });
+  await expect(map).toBeVisible();
+  const area = async (l: import('@playwright/test').Locator) => {
+    const b = (await l.boundingBox())!;
+    return b.width * b.height;
+  };
+  expect(await area(photo)).toBeGreaterThan(await area(map));
+  // The inset map keeps only the attribution icon, even when MapLibre expands it.
+  await map.locator('.maplibregl-ctrl-attrib').evaluate((el) => el.classList.add('maplibregl-compact-show'));
+  await expect(map.locator('.maplibregl-ctrl-attrib-inner')).toBeHidden();
+  // The zoom buttons exist but are hidden in the inset.
+  await expect(map.locator('.maplibregl-ctrl-zoom-in')).toBeAttached();
+  await expect(map.locator('.maplibregl-ctrl-zoom-in')).toBeHidden();
+  // The large photo shows its full credit.
+  await expect(photo.getByTestId('photo-credit')).toBeVisible();
+  await expect(photo.getByTestId('photo-credit-short')).toBeHidden();
+  const swap = page.getByTestId('inset-swap');
+  await swap.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await area(map)) > (await area(photo))).toBe(true);
+  // The small photo keeps only the one-line credit.
+  await expect(photo.getByTestId('photo-credit')).toBeHidden();
+  await expect(photo.getByTestId('photo-credit-short')).toBeVisible();
+  // MapLibre's canvas follows its container after the swap.
+  await expect
+    .poll(async () => {
+      const [c, m] = [await map.locator('canvas').first().boundingBox(), await map.boundingBox()];
+      return Math.abs(c!.width - m!.width) < 6;
+    })
+    .toBe(true);
+
+  // the View menu is still open from choosing Photos + map
+  await page.getByRole('radio', { name: 'Photos | map' }).click();
+  await expect(swap).toHaveCount(0);
+  const [pb, mb] = [(await photo.boundingBox())!, (await map.boundingBox())!];
+  if (info.project.name === 'phone') expect(mb.y).toBeGreaterThanOrEqual(pb.y + pb.height - 1);
+  else expect(mb.x).toBeGreaterThanOrEqual(pb.x + pb.width - 1);
+  expect(await page.locator('.maplibregl-canvas').count()).toBe(1);
 });

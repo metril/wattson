@@ -342,9 +342,51 @@ describe('Ride route mode', () => {
         tick(ws, { distance_m: 1 });
         await open();
         expect(screen.getByRole('radio', { name: /Street photos/ })).toBeDisabled();
-        expect(screen.getByText('Finding street photos…')).toBeInTheDocument();
+        expect(screen.getAllByText('Finding street photos…').length).toBeGreaterThan(0);
         status = 'ready';
         await act(async () => void vi.advanceTimersByTime(3100)); // the 3 s poll
+        await waitFor(() => expect(screen.getByTestId('photoview')).toBeInTheDocument());
+      });
+
+      it('photos + map shows both with a keyboard-reachable swap; split shows both without it', async () => {
+        localStorage.setItem('wattson.view', 'photo-inset');
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [photo] }));
+        tick(ws, { distance_m: 1 });
+        await screen.findByTestId('photoview');
+        expect(screen.getByTestId('mapview')).toBeInTheDocument();
+        const swap = screen.getByRole('button', { name: 'Show map large' });
+        expect(swap).toHaveAttribute('data-nav');
+        await userEvent.click(swap);
+        expect(screen.getByRole('button', { name: 'Show street photo large' })).toBeInTheDocument();
+        expect(screen.getAllByTestId('mapview')).toHaveLength(1);
+        await userEvent.click(screen.getByRole('button', { name: 'View' }));
+        await userEvent.click(screen.getByRole('radio', { name: 'Photos | map' }));
+        expect(screen.getByTestId('photoview')).toBeInTheDocument();
+        expect(screen.getAllByTestId('mapview')).toHaveLength(1);
+        expect(screen.queryByTestId('inset-swap')).not.toBeInTheDocument();
+        expect(localStorage.getItem('wattson.view')).toBe('split');
+      });
+
+      it('a saved combined view falls back to the 2D map while photos are unavailable', async () => {
+        localStorage.setItem('wattson.view', 'split');
+        const { ws } = await setup('/?route=3', photos({ status: 'error', message: 'nope' }));
+        tick(ws, { distance_m: 1 });
+        await screen.findByTestId('mapview');
+        expect(screen.queryByTestId('photoview')).not.toBeInTheDocument();
+      });
+
+      it('keeps asking while in error, and flips to photos once the server rebuilt', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        localStorage.setItem('wattson.view', 'photo');
+        let status = 'error';
+        const { ws } = await setup('/?route=3', {
+          'GET /api/routes/3/mapillary': () => [200, status === 'error' ? { status, photos: [], message: 'boom' } : { status, photos: [photo] }],
+        });
+        tick(ws, { distance_m: 1 });
+        await open();
+        expect(screen.getByRole('radio', { name: /Street photos/ })).toBeDisabled();
+        status = 'ready';
+        await act(async () => void vi.advanceTimersByTime(61_000));
         await waitFor(() => expect(screen.getByTestId('photoview')).toBeInTheDocument());
       });
 
@@ -352,14 +394,14 @@ describe('Ride route mode', () => {
         const a = await setup('/?route=3', photos({ status: 'error', message: 'Mapillary rejected the token' }));
         tick(a.ws, { distance_m: 1 });
         await open();
-        expect(screen.getByText('Mapillary rejected the token')).toBeInTheDocument();
+        expect(screen.getAllByText('Mapillary rejected the token').length).toBeGreaterThan(0);
       });
 
       it('no coverage says so', async () => {
         const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [] }));
         tick(ws, { distance_m: 1 });
         await open();
-        expect(screen.getByText('No street photos along this route')).toBeInTheDocument();
+        expect(screen.getAllByText('No street photos along this route').length).toBeGreaterThan(0);
       });
     });
 

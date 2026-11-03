@@ -136,6 +136,7 @@ export default function MapView(p: {
           if (ready) setData('route', lineFC());
         },
         fit(b) {
+          map.resize(); // the container may have just changed size
           map.fitBounds(
             [
               [b[0], b[1]],
@@ -175,7 +176,11 @@ export default function MapView(p: {
           if (ready) setData('tiles', fc ?? EMPTY);
         },
       };
+      // Panels that resize (view swap, split layout) must not leave a stretched or clipped canvas.
+      const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => map.resize());
+      ro?.observe(box.current);
       cleanup = () => {
+        ro?.disconnect();
         marker?.remove();
         map.remove();
       };

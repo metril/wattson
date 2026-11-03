@@ -17,7 +17,7 @@ describe('ViewMenu', () => {
     setup();
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     await open();
-    expect(screen.getAllByRole('radio')).toHaveLength(3);
+    expect(screen.getAllByRole('radio')).toHaveLength(5);
     expect(screen.getByRole('radio', { name: '2D map' })).toBeChecked();
   });
 
@@ -33,7 +33,7 @@ describe('ViewMenu', () => {
     setup({ caps: { ...caps, webgl: false, photos: false } });
     await open();
     expect(screen.getByText("3D isn't supported on this display")).toBeInTheDocument();
-    expect(screen.getByText('No street photos for this route')).toBeInTheDocument();
+    expect(screen.getAllByText('No street photos for this route')).toHaveLength(3);
   });
 
   it('choosing Street photos reports it', async () => {
@@ -41,6 +41,25 @@ describe('ViewMenu', () => {
     await open();
     await userEvent.click(screen.getByRole('radio', { name: 'Street photos' }));
     expect(p.onChange).toHaveBeenCalledWith('photo');
+  });
+
+  it('the combined views are offered, report their choice and need photos', async () => {
+    const p = setup();
+    await open();
+    await userEvent.click(screen.getByRole('radio', { name: 'Photos + map' }));
+    expect(p.onChange).toHaveBeenCalledWith('photo-inset');
+    await userEvent.click(screen.getByRole('radio', { name: 'Photos | map' }));
+    expect(p.onChange).toHaveBeenCalledWith('split');
+  });
+
+  it('the combined views are disabled with the photo reason while photos are not ready', async () => {
+    setup({ caps: { ...caps, photos: false, photoNote: 'Finding street photos…' } });
+    await open();
+    for (const name of ['Street photos', 'Photos + map', 'Photos | map']) {
+      const r = screen.getByRole('radio', { name: new RegExp(name.replace(/[+|]/g, '\\$&')) });
+      expect(r).toBeDisabled();
+      expect(r).toHaveAccessibleDescription('Finding street photos…');
+    }
   });
 
   it('the terrain slider shows only in 3D', async () => {
@@ -76,11 +95,11 @@ describe('ViewMenu', () => {
     await userEvent.keyboard('{ArrowDown}');
     expect(screen.getByRole('radio', { name: /3D flyover/ })).toHaveFocus();
     expect(p.onChange).not.toHaveBeenCalled();
-    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
     expect(screen.getByRole('radio', { name: '2D map' })).toHaveFocus();
     await userEvent.keyboard('{ArrowUp}{Enter}');
     expect(p.onChange).toHaveBeenCalledTimes(1);
-    expect(p.onChange).toHaveBeenCalledWith('photo');
+    expect(p.onChange).toHaveBeenCalledWith('split');
   });
 
   it('arrows skip disabled options', async () => {
@@ -101,7 +120,7 @@ describe('ViewMenu', () => {
     await open();
     screen.getByRole('radio', { name: '2D map' }).focus();
     await userEvent.keyboard('{End}');
-    expect(screen.getByRole('radio', { name: 'Street photos' })).toHaveFocus();
+    expect(screen.getByRole('radio', { name: 'Photos | map' })).toHaveFocus();
     await userEvent.keyboard('{Home}');
     expect(screen.getByRole('radio', { name: '2D map' })).toHaveFocus();
   });

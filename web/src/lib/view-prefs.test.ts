@@ -50,6 +50,15 @@ describe('effectiveView', () => {
   it('synthetic route has no 3d', () => {
     expect(effectiveView('3d', { ...ok, map: false })).toBe('2d');
   });
+  it('combined views need photos and a map', () => {
+    for (const v of ['photo-inset', 'split'] as const) {
+      expect(effectiveView(v, ok)).toBe(v);
+      expect(effectiveView(v, { ...ok, photos: false })).toBe('2d');
+      expect(effectiveView(v, { ...ok, map: false })).toBe('2d');
+      expect(unavailableReason(v, { ...ok, photos: false })).toBe('No street photos for this route');
+    }
+  });
+
   it('photo needs photos', () => {
     expect(effectiveView('photo', { ...ok, photos: false })).toBe('2d');
     expect(unavailableReason('photo', { ...ok, photos: false })).toBe('No street photos for this route');

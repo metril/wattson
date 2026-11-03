@@ -247,6 +247,36 @@ select {
   background-repeat: no-repeat;
 }
 
+/* In the small "Photos + map" inset the swap button covers the map, so the
+   attribution collapses to its icon (the full text shows when the map is large). */
+.ride-inset .maplibregl-ctrl-attrib.maplibregl-compact,
+.ride-inset .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  min-height: 0;
+  padding: 0;
+}
+/* Beats MapLibre's .maplibregl-compact-show .maplibregl-ctrl-attrib-inner, whose
+   stylesheet loads later. */
+.ride-inset .maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-inner,
+.ride-inset .maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner {
+  display: none;
+}
+/* A small inset photo swaps its full credit for the one-line form. */
+.ride-inset .photo-credit {
+  display: none;
+}
+.ride-inset .photo-credit-short {
+  display: block;
+}
+
+/* The inset cannot be zoomed (the swap button covers it): no zoom buttons. */
+.ride-inset .maplibregl-map .maplibregl-ctrl-group {
+  display: none;
+}
+.ride-inset .maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button {
+  width: 24px;
+  height: 24px;
+}
+
 /* MapLibre's own controls (zoom buttons) are 29 px; make them 48 px targets. */
 .maplibregl-map .maplibregl-ctrl-group button {
   width: 48px;

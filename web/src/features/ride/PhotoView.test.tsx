@@ -187,3 +187,82 @@ describe('pano forward crop', () => {
     expect(img().style.objectFit).toBe('');
   });
 });
+
+describe('pano look-around', () => {
+  const key = (k: string) => {
+    const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true });
+    act(() => void view().dispatchEvent(e));
+    return e;
+  };
+  const pano = [photo(0, { pano: true, bearing_deg: 0, route_bearing_deg: 90 }), photo(100)];
+
+  it('yaw moves the crop centre and wraps at the seam', () => {
+    const base = { bearing_deg: 0, route_bearing_deg: 90 };
+    expect(panoCrop(base, 36).col).toBeCloseTo(0.5 + 126 / 360);
+    expect(panoCrop(base, -36).col).toBeCloseTo(0.5 + 54 / 360);
+    expect(panoCrop({ bearing_deg: 0, route_bearing_deg: 175 }, 10).col).toBeCloseTo(0.5 - 175 / 360); // 185 wraps to -175
+    expect(panoCrop(base, 0)).toEqual(panoCrop(base));
+  });
+
+  it('a panorama is focusable, turns with arrows and eases back after 5 s', async () => {
+    const { store } = setup(false, pano);
+    await at(store, 0);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1000'));
+    expect(view()).toHaveAttribute('tabindex', '0');
+    expect(view()).toHaveAttribute('data-nav');
+    expect(view().getAttribute('aria-label')).toMatch(/Left or Right arrow/);
+    vi.useFakeTimers();
+    expect(key('ArrowRight').defaultPrevented).toBe(true);
+    expect(view().dataset.yaw).toBe('15.0');
+    key('ArrowLeft');
+    key('ArrowLeft');
+    expect(view().dataset.yaw).toBe('-15.0');
+    act(() => void vi.advanceTimersByTime(5200));
+    expect(Math.abs(Number(view().dataset.yaw))).toBeLessThan(15);
+    act(() => void vi.advanceTimersByTime(3000));
+    expect(view().dataset.yaw).toBe('0.0');
+  });
+
+  it('reduced motion snaps back at once', async () => {
+    const { store } = setup(true, pano);
+    await at(store, 0);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1000'));
+    vi.useFakeTimers();
+    key('ArrowRight');
+    act(() => void vi.advanceTimersByTime(5001));
+    expect(view().dataset.yaw).toBe('0.0');
+  });
+
+  it('stays focusable on a flat photo (focus must not fall to the page) but ignores arrows', async () => {
+    const { store } = setup(true, pano);
+    await at(store, 100);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1100'));
+    expect(view()).toHaveAttribute('tabindex', '0');
+    expect(view()).toHaveAttribute('data-nav');
+    expect(key('ArrowRight').defaultPrevented).toBe(false);
+  });
+
+  it('lookable=false (small inset) is not a focus stop and takes no input', async () => {
+    const store = new TickStore();
+    render(<PhotoView photos={pano} ticks={store} reducedMotion lookable={false} />);
+    await at(store, 0);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1000'));
+    expect(view()).not.toHaveAttribute('tabindex');
+    expect(view()).not.toHaveAttribute('data-nav');
+    expect(key('ArrowRight').defaultPrevented).toBe(false);
+    expect(view().dataset.yaw).toBeUndefined();
+  });
+
+  it('a new photo looks forward, and a flat photo ignores the arrows', async () => {
+    const { store } = setup(true, pano);
+    await at(store, 0);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1000'));
+    key('ArrowRight');
+    expect(view().dataset.yaw).toBe('15.0');
+    await at(store, 100);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1100'));
+    expect(view().dataset.yaw).toBe('0.0');
+    expect(key('ArrowRight').defaultPrevented).toBe(false);
+    expect(view().dataset.yaw).toBe('0.0');
+  });
+});

@@ -3,17 +3,21 @@ import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
 import { api, unwrap } from '@/lib/api';
+import { routeBearing, smoothBearing } from '@/lib/camera';
 import { positionAt } from '@/lib/route-math';
 import { useMedia } from '@/lib/use-media';
 import type { TickStore } from '@/lib/tick-store';
 import {
   detectTier,
+  effectiveComboMap,
   effectiveView,
   hasSavedTier,
   isCombined,
   loadPrefs,
   savePrefs,
   type Caps,
+  type ComboMap,
+  type Tier,
   type ViewMode,
 } from '@/lib/view-prefs';
 import type { MapApi } from '@/features/map/MapView';
@@ -51,6 +55,12 @@ function photoNote(d: PhotosOut | undefined): string | null {
       return null;
   }
 }
+
+const COMBO_FALLBACK_NOTE = {
+  slow: '3D was too slow on this display, so the map switched to 2D. Choose Terrain (3D) in View to try again.',
+  context_lost: 'The 3D map stopped responding, so the map switched to 2D.',
+  webgl: "3D isn't supported on this display, so the map switched to 2D.",
+} as const;
 
 const INSET_CLS =
   'absolute bottom-3 right-3 h-32 w-44 md:h-40 md:w-60 min-[1600px]:h-56 min-[1600px]:w-80';
@@ -129,7 +139,9 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   const [prefs] = useState(loadPrefs);
   const [want, setWant] = useState<ViewMode>(prefs.view);
   const [exaggeration, setExaggeration] = useState(prefs.exaggeration);
-  const [tier, setTier] = useState(() => (hasSavedTier() ? prefs.tier : detectTier(navigator)));
+  const [tier, setTier] = useState<Tier>(() => (hasSavedTier() ? prefs.tier : detectTier(navigator)));
+  const [headingUp, setHeadingUp] = useState(prefs.headingUp);
+  const [comboWant, setComboWant] = useState<ComboMap>(prefs.comboMap);
   const [note, setNote] = useState<string | null>(null);
   const [swapped, setSwapped] = useState(false); // combined views: the map is the large one
   const [webgl] = useState(probeWebgl);
@@ -150,14 +162,25 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     photoNote: photoNote(photoData),
   };
   const view = effectiveView(want, caps);
+  const viewRef = useRef(view);
+  viewRef.current = view;
   // The 2D map's API is only valid while its MapView is mounted.
   const combined = isCombined(view);
-  const mapShown = view === '2d' || (combined && (showMap || wide));
+  const comboMap = effectiveComboMap(comboWant, caps);
+  const combo3d = combined && comboMap === '3d';
+  const mapShown = view === '2d' || (combined && !combo3d && (showMap || wide));
   const map = mapShown ? mapApi : null;
 
+  // Which MapView instance is mounted: inset <-> split keeps the same one (only classes change),
+  // so its api must survive that switch. The 3D flyover has none.
+  const mapInstance = !mapShown ? 'none' : view === '2d' ? 'solo' : 'combo';
   useEffect(() => {
     setMap(null); // a new MapView mounts (or none): drop the old api until it reports ready
-  }, [view, mapShown]);
+  }, [mapInstance]);
+
+  // Heading-up is a 2D-map setting; the flyover always follows the rider.
+  const headingRef = useRef(false);
+  headingRef.current = headingUp && !!map;
 
   useEffect(() => {
     if (!note) return;
@@ -165,21 +188,41 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
     return () => clearTimeout(t);
   }, [note]);
 
+  // The compass turns the map to north; heading-up would turn it straight back, so it ends.
+  const onCompass = useRef(() => {
+    setHeadingUp(false);
+    savePrefs({ headingUp: false });
+  }).current;
   const choose = (v: ViewMode) => {
     setWant(v);
     setNote(null);
     savePrefs({ view: v });
-    if (v === '3d') {
-      const t = detectTier(navigator);
-      setTier(t);
-      savePrefs({ tier: t });
-    }
+  };
+  const chooseTier = (t: Tier) => {
+    setTier(t);
+    savePrefs({ tier: t });
+  };
+  const chooseHeading = (on: boolean) => {
+    setHeadingUp(on);
+    savePrefs({ headingUp: on });
+  };
+  const chooseComboMap = (m: ComboMap) => {
+    setComboWant(m);
+    setNote(null);
+    savePrefs({ comboMap: m });
   };
   const setExag = (x: number) => {
     setExaggeration(x);
     savePrefs({ exaggeration: x });
   };
   const fellBack = useRef((reason: 'slow' | 'context_lost' | 'webgl') => {
+    if (isCombined(viewRef.current)) {
+      // In a combined view only the map goes back to 2D; the photo stays.
+      savePrefs({ comboMap: '2d' });
+      setComboWant('2d');
+      setNote(COMBO_FALLBACK_NOTE[reason]);
+      return;
+    }
     savePrefs({ view: '2d' });
     setWant('2d');
     setNote(FALLBACK_NOTE[reason]);
@@ -188,18 +231,36 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   useEffect(() => {
     if (!map || !r) return;
     map.setLine(r.geojson);
-    if (r.bbox.length === 4) map.fit(r.bbox as [number, number, number, number]);
+    if (r.bbox.length === 4 && !headingRef.current) map.fit(r.bbox as [number, number, number, number]);
   }, [map, r, swapped]);
+
+  // Turning heading-up off puts the whole route back in view, north up.
+  const wasHeading = useRef(false);
+  useEffect(() => {
+    if (wasHeading.current && !headingUp && map && r?.bbox.length === 4) map.fit(r.bbox as [number, number, number, number]);
+    wasHeading.current = headingUp;
+  }, [headingUp, map, r]);
 
   useEffect(() => {
     if (!map || !prof) return;
     let raf = 0;
+    let bearing = routeBearing(prof, ticks.latest?.distance_m ?? 0);
+    let prev = 0;
+    let wasUp = false;
     const draw = () => {
       raf = 0;
       const t = ticks.latest;
       if (!t) return;
       const ll = positionAt(prof, t.distance_m);
       map.setMarker(ll);
+      if (headingUp) {
+        const now = performance.now();
+        const first = !wasUp;
+        bearing = first ? routeBearing(prof, t.distance_m) : smoothBearing(bearing, routeBearing(prof, t.distance_m), prev ? (now - prev) / 1000 : 0);
+        prev = now;
+        wasUp = true;
+        map.follow(ll, bearing, { zoom: first ? 15 : undefined, animate: !reducedMotion });
+      }
       if (wrap.current) wrap.current.dataset.pos = `${ll[1]},${ll[0]}`;
     };
     draw();
@@ -210,10 +271,22 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
       unsub();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [map, prof, ticks]);
+  }, [map, prof, ticks, headingUp, reducedMotion]);
 
   const viewMenu = (
-    <ViewMenu value={view} caps={caps} exaggeration={exaggeration} onChange={choose} onExaggeration={setExag} />
+    <ViewMenu
+      value={view}
+      caps={caps}
+      exaggeration={exaggeration}
+      onChange={choose}
+      onExaggeration={setExag}
+      tier={tier}
+      onTier={chooseTier}
+      headingUp={headingUp}
+      onHeadingUp={chooseHeading}
+      comboMap={comboMap}
+      onComboMap={chooseComboMap}
+    />
   );
 
   if (route.isPending && profile.isPending) return null;
@@ -253,10 +326,33 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
                     }
                   >
                     <div className={panelCls(view, swapped, 'photo')}>
-                      <PhotoView photos={photoList} ticks={ticks} reducedMotion={reducedMotion} fill />
+                      <PhotoView
+                        photos={photoList}
+                        ticks={ticks}
+                        reducedMotion={reducedMotion}
+                        fill
+                        // The small inset sits under the swap button: no focus stop, no dragging.
+                        lookable={view === 'split' || !swapped}
+                      />
                     </div>
                     <div className={panelCls(view, swapped, 'map')}>
-                      <MapView className="size-full" onReady={setMap} />
+                      {combo3d && r && prof ? (
+                        <Ride3D
+                          profile={prof}
+                          line={r.geojson}
+                          ticks={ticks}
+                          exaggeration={exaggeration}
+                          tier={tier}
+                          onFallback={fellBack}
+                          onTier={setTier}
+                          // The small inset is turned by the swap button, not by dragging.
+                          orbit={view === 'split' || swapped}
+                          reducedMotion={reducedMotion}
+                          className="size-full"
+                        />
+                      ) : (
+                        <MapView className="size-full" onReady={setMap} onCompass={onCompass} />
+                      )}
                     </div>
                     {view === 'photo-inset' && (
                       <button
@@ -284,10 +380,12 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
                     exaggeration={exaggeration}
                     tier={tier}
                     onFallback={fellBack}
+                    onTier={setTier}
+                    reducedMotion={reducedMotion}
                   />
                 ) : null
               ) : (
-                <MapView className="ride-viewbox" onReady={setMap} />
+                <MapView className="ride-viewbox" onReady={setMap} onCompass={onCompass} />
               )}
             </Suspense>
           </div>

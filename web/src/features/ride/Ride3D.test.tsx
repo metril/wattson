@@ -64,6 +64,7 @@ const h = vi.hoisted(() => {
       this.hidden.push(id);
     }
     setStyle = vi.fn();
+    resize = vi.fn();
     getPitch() {
       return 62;
     }
@@ -278,5 +279,115 @@ describe('Ride3D', () => {
     const m = await ready();
     unmount();
     expect(m.removed).toBe(true);
+  });
+
+  describe('orbit', () => {
+    afterEach(() => vi.useRealTimers());
+    const press = (el: Element, key: string) => {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      act(() => void el.dispatchEvent(e));
+      return e;
+    };
+    const bearingNow = (m: InstanceType<typeof h.FakeMap>) => m.jumps.at(-1)!.bearing;
+
+    it('Left/Right (with focus on the view) turn the camera and it eases back after 5 s', async () => {
+      const { ticks, container } = setup();
+      const m = await ready();
+      act(() => ticks.set(tickFixture({ distance_m: 15, speed_kmh: 0 })));
+      step();
+      const base = bearingNow(m);
+      const el = container.querySelector('[data-testid="route-3d"]')!;
+      expect(el).toHaveAttribute('tabindex', '0');
+      expect(el).toHaveAttribute('data-nav');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      expect(press(el, 'ArrowRight').defaultPrevented).toBe(true);
+      step();
+      expect(bearingNow(m)).toBeCloseTo(base + 15, 1);
+      press(el, 'ArrowLeft');
+      press(el, 'ArrowLeft');
+      step();
+      expect(bearingNow(m)).toBeCloseTo(base - 15, 1);
+      expect(el).toHaveAttribute('data-orbit', '-15.0');
+      act(() => void vi.advanceTimersByTime(4900));
+      step();
+      expect(bearingNow(m)).toBeCloseTo(base - 15, 1); // still waiting
+      act(() => void vi.advanceTimersByTime(300));
+      step();
+      expect(bearingNow(m)).toBeGreaterThan(base - 15); // easing back
+      act(() => void vi.advanceTimersByTime(3000));
+      step();
+      expect(bearingNow(m)).toBeCloseTo(base, 1);
+    });
+
+    it('reduced motion snaps straight back', async () => {
+      const { ticks, container } = setup({ reducedMotion: true });
+      const m = await ready();
+      act(() => ticks.set(tickFixture({ distance_m: 15, speed_kmh: 0 })));
+      step();
+      const base = bearingNow(m);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      press(container.querySelector('[data-testid="route-3d"]')!, 'ArrowRight');
+      act(() => void vi.advanceTimersByTime(5001));
+      step();
+      expect(bearingNow(m)).toBeCloseTo(base, 1);
+    });
+
+    it('orbit={false} (the small inset) takes no input and is not a focus target', async () => {
+      const { container } = setup({ orbit: false });
+      await ready();
+      const el = container.querySelector('[data-testid="route-3d"]')!;
+      expect(el).not.toHaveAttribute('tabindex');
+      expect(el).not.toHaveAttribute('data-nav');
+      expect(press(el, 'ArrowRight').defaultPrevented).toBe(false);
+    });
+
+    it('stays non-interactive for the map itself', async () => {
+      setup();
+      const m = await ready();
+      expect(m.opts.interactive).toBe(false);
+    });
+  });
+
+  it('a changed tier prop rebuilds the map at that detail; a step-down is reported', async () => {
+    const onTier = vi.fn();
+    const { rerender, ticks, onFallback } = setup({ onTier });
+    await ready();
+    rerender(<Ride3D profile={profile} line={line} ticks={ticks} exaggeration={1.5} tier="lite" onFallback={onFallback} onTier={onTier} />);
+    await waitFor(() => expect(h.state.maps).toHaveLength(2));
+    expect(h.state.maps[0].removed).toBe(true);
+    const lite = await ready(1);
+    expect(lite.opts.pixelRatio).toBe(1);
+    expect(lite.hidden).toEqual(['bld', 'poi']);
+    rerender(<Ride3D profile={profile} line={line} ticks={ticks} exaggeration={1.5} tier="full" onFallback={onFallback} onTier={onTier} />);
+    await waitFor(() => expect(h.state.maps).toHaveLength(3));
+    const full = await ready(2);
+    expect(full.hidden).toEqual([]);
+    expect(onTier).not.toHaveBeenCalled();
+  });
+
+  it('the automatic step-down tells the parent the effective tier', async () => {
+    const onTier = vi.fn();
+    setup({ onTier });
+    await ready();
+    for (let i = 0; i < 400 && h.state.maps.length < 2; i++) step(50);
+    expect(onTier).toHaveBeenCalledWith('lite');
+  });
+
+  it('follows its container size (combined views resize and swap it)', async () => {
+    const cbs: (() => void)[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(f: () => void) {
+          cbs.push(f);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    setup();
+    const m = await ready();
+    cbs.forEach((f) => f());
+    expect(m.resize).toHaveBeenCalled();
   });
 });

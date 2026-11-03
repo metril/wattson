@@ -14,6 +14,8 @@ export type MapApi = {
   setTiles(fc: GeoJSON.FeatureCollection | null, onTileClick?: (name: string) => void): void;
   /** Current map centre as [lon, lat]. */
   getCenter(): [number, number];
+  /** Heading-up camera: centre on the rider and turn to bearing (degrees). zoom is applied once when given. */
+  follow(ll: [number, number], bearing: number, o?: { zoom?: number; animate?: boolean }): void;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -34,6 +36,8 @@ export default function MapView(p: {
   zoom?: number;
   onReady(api: MapApi): void;
   onClick?(ll: [number, number]): void;
+  /** The compass button was pressed (the map has already been turned to north). */
+  onCompass?(): void;
   className?: string;
   'data-testid'?: string;
 }) {
@@ -68,7 +72,12 @@ export default function MapView(p: {
         if (!dead) setFailed(true); // no WebGL
         return;
       }
-      map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-right');
+      map.addControl(new ml.NavigationControl({ showCompass: true, visualizePitch: false }), 'top-right');
+      const compass = box.current.querySelector('.maplibregl-ctrl-compass');
+      const onCompass = () => cb.current.onCompass?.();
+      compass?.addEventListener('click', onCompass);
+      // Handle for end-to-end tests, which assert on the live camera (map.getBearing()).
+      (box.current as HTMLDivElement & { __map?: unknown }).__map = map;
 
       // Desired state; (re)applied whenever a style finishes loading.
       let line: GeoLine | null = null;
@@ -142,7 +151,7 @@ export default function MapView(p: {
               [b[0], b[1]],
               [b[2], b[3]],
             ],
-            { padding: 40, duration: 0, maxZoom: 16 },
+            { padding: 40, duration: 0, maxZoom: 16, bearing: 0 },
           );
         },
         setMarker(ll) {
@@ -166,6 +175,9 @@ export default function MapView(p: {
           waypoints = w;
           if (ready) setData('waypoints', wpFC());
         },
+        follow(ll, bearing, o) {
+          map.easeTo({ center: ll, bearing, ...(o?.zoom !== undefined ? { zoom: o.zoom } : {}), duration: o?.animate === false ? 0 : 900, easing: (t) => t });
+        },
         getCenter() {
           const c = map.getCenter();
           return [c.lng, c.lat];
@@ -181,6 +193,7 @@ export default function MapView(p: {
       ro?.observe(box.current);
       cleanup = () => {
         ro?.disconnect();
+        compass?.removeEventListener('click', onCompass);
         marker?.remove();
         map.remove();
       };

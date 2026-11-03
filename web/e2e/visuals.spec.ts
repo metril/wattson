@@ -244,3 +244,193 @@ test('combined photo and map views show both, swap, and stack on a phone', async
   else expect(mb.x).toBeGreaterThanOrEqual(pb.x + pb.width - 1);
   expect(await page.locator('.maplibregl-canvas').count()).toBe(1);
 });
+
+
+// ---- 3D detail, orbit, heading-up and 3D in the combined views ----
+
+const BUILDING_STYLE = JSON.stringify({
+  version: 8,
+  sources: { openmaptiles: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } },
+  layers: [
+    { id: 'bg', type: 'background', paint: { 'background-color': '#16242a' } },
+    { id: 'building', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', paint: { 'fill-extrusion-height': 10 } },
+  ],
+});
+
+test('3D detail Full / Lite toggles the building layer, and is remembered', async ({ page, routeId }, info) => {
+  test.skip(info.project.name !== 'tv', 'one project covers it');
+  test.setTimeout(120_000);
+  await stubMapNetwork(page, BUILDING_STYLE);
+  await ride(page, routeId);
+  await chooseView(page, '3D flyover');
+  const vis = () =>
+    page.getByTestId('route-3d').evaluate((el) => {
+      const m = (el as any).__map;
+      return m?.getLayer('building') ? (m.getLayoutProperty('building', 'visibility') ?? 'visible') : 'pending';
+    });
+  await page.getByRole('radio', { name: 'Full (buildings)' }).click();
+  await expect.poll(vis, { timeout: 30_000 }).toBe('visible');
+  await page.getByRole('radio', { name: 'Lite' }).click();
+  await expect.poll(vis, { timeout: 30_000 }).toBe('none');
+  expect(await page.evaluate(() => localStorage.getItem('wattson.view.tier'))).toBe('lite');
+  await page.getByRole('radio', { name: 'Full (buildings)' }).click();
+  await expect.poll(vis, { timeout: 30_000 }).toBe('visible');
+  // Remembered across a reload.
+  await page.getByRole('radio', { name: 'Lite' }).click();
+  await page.reload();
+  await expect(page.getByTestId('route-3d')).toBeVisible({ timeout: 10_000 });
+  await expect.poll(vis, { timeout: 30_000 }).toBe('none');
+});
+
+test('3D flyover orbits with Left/Right on focus and eases back; Up/Down still leave', async ({ page, routeId }, info) => {
+  test.skip(info.project.name !== 'tv', 'a remote-control flow; one project covers it');
+  test.setTimeout(60_000);
+  // Software WebGL in CI can look slow; these tests are about input and layout, not the slow-display fallback.
+  await page.addInitScript(() => {
+    (window as unknown as { __wattsonFps: object }).__wattsonFps = { threshold: 0 };
+  });
+  await ride(page, routeId);
+  await chooseView(page, '3D flyover');
+  const view = page.getByTestId('route-3d');
+  await expect(view).toBeVisible();
+  await expect.poll(() => view.getAttribute('data-pitch')).not.toBeNull();
+  const orbit = async () => Number((await view.getAttribute('data-orbit')) ?? 0);
+  await view.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(orbit).toBe(30);
+  await expect(view).toBeFocused();
+  // After about five seconds the camera is back behind the rider.
+  await expect.poll(orbit, { timeout: 30_000 }).toBe(0);
+  // Drag turns it too.
+  const b = (await view.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + 120, b.y + b.height / 2, { steps: 4 });
+  await expect.poll(async () => Math.abs(await orbit())).toBeGreaterThan(5);
+  await page.mouse.up();
+  // The D-pad can leave the view upwards (focus moves on; the level is not changed by it).
+  await view.focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(view).not.toBeFocused();
+});
+
+test('combined views can use the 3D flyover as the map, swap it and fall back', async ({ page, routeId }, info) => {
+  test.setTimeout(90_000);
+  // Software WebGL in CI can look slow; these tests are about input and layout, not the slow-display fallback.
+  await page.addInitScript(() => {
+    (window as unknown as { __wattsonFps: object }).__wattsonFps = { threshold: 0 };
+  });
+  await ride(page, routeId);
+  await pedalHarder(page);
+  if (info.project.name === 'phone') await page.getByRole('button', { name: 'Map', exact: true }).click();
+  await page.getByRole('button', { name: 'View' }).click();
+  await expect(page.getByRole('radio', { name: /Photos \+ map/ })).toBeEnabled({ timeout: 20_000 });
+  await page.getByRole('radio', { name: 'Photos + map' }).click();
+  await page.getByRole('radio', { name: 'Terrain (3D)' }).click();
+  expect(await page.evaluate(() => localStorage.getItem('wattson.view.comboMap'))).toBe('3d');
+
+  const photo = page.getByTestId('photo-view');
+  const flyover = page.getByTestId('route-3d');
+  await expect(photo).toHaveAttribute('data-photo-id', /^\d+$/, { timeout: 10_000 });
+  await expect(flyover).toBeVisible();
+  await expect(page.locator('.maplibregl-canvas')).toHaveCount(1); // the photo is not a map
+  const area = async (l: import('@playwright/test').Locator) => {
+    const b = (await l.boundingBox())!;
+    return b.width * b.height;
+  };
+  expect(await area(photo)).toBeGreaterThan(await area(flyover));
+  const livePitch = () => flyover.evaluate((el) => (el as any).__map?.getPitch() ?? 0);
+  await expect.poll(livePitch, { timeout: 10_000 }).toBeGreaterThan(50);
+
+  // Swap: the flyover becomes large, the same map (no remount), and its canvas follows its panel.
+  const swap = page.getByTestId('inset-swap');
+  await swap.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await area(flyover)) > (await area(photo)), { timeout: 15_000 }).toBe(true);
+  await expect(page.locator('.maplibregl-canvas')).toHaveCount(1);
+  await expect
+    .poll(async () => {
+      const [c, m] = [await flyover.locator('canvas').first().boundingBox(), await flyover.boundingBox()];
+      return Math.abs(c!.width - m!.width) < 6 && Math.abs(c!.height - m!.height) < 6;
+    }, { timeout: 15_000 })
+    .toBe(true);
+
+  // Split: side by side (stacked on a phone), still one canvas.
+  await page.getByRole('radio', { name: 'Photos | map' }).click();
+  await expect(flyover).toBeVisible();
+  await expect(page.locator('.maplibregl-canvas')).toHaveCount(1);
+  const [pb, fb] = [(await photo.boundingBox())!, (await flyover.boundingBox())!];
+  if (info.project.name === 'phone') expect(fb.y).toBeGreaterThanOrEqual(pb.y + pb.height - 1);
+  else expect(fb.x).toBeGreaterThanOrEqual(pb.x + pb.width - 1);
+  await expect
+    .poll(async () => {
+      const [c, m] = [await flyover.locator('canvas').first().boundingBox(), await flyover.boundingBox()];
+      return Math.abs(c!.width - m!.width) < 6;
+    })
+    .toBe(true);
+
+  // Flat (2D) puts the 2D map back beside the photo.
+  await page.getByRole('radio', { name: 'Flat (2D)' }).click();
+  await expect(flyover).toHaveCount(0);
+  await expect(page.locator('.maplibregl-map')).toBeVisible();
+  await expect(page.locator('.maplibregl-canvas')).toHaveCount(1);
+});
+
+test('combined view: a slow 3D map falls back to the 2D map and keeps the photo', async ({ page, routeId }, info) => {
+  test.skip(info.project.name !== 'tablet', 'one project covers the fallback');
+  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    (window as unknown as { __wattsonFps: object }).__wattsonFps = { warmupMs: 200, windowMs: 300, threshold: 1e6 };
+  });
+  await ride(page, routeId);
+  await pedalHarder(page);
+  await page.getByRole('button', { name: 'View' }).click();
+  await expect(page.getByRole('radio', { name: /Photos \| map/ })).toBeEnabled({ timeout: 20_000 });
+  await page.getByRole('radio', { name: 'Photos | map' }).click();
+  await page.getByRole('radio', { name: 'Terrain (3D)' }).click();
+  await expect(page.getByText(/3D was too slow on this display, so the map switched to 2D/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('route-3d')).toHaveCount(0);
+  await expect(page.locator('.maplibregl-canvas')).toBeVisible();
+  await expect(page.getByTestId('photo-view')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('wattson.view'))).toBe('split');
+});
+
+const EAST_GPX = `<?xml version="1.0"?><gpx version="1.1" creator="t" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>East</name><trkseg>
+${Array.from({ length: 12 }, (_, i) => `<trkpt lat="45.0000" lon="${(7 + i * 0.001).toFixed(4)}"><ele>${100 + i}</ele></trkpt>`).join('')}
+</trkseg></trk></gpx>`;
+
+test('2D map: heading up turns the map to the riding direction; the compass resets to north', async ({ page, routeId, baseURL }, info) => {
+  test.skip(info.project.name !== 'tablet', 'one project covers it');
+  test.setTimeout(60_000);
+  void routeId;
+  const cookies = await page.context().cookies();
+  const fd = new FormData();
+  fd.append('file', new Blob([EAST_GPX]), 'east.gpx');
+  const res = await fetch(`${baseURL}/api/routes/import`, {
+    method: 'POST',
+    headers: { cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
+    body: fd,
+  });
+  const east = (await res.json()).id as number;
+  await ride(page, east);
+  const mapBox = page.locator('[data-testid="route-map"] .maplibregl-map').first();
+  await expect(mapBox).toBeVisible();
+  // The map handle lives on the container element MapView renders.
+  const live = () => mapBox.evaluate((el) => (el as any).__map?.getBearing() ?? NaN);
+  await expect.poll(live).toBe(0); // north up by default
+  await expect(page.locator('.maplibregl-ctrl-compass')).toBeVisible();
+
+  await page.getByRole('button', { name: 'View' }).click();
+  await page.getByRole('radio', { name: 'Heading up' }).click();
+  await expect.poll(live, { timeout: 15_000 }).toBeGreaterThan(80); // the route runs east
+  expect(await page.evaluate(() => localStorage.getItem('wattson.view.headingUp'))).toBe('1');
+
+  // The compass turns the map back to north and ends heading-up.
+  await page.locator('.maplibregl-ctrl-compass').click();
+  await expect.poll(live, { timeout: 5_000 }).toBeCloseTo(0, 0);
+  await expect(page.getByRole('radio', { name: 'North up' })).toBeChecked();
+  expect(await page.evaluate(() => localStorage.getItem('wattson.view.headingUp'))).toBe('0');
+  await page.waitForTimeout(2500); // a few ticks later it stays north up
+  expect(await live()).toBeCloseTo(0, 0);
+});

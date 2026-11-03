@@ -7,32 +7,39 @@ import { positionAt } from '@/lib/route-math';
 import type { components } from '@/lib/openapi';
 import type { Tick } from '@/lib/ws-types';
 
-const h = vi.hoisted(() => ({ setMarker: vi.fn(), mounts: 0 }));
+const h = vi.hoisted(() => ({ setMarker: vi.fn(), follow: vi.fn(), fit: vi.fn(), mounts: 0 }));
 vi.mock('@/features/map/MapView', async () => {
   const React = await import('react');
   return {
     STYLE_URL: 'x',
-    default: (p: { onReady(a: unknown): void }) => {
+    default: (p: { onReady(a: unknown): void; onCompass?(): void }) => {
       React.useEffect(() => {
         h.mounts++;
-        p.onReady({
+        // Like the real map: ready after the mount effects settle (a sync call is wiped by RouteView's reset).
+        const t = setTimeout(() => p.onReady({
           setLine: vi.fn(),
-          fit: vi.fn(),
+          fit: h.fit,
+          follow: h.follow,
           setMarker: h.setMarker,
           setWaypoints: vi.fn(),
           setTiles: vi.fn(),
           getCenter: () => [0, 0],
-        });
+        }), 0);
+        return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, []);
-      return <div data-testid="mapview" />;
+      return (
+        <div data-testid="mapview">
+          <button onClick={p.onCompass}>mock compass</button>
+        </div>
+      );
     },
   };
 });
 
 vi.mock('@/features/ride/Ride3D', () => ({
-  default: (p: { exaggeration: number; tier: string; onFallback(r: string): void }) => (
-    <div data-testid="ride3d" data-ex={p.exaggeration} data-tier={p.tier}>
+  default: (p: { exaggeration: number; tier: string; orbit?: boolean; onFallback(r: string): void }) => (
+    <div data-testid="ride3d" data-ex={p.exaggeration} data-tier={p.tier} data-orbit={String(p.orbit)}>
       <button onClick={() => p.onFallback('slow')}>mock slow</button>
       <button onClick={() => p.onFallback('context_lost')}>mock lost</button>
     </div>
@@ -40,8 +47,8 @@ vi.mock('@/features/ride/Ride3D', () => ({
 }));
 
 vi.mock('@/features/ride/PhotoView', () => ({
-  default: (p: { photos: unknown[]; reducedMotion: boolean }) => (
-    <div data-testid="photoview" data-n={p.photos.length} data-reduced={String(p.reducedMotion)} />
+  default: (p: { photos: unknown[]; reducedMotion: boolean; lookable?: boolean }) => (
+    <div data-testid="photoview" data-n={p.photos.length} data-reduced={String(p.reducedMotion)} data-lookable={String(p.lookable ?? true)} />
   ),
 }));
 
@@ -80,6 +87,8 @@ beforeEach(() => {
   FakeWebSocket.reset();
   h.setMarker.mockClear();
   h.mounts = 0;
+  h.follow.mockClear();
+  h.fit.mockClear();
   vi.stubGlobal('WebSocket', FakeWebSocket);
 });
 afterEach(() => {
@@ -242,7 +251,7 @@ describe('Ride route mode', () => {
       expect(await screen.findByText('The 3D view stopped responding, so the ride switched to 2D.')).toBeInTheDocument();
     });
 
-    it('choosing 3D in the menu resets the tier and passes it on', async () => {
+    it('a saved 3D detail survives choosing 3D; the View menu changes it', async () => {
       withWebgl();
       vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(16);
       localStorage.setItem('wattson.view.tier', 'lite');
@@ -252,8 +261,35 @@ describe('Ride route mode', () => {
       await userEvent.click(screen.getByRole('radio', { name: /3D flyover/ }));
       await screen.findByTestId('ride3d');
       expect(localStorage.getItem('wattson.view')).toBe('3d');
+      expect(screen.getByTestId('ride3d')).toHaveAttribute('data-tier', 'lite');
+      expect(screen.getByRole('radio', { name: 'Lite' })).toBeChecked();
+      await userEvent.click(screen.getByRole('radio', { name: 'Full (buildings)' }));
       expect(localStorage.getItem('wattson.view.tier')).toBe('full');
       expect(screen.getByTestId('ride3d')).toHaveAttribute('data-tier', 'full');
+    });
+
+    it('heading up follows the route direction; the compass ends it', async () => {
+      const { ws } = await setup();
+      tick(ws, { distance_m: 100 });
+      await screen.findByTestId('mapview');
+      expect(h.follow).not.toHaveBeenCalled(); // north up by default
+      await userEvent.click(screen.getByRole('button', { name: 'View' }));
+      await userEvent.click(screen.getByRole('radio', { name: 'Heading up' }));
+      expect(localStorage.getItem('wattson.view.headingUp')).toBe('1');
+      await waitFor(() => expect(h.follow).toHaveBeenCalled());
+      const [ll, bearing, o] = h.follow.mock.calls.at(-1)!;
+      expect(ll).toEqual(positionAt(profile, 100));
+      expect(bearing).toBeGreaterThan(0); // the fixture route runs north-east
+      expect(bearing).toBeLessThan(90);
+      expect(o).toMatchObject({ zoom: 15 });
+      await userEvent.click(screen.getByRole('button', { name: 'mock compass' }));
+      expect(localStorage.getItem('wattson.view.headingUp')).toBe('0');
+      expect(screen.getByRole('radio', { name: 'North up' })).toBeChecked();
+      expect(h.fit).toHaveBeenCalled(); // the whole route is back, north up
+      const calls = h.follow.mock.calls.length;
+      tick(ws, { distance_m: 200 });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(h.follow.mock.calls.length).toBe(calls);
     });
 
     it('Escape with the View menu open closes it and does not go back', async () => {
@@ -262,7 +298,7 @@ describe('Ride route mode', () => {
       await screen.findByTestId('mapview');
       const view = screen.getByRole('button', { name: 'View' });
       await userEvent.click(view);
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+      expect(screen.getByRole('radiogroup', { name: 'Ride view' })).toBeInTheDocument();
       await userEvent.keyboard('{Escape}');
       expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
       expect(view).toHaveFocus();
@@ -365,6 +401,69 @@ describe('Ride route mode', () => {
         expect(screen.getAllByTestId('mapview')).toHaveLength(1);
         expect(screen.queryByTestId('inset-swap')).not.toBeInTheDocument();
         expect(localStorage.getItem('wattson.view')).toBe('split');
+      });
+
+      it('the combined views can use the 3D flyover as the map, orbit only when it is large, and fall back to the 2D map', async () => {
+        withWebgl();
+        localStorage.setItem('wattson.view', 'photo-inset');
+        localStorage.setItem('wattson.view.comboMap', '3d');
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [photo] }));
+        tick(ws, { distance_m: 1 });
+        const r3 = await screen.findByTestId('ride3d');
+        expect(screen.getByTestId('photoview')).toBeInTheDocument();
+        expect(screen.queryByTestId('mapview')).not.toBeInTheDocument();
+        expect(r3).toHaveAttribute('data-orbit', 'false'); // small inset
+        await userEvent.click(screen.getByRole('button', { name: 'Show map large' }));
+        expect(screen.getByTestId('ride3d')).toHaveAttribute('data-orbit', 'true');
+        await userEvent.click(screen.getByRole('button', { name: 'mock slow' }));
+        await screen.findByTestId('mapview');
+        expect(screen.getByTestId('photoview')).toBeInTheDocument(); // the photo stays
+        expect(localStorage.getItem('wattson.view')).toBe('photo-inset');
+        expect(localStorage.getItem('wattson.view.comboMap')).toBe('2d');
+        expect(screen.getByText(/the map switched to 2D/)).toBeInTheDocument();
+      });
+
+      it('switching Photos + map to Photos | map keeps the 2D map api alive (marker, heading-up)', async () => {
+        localStorage.setItem('wattson.view', 'photo-inset');
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [photo] }));
+        tick(ws, { distance_m: 1 });
+        await screen.findByTestId('photoview');
+        await waitFor(() => expect(h.setMarker).toHaveBeenCalled());
+        const mounts = h.mounts;
+        await userEvent.click(screen.getByRole('button', { name: 'View' }));
+        await userEvent.click(screen.getByRole('radio', { name: 'Photos | map' }));
+        expect(h.mounts).toBe(mounts); // same MapView, not remounted
+        h.setMarker.mockClear();
+        tick(ws, { distance_m: 50 });
+        await waitFor(() => expect(h.setMarker).toHaveBeenLastCalledWith(positionAt(profile, 50)));
+        await userEvent.click(screen.getByRole('radio', { name: 'Heading up' }));
+        await waitFor(() => expect(h.follow).toHaveBeenCalled());
+      });
+
+      it('the photo is lookable while large, not once it is the small inset', async () => {
+        localStorage.setItem('wattson.view', 'photo-inset');
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [photo] }));
+        tick(ws, { distance_m: 1 });
+        const pv = await screen.findByTestId('photoview');
+        expect(pv).toHaveAttribute('data-lookable', 'true');
+        await userEvent.click(screen.getByRole('button', { name: 'Show map large' }));
+        expect(screen.getByTestId('photoview')).toHaveAttribute('data-lookable', 'false');
+      });
+
+      it('choosing Terrain (3D) in a combined view swaps the map; reduced motion keeps it 2D', async () => {
+        withWebgl();
+        localStorage.setItem('wattson.view', 'split');
+        const { ws } = await setup('/?route=3', photos({ status: 'ready', photos: [photo] }));
+        tick(ws, { distance_m: 1 });
+        await screen.findByTestId('mapview');
+        await userEvent.click(screen.getByRole('button', { name: 'View' }));
+        await userEvent.click(screen.getByRole('radio', { name: 'Terrain (3D)' }));
+        expect(await screen.findByTestId('ride3d')).toHaveAttribute('data-orbit', 'true');
+        expect(screen.queryByTestId('mapview')).not.toBeInTheDocument();
+        expect(localStorage.getItem('wattson.view.comboMap')).toBe('3d');
+        setMedia('reduced', true);
+        await screen.findByTestId('mapview');
+        expect(screen.queryByTestId('ride3d')).not.toBeInTheDocument();
       });
 
       it('a saved combined view falls back to the 2D map while photos are unavailable', async () => {

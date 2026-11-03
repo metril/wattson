@@ -33,16 +33,22 @@ On a route ride, **View** (next to the map) switches between five views. Wattson
 | View | What you see |
 | --- | --- |
 | **2D map** | The route on a map with your position, and the elevation profile below. |
-| **3D flyover** | A camera follows you along the route over real terrain. |
+| **3D flyover** | A camera follows you along the route over real terrain. Drag sideways, or press Left or Right while it is focused, to look around the rider; it swings back behind you after about 5 seconds. |
 | **Street photos** | The photo taken nearest to where you are on the route, changing as you ride. |
-| **Photos + map** | The street photo fills the view with a small map in the corner. Tap the small map (or focus it with the remote and press OK) to swap: the map becomes large and the photo small. |
+| **Photos + map** | The street photo fills the view with a small map (2D or 3D, see below) in the corner. Tap the small map (or focus it with the remote and press OK) to swap: the map becomes large and the photo small. |
 | **Photos \| map** | The street photo and the map side by side, or stacked with the photo on top on a phone held upright. |
 
 ![The ride screen on a tablet, 2D map and profile](images/ride-tablet-2d.png)
 
-**3D flyover** has a **Terrain height** slider (1x to 3x) in the View menu. It starts at 1.5x; raise it if the hills look flat.
+**2D map: heading up or north up.** With a 2D map showing (the **2D map** view, or the map in a combined view), **View, Map orientation** chooses **North up** (the default, north is always at the top) or **Heading up** (the map turns so the way you are riding points up, and follows you). The compass button on the map turns it back to north, which also ends heading up. Wattson remembers the choice on each device. The compass and the zoom buttons are hidden on the small map in the corner of **Photos + map**.
 
-**Why 3D can switch back to 2D.** The flyover needs a graphics chip that keeps up. If the display cannot draw it at about 24 frames per second, Wattson first lowers the detail and then, if that is not enough, returns to the 2D map and says "3D was too slow on this display". The ride is never interrupted. Choose **3D flyover** again to retry. 3D is also switched off, with the reason shown in the menu, when:
+**3D flyover** has a **Terrain height** slider (1x to 3x) in the View menu. It starts at 1.5x; raise it if the hills look flat. **3D detail** in the same menu chooses **Full (buildings)** or **Lite** (no 3D buildings or small labels, easier on slow displays). Wattson picks one for the device the first time (Lite on small or slow ones) and remembers your choice.
+
+**Looking around in 3D.** Drag sideways with a finger or the mouse, or select the 3D view with the remote and press Left or Right, to turn the camera round the rider. About 5 seconds after your last move it eases back behind you. Up and Down still move on to the next control, and the resistance keys are not affected. Pan and zoom stay off.
+
+**3D in the combined views.** With **Photos + map** or **Photos | map** selected, **View, Map in combined views** switches the map between **Flat (2D)** and **Terrain (3D)**. The 3D map swaps with the photo like the 2D one. In the small corner map it needs no dragging (use the swap); once it is large, or in the side-by-side view, you can look around as above. If 3D is not possible, the choice is off with the reason shown (see below); if it is too slow, the map goes back to 2D and the photo stays.
+
+**Why 3D can switch back to 2D.** The flyover needs a graphics chip that keeps up. If the display cannot draw it at about 24 frames per second, Wattson first lowers **3D detail** to Lite (the View menu then shows Lite) and then, if that is not enough, returns to the 2D map and says "3D was too slow on this display". The ride is never interrupted. Choose **3D flyover** again to retry; set **3D detail** back to Full if you want buildings again. In the combined views only the map returns to 2D. 3D is also switched off, with the reason shown in the menu, when:
 
 - the browser has no WebGL ("3D isn't supported on this display"; see Troubleshooting);
 - the device asks for **reduced motion** (an accessibility setting in the system): 3D and the photo crossfade are off, and your saved choice is untouched.
@@ -105,7 +111,7 @@ To switch them on:
 Good to know:
 
 - **Privacy: the token stays on the server.** Your Wattson server talks to Mapillary and passes the pictures on; browsers and TVs never see the token or contact Mapillary. Mapillary learns the route's area and your server's address, not who is riding.
-- **Panoramas show as flat images.** A 360 degree photo is shown as the plain picture it was stored as, not as a look-around view.
+- **Panoramas look forward and you can look around.** A 360 degree photo is cropped to the way you are riding. Drag sideways on it, or focus it with the remote and press Left or Right, to turn the view all the way round. About 5 seconds after your last move (or when the next photo appears) it eases back to forward. Ordinary photos ignore all of this.
 - Roads without coverage say "No street photos along this route", and a gap in the middle of a route says "No street photo for this stretch". If Mapillary is unreachable, the panel says "Street photos unavailable right now" and keeps the last photo.
 - Without a token the option explains how to add one.
 

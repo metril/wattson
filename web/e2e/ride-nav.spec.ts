@@ -64,12 +64,14 @@ test('route ride: map controls are 48 px targets and the D-pad drives the ride',
   if (await mapButton.isVisible()) await mapButton.click();
   await expect(page.locator('.maplibregl-canvas')).toBeVisible();
 
-  // The attribution "i" button (compact on every size here) and the zoom buttons are 48 px targets.
-  const attrib = page.locator('.maplibregl-ctrl-attrib-button').first();
-  await expect(attrib).toBeVisible();
-  const box = (await attrib.boundingBox())!;
-  expect(box.width, `${info.project.name} attribution width`).toBeGreaterThanOrEqual(48);
-  expect(box.height, `${info.project.name} attribution height`).toBeGreaterThanOrEqual(48);
+  // The compass and zoom buttons are 48 px targets (there is no attribution control on screen).
+  for (const sel of ['.maplibregl-ctrl-compass', '.maplibregl-ctrl-zoom-in', '.maplibregl-ctrl-zoom-out']) {
+    const btn = page.locator(sel).first();
+    await expect(btn).toBeVisible();
+    const box = (await btn.boundingBox())!;
+    expect(box.width, `${info.project.name} ${sel} width`).toBeGreaterThanOrEqual(48);
+    expect(box.height, `${info.project.name} ${sel} height`).toBeGreaterThanOrEqual(48);
+  }
 
   await page.getByRole('button', { name: 'Pause' }).focus();
   await page.keyboard.press('ArrowRight');

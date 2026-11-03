@@ -11,15 +11,26 @@ export type Caps = {
   photoNote?: string | null;
 };
 export type Tier = 'full' | 'lite';
-export type Prefs = { view: ViewMode; exaggeration: number; tier: Tier };
+/** Map shown beside the street photo in the combined views. */
+export type ComboMap = '2d' | '3d';
+export type Prefs = {
+  view: ViewMode;
+  exaggeration: number;
+  tier: Tier;
+  /** 2D map turns with the riding direction (false: north up). */
+  headingUp: boolean;
+  comboMap: ComboMap;
+};
 
 const K = {
   view: 'wattson.view',
   exaggeration: 'wattson.view.exaggeration',
   tier: 'wattson.view.tier',
+  headingUp: 'wattson.view.headingUp',
+  comboMap: 'wattson.view.comboMap',
 } as const;
 
-const DEFAULTS: Prefs = { view: '2d', exaggeration: 1.5, tier: 'full' };
+const DEFAULTS: Prefs = { view: '2d', exaggeration: 1.5, tier: 'full', headingUp: false, comboMap: '2d' };
 
 function get(key: string): string | null {
   try {
@@ -38,6 +49,8 @@ export function loadPrefs(): Prefs {
     view: v === '3d' || v === 'photo' || v === 'photo-inset' || v === 'split' || v === '2d' ? v : DEFAULTS.view,
     exaggeration: e,
     tier: t === 'lite' || t === 'full' ? t : DEFAULTS.tier,
+    headingUp: get(K.headingUp) === '1',
+    comboMap: get(K.comboMap) === '3d' ? '3d' : DEFAULTS.comboMap,
   };
 }
 
@@ -51,6 +64,8 @@ export function savePrefs(p: Partial<Prefs>): void {
     if (p.view !== undefined) localStorage.setItem(K.view, p.view);
     if (p.exaggeration !== undefined) localStorage.setItem(K.exaggeration, String(p.exaggeration));
     if (p.tier !== undefined) localStorage.setItem(K.tier, p.tier);
+    if (p.headingUp !== undefined) localStorage.setItem(K.headingUp, p.headingUp ? '1' : '0');
+    if (p.comboMap !== undefined) localStorage.setItem(K.comboMap, p.comboMap);
   } catch {
     /* storage blocked: preferences last for this page only */
   }
@@ -62,6 +77,11 @@ export function effectiveView(want: ViewMode, c: Caps): ViewMode {
   if (want === 'photo' && c.photos) return 'photo';
   if (isCombined(want) && c.photos && c.map) return want;
   return '2d';
+}
+
+/** The map a combined view really shows: 3D only where 3D can run. */
+export function effectiveComboMap(want: ComboMap, c: Caps): ComboMap {
+  return want === '3d' && c.webgl && !c.reducedMotion ? '3d' : '2d';
 }
 
 export function unavailableReason(v: ViewMode, c: Caps): string | null {

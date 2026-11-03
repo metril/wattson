@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { STYLE_URL, type GeoLine } from '@/features/map/MapView';
 import { extrapolate, routeBearing, smoothBearing } from '@/lib/camera';
 import { FpsMonitor, type FpsOpts } from '@/lib/fps-monitor';
+import { attachLookInput, createLook, type Look } from '@/lib/look';
 import { loadMapLibre } from '@/lib/maplibre';
 import { DEM_MAX_ZOOM } from '@/sw/corridor';
 import { positionAt, type Profile } from '@/lib/route-math';
@@ -34,6 +35,8 @@ type Live = { map: MlMap; marker: Marker; ready: boolean; remove(): void };
  * rider along the route. Everything per frame runs in requestAnimationFrame
  * against the TickStore; this component renders once. A slow display steps
  * down to a lite tier and then asks the parent to fall back to 2D.
+ * With `orbit`, a horizontal drag or Left/Right (while this view has focus) turns the
+ * camera round the rider; it eases back behind them 5 s after the last input.
  */
 export default function Ride3D(p: {
   profile: Profile;
@@ -42,11 +45,42 @@ export default function Ride3D(p: {
   exaggeration: number;
   tier: Tier;
   onFallback(reason: FallbackReason): void;
+  /** The detail level actually in use changed (the slow-display step-down). */
+  onTier?(t: Tier): void;
+  /** Allow dragging / arrows to turn the camera (default true). */
+  orbit?: boolean;
+  reducedMotion?: boolean;
+  className?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const cb = useRef(p);
   cb.current = p;
   const live = useRef<Live | null>(null);
+  const setTier = useRef<((t: Tier) => void) | null>(null);
+  const look = useRef<Look | null>(null);
+  const orbitOn = useRef(false);
+  orbitOn.current = p.orbit ?? true;
+
+  useEffect(() => {
+    setTier.current?.(p.tier);
+  }, [p.tier]);
+
+  useEffect(() => {
+    if (!p.orbit && p.orbit !== undefined) look.current?.reset();
+  }, [p.orbit]);
+
+  // Orbit input: a horizontal drag or Left/Right while this view has focus.
+  useEffect(() => {
+    const el = box.current!;
+    const l = createLook({ apply: () => {}, reduced: () => !!cb.current.reducedMotion });
+    look.current = l;
+    const off = attachLookInput(el, l, { enabled: () => orbitOn.current, fovDeg: 120 });
+    return () => {
+      off();
+      l.dispose();
+      look.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const l = live.current;
@@ -68,6 +102,7 @@ export default function Ride3D(p: {
     let tickAt = 0;
     let bearing = routeBearing(profile, lastD);
     let prevNow = 0;
+    let ro: ResizeObserver | null = null;
     const unsub = ticks.subscribe((t) => {
       lastD = t.distance_m;
       speed = t.speed_kmh;
@@ -165,12 +200,19 @@ export default function Ride3D(p: {
       if (dead) return;
       live.current = build(ml, tier);
       if (!live.current) return;
+      setTier.current = (t) => {
+        if (dead || t === tier) return;
+        tier = t;
+        live.current?.remove();
+        live.current = build(ml, t);
+      };
 
       monitor.onDegrade(() => {
         if (dead) return;
         if (tier === 'full') {
           tier = 'lite';
           savePrefs({ tier: 'lite' });
+          cb.current.onTier?.('lite');
           live.current?.remove();
           live.current = build(ml, 'lite');
         } else {
@@ -191,22 +233,30 @@ export default function Ride3D(p: {
         const d = extrapolate(lastD, speed, (now - tickAt) / 1000, lengthM);
         bearing = smoothBearing(bearing, routeBearing(profile, d), dt);
         const ll = positionAt(profile, d);
-        cur.map.jumpTo({ center: ll, bearing });
+        cur.map.jumpTo({ center: ll, bearing: bearing + (look.current?.yaw ?? 0) });
         cur.marker.setLngLat(ll);
         const el = box.current;
         if (el) {
           el.dataset.pitch = cur.map.getPitch().toFixed(1);
           el.dataset.bearing = bearing.toFixed(1);
+          el.dataset.orbit = (look.current?.yaw ?? 0).toFixed(1);
         }
         monitor.frame(now);
       };
       raf = requestAnimationFrame(frame);
+      // Combined views resize and swap this panel: keep the canvas matched to it.
+      if (typeof ResizeObserver !== 'undefined' && box.current) {
+        ro = new ResizeObserver(() => live.current?.map.resize());
+        ro.observe(box.current);
+      }
     })();
 
     return () => {
       dead = true;
+      setTier.current = null;
       unsub();
       cancelAnimationFrame(raf);
+      ro?.disconnect();
       live.current?.remove();
       live.current = null;
     };
@@ -216,9 +266,12 @@ export default function Ride3D(p: {
     <div
       ref={box}
       role="region"
-      aria-label="3D route view"
+      aria-label={p.orbit ?? true ? '3D route view. Press Left or Right arrow, or drag, to look around.' : '3D route view'}
       data-testid="route-3d"
-      className="ride-viewbox overflow-hidden rounded-panel border border-line bg-panel"
+      data-nav={p.orbit ?? true ? '' : undefined}
+      tabIndex={p.orbit ?? true ? 0 : undefined}
+      style={{ touchAction: 'pan-y' }}
+      className={`${p.className ?? 'ride-viewbox'} overflow-hidden rounded-panel border border-line bg-panel focus-visible:outline-2 focus-visible:outline-accent`}
     />
   );
 }

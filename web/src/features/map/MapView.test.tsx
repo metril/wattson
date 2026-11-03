@@ -24,7 +24,16 @@ const h = vi.hoisted(() => {
     emit(ev: string, e?: unknown) {
       this.handlers[ev]?.forEach((f) => f(e));
     }
-    addControl() {}
+    controls: unknown[] = [];
+    addControl(c: unknown) {
+      this.controls.push(c);
+      // The real NavigationControl puts its compass button inside the map container.
+      const b = document.createElement('button');
+      b.className = 'maplibregl-ctrl-compass';
+      (this.opts.container as HTMLElement).append(b);
+    }
+    easeTo = vi.fn();
+    resize = vi.fn();
     addSource(id: string, s: { data: unknown }) {
       this.sources[id] = { data: s.data, setData: (d) => (this.sources[id].data = d) };
     }
@@ -66,7 +75,9 @@ const h = vi.hoisted(() => {
       this.removed = true;
     }
   }
-  class NavigationControl {}
+  class NavigationControl {
+    constructor(public opts: Record<string, unknown>) {}
+  }
   return { state, FakeMap, FakeMarker, NavigationControl };
 });
 
@@ -84,6 +95,36 @@ async function mount(props: Partial<React.ComponentProps<typeof MapView>> = {}) 
   await waitFor(() => expect(api).toBeDefined());
   return { api, map: h.state.maps[0], ...r };
 }
+
+describe('MapView compass and heading-up camera', () => {
+  it('shows the compass control', async () => {
+    const { map } = await mount();
+    expect((map.controls[0] as { opts: { showCompass: boolean } }).opts.showCompass).toBe(true);
+  });
+
+  it('pressing the compass reports it', async () => {
+    const onCompass = vi.fn();
+    const { container } = await mount({ onCompass });
+    (container.querySelector('.maplibregl-ctrl-compass') as HTMLElement).click();
+    expect(onCompass).toHaveBeenCalledTimes(1);
+  });
+
+  it('follow centres on the rider with the bearing; zoom only when given; no animation when asked', async () => {
+    const { api, map } = await mount();
+    api.follow([7, 45], 120, { zoom: 15 });
+    expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ center: [7, 45], bearing: 120, zoom: 15, duration: 900 }));
+    api.follow([7, 46], 121, { animate: false });
+    const o = map.easeTo.mock.calls.at(-1)![0];
+    expect(o).toMatchObject({ bearing: 121, duration: 0 });
+    expect(o).not.toHaveProperty('zoom');
+  });
+
+  it('fit always ends north up', async () => {
+    const { api, map } = await mount();
+    api.fit([0, 0, 1, 1]);
+    expect(map.fitBounds.mock.calls[0][1]).toMatchObject({ bearing: 0 });
+  });
+});
 
 describe('MapView', () => {
   it('builds the map on the OpenFreeMap style', async () => {

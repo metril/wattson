@@ -1,4 +1,4 @@
-import { detectTier, effectiveView, hasSavedTier, loadPrefs, savePrefs, unavailableReason, type Caps } from './view-prefs';
+import { detectTier, effectiveComboMap, effectiveView, hasSavedTier, loadPrefs, savePrefs, unavailableReason, type Caps } from './view-prefs';
 
 const ok: Caps = { webgl: true, reducedMotion: false, photos: true, map: true };
 
@@ -8,13 +8,27 @@ afterEach(() => {
 });
 
 describe('view prefs', () => {
+  it('persists heading-up, combo map and the 3D detail separately', () => {
+    savePrefs({ headingUp: true, comboMap: '3d', tier: 'lite' });
+    expect(loadPrefs()).toMatchObject({ headingUp: true, comboMap: '3d', tier: 'lite' });
+    savePrefs({ headingUp: false });
+    expect(loadPrefs()).toMatchObject({ headingUp: false, comboMap: '3d' });
+    localStorage.setItem('wattson.view.comboMap', 'vr');
+    expect(loadPrefs().comboMap).toBe('2d');
+  });
+  it('3D in combined views needs webgl and no reduced motion', () => {
+    expect(effectiveComboMap('3d', ok)).toBe('3d');
+    expect(effectiveComboMap('3d', { ...ok, reducedMotion: true })).toBe('2d');
+    expect(effectiveComboMap('3d', { ...ok, webgl: false })).toBe('2d');
+    expect(effectiveComboMap('2d', ok)).toBe('2d');
+  });
   it('defaults', () => {
-    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full' });
+    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full', headingUp: false, comboMap: '2d' });
     expect(hasSavedTier()).toBe(false);
   });
   it('round trips and clamps exaggeration', () => {
     savePrefs({ view: '3d', exaggeration: 9, tier: 'lite' });
-    expect(loadPrefs()).toEqual({ view: '3d', exaggeration: 3, tier: 'lite' });
+    expect(loadPrefs()).toEqual({ view: '3d', exaggeration: 3, tier: 'lite', headingUp: false, comboMap: '2d' });
     savePrefs({ exaggeration: 0.2 });
     expect(loadPrefs().exaggeration).toBe(1);
     expect(hasSavedTier()).toBe(true);
@@ -31,7 +45,7 @@ describe('view prefs', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked');
     });
-    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full' });
+    expect(loadPrefs()).toEqual({ view: '2d', exaggeration: 1.5, tier: 'full', headingUp: false, comboMap: '2d' });
     expect(() => savePrefs({ view: '3d' })).not.toThrow();
   });
 });

@@ -46,6 +46,9 @@ type BRouterError struct {
 	Status       int
 	Message      string
 	MissingTiles []string // from "datafile E5_N45.rd5 not found" style replies
+	// LookupMismatch is set when BRouter's lookups.dat and the rd5 segments are
+	// different versions ("lookup version mismatch (old rd5?) lookups.dat=10 ...rd5=11").
+	LookupMismatch bool
 }
 
 func (e *BRouterError) Error() string { return "brouter: " + e.Message }
@@ -141,7 +144,14 @@ func newBRouterError(status int, body string) *BRouterError {
 	msg := strings.TrimSpace(strings.ToValidUTF8(body, ""))
 	var tiles []string
 	seen := map[string]bool{}
-	for _, m := range rd5RE.FindAllStringSubmatch(msg, -1) {
+	mismatch := strings.Contains(msg, "lookup version mismatch")
+	// Only a "not found" reply means the tile is absent; other replies that name an
+	// rd5 file (a version mismatch) must not send the user to download it again.
+	var matches [][]string
+	if !mismatch && strings.Contains(msg, "not found") {
+		matches = rd5RE.FindAllStringSubmatch(msg, -1)
+	}
+	for _, m := range matches {
 		if _, _, err := ParseTile(m[1]); err == nil && !seen[m[1]] {
 			seen[m[1]] = true
 			tiles = append(tiles, m[1])
@@ -154,7 +164,7 @@ func newBRouterError(status int, body string) *BRouterError {
 	if msg == "" {
 		msg = http.StatusText(status)
 	}
-	return &BRouterError{Status: status, Message: msg, MissingTiles: tiles}
+	return &BRouterError{Status: status, Message: msg, MissingTiles: tiles, LookupMismatch: mismatch}
 }
 
 func clientOrDefault(c *http.Client) *http.Client {

@@ -2,7 +2,7 @@ services:
   wattson:
     build: .
     image: wattson:local
-    ports: ["8080:8080"]
+    ports: ["8070:8080"]
     volumes:
       - wattson-data:/data
       # BRouter map regions (rd5 segments) that wattson downloads and brouter reads.
@@ -19,20 +19,17 @@ services:
   # Route drawing. Wattson downloads map regions into the shared volume
   # (Settings -> Map regions); brouter only reads them.
   #
-  # Image pinned by tag AND digest, resolved 2026-11-02 (docker buildx imagetools inspect):
-  # v1.7.8 (2025-07-12) is the newest release the project has published as an image; later
-  # releases (v1.7.9, v1.7.10) have no image on ghcr.io. nrenner/brouter does not exist on
-  # Docker Hub; the official image is ghcr.io/abrensch/brouter. Bump by re-inspecting the tag.
-  # Verified in the image: BRouter listens on 17777 (fixed in /bin/server.sh), reads segments
-  # from /segments4, and runs with a fixed heap (-Xmx128M, JAVA_OPTS is not read; plenty for
-  # drawing). It is amd64 only at this tag (see platform below).
+  # Built from upstream source, pinned to the v1.7.10 commit. The project publishes no image
+  # past v1.7.8, whose lookups.dat is v10, but segments from brouter.de are lookup v11 (BRouter
+  # v1.7.9+), so v1.7.8 fails with "lookup version mismatch (old rd5?)". The upstream
+  # Dockerfile builds multi-arch (amd64 and arm64); listens on 17777, reads segments from
+  # /segments4 and profiles from /profiles2. First build takes a few minutes (gradle).
   # The port is not published: wattson reaches it as http://brouter:17777 (the default
   # BRouter URL in Settings).
   brouter:
-    image: ghcr.io/abrensch/brouter:v1.7.8@sha256:3c6c8a616f054f9237c900760add5fec6b88fc17108348fb2733a1dd62444165
-    # The pinned tag has no arm64 image; on arm64 hosts this runs under emulation
-    # (needs qemu-user-static / binfmt registered) and is slow. See the README.
-    platform: linux/amd64
+    build:
+      context: https://github.com/abrensch/brouter.git#4d2639af77ea5ed9c30d3e400764eb6f9e8522da
+    image: brouter:1.7.10-local
     volumes:
       - brouter-segments:/segments4:ro
     # Start after wattson so the volume is first created from wattson's /segments,

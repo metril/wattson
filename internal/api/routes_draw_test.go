@@ -178,6 +178,20 @@ func TestDrawMissingTiles(t *testing.T) {
 	}
 }
 
+func TestDrawLookupMismatch(t *testing.T) {
+	t.Parallel()
+	fb := newFakeBRouter(t, 500, "lookup version mismatch (old rd5?) lookups.dat=10 W75_N40.rd5=11")
+	ts := newTS(t)
+	admin := ts.setupAdmin(t)
+	ts.setBRouter(t, func(b *settings.BRouter) { b.URL = fb.URL })
+	resp, b := ts.do(t, admin, "POST", "/api/routes/draw", drawBody(nil))
+	e := decode[errEnvelope](t, b)
+	if resp.StatusCode != 502 || e.Error.Code != "brouter_outdated" || !contains(e.Error.Message, "newer format") ||
+		(e.Error.Details != nil && len(e.Error.Details.MissingTiles) > 0) {
+		t.Fatalf("mismatch: %d %s", resp.StatusCode, b)
+	}
+}
+
 func TestDrawPublicFallback(t *testing.T) {
 	t.Parallel()
 	local := newFakeBRouter(t, 200, drawGeoJSON)

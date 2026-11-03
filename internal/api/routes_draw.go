@@ -125,6 +125,10 @@ func brouterFailure(ctx context.Context, base string, limit time.Duration, err e
 	}
 	var be *wroute.BRouterError
 	if errors.As(err, &be) {
+		if be.LookupMismatch {
+			return apiErrPublic(http.StatusBadGateway, "brouter_outdated",
+				"map regions are a newer format than the routing engine (BRouter); update BRouter")
+		}
 		return apiErrPublic(http.StatusBadGateway, "brouter_error", "BRouter could not route this: "+be.Message)
 	}
 	loggerFrom(ctx).Warn("brouter call failed", "server", serverLabel(base), "err", err)
@@ -148,7 +152,7 @@ func (d Deps) registerDraw(api huma.API) {
 			"(download them under Map regions), unless the admin enabled the public BRouter fallback in Settings, in which case the " +
 			"waypoints are sent to that public server instead. Other errors: 400 for coordinates out of range; " +
 			"422 `route_too_short`, `route_too_long` or `no_elevation`; 502 `brouter_unavailable` (BRouter cannot be reached), " +
-			"`brouter_error` (BRouter refused the route) or `elevation_unavailable`.",
+			"`brouter_outdated` (the map regions are newer than BRouter), `brouter_error` (BRouter refused the route) or `elevation_unavailable`.",
 		Scope: auth.ScopeControl, Status: http.StatusCreated, AlsoOK: []int{http.StatusOK},
 		Errors: []int{http.StatusUnprocessableEntity, http.StatusBadGateway}},
 		func(ctx context.Context, in *DrawIn) (*drawResp, error) {

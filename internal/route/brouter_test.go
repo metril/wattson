@@ -125,3 +125,28 @@ func TestBRouterCtxTimeout(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestBRouterErrorBodies(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, body string
+		tiles      []string
+		mismatch   bool
+	}{
+		{"not found", "datafile E5_N45.rd5 not found", []string{"E5_N45"}, false},
+		{"version mismatch", "lookup version mismatch (old rd5?) lookups.dat=10 W75_N40.rd5=11", nil, true},
+		{"other rd5 mention", "cannot read W75_N40.rd5", nil, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			be := newBRouterError(500, c.body)
+			if !slices.Equal(be.MissingTiles, c.tiles) || be.LookupMismatch != c.mismatch {
+				t.Fatalf("tiles=%v mismatch=%v", be.MissingTiles, be.LookupMismatch)
+			}
+			var mt *MissingTilesError
+			if errors.As(be, &mt) != (c.tiles != nil) {
+				t.Fatalf("MissingTilesError=%v", mt)
+			}
+		})
+	}
+}

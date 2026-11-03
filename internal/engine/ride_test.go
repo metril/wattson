@@ -21,6 +21,7 @@ type fakeDriver struct {
 
 	mu       sync.Mutex
 	calls    []int
+	arms     int
 	closed   bool
 	closeErr error
 }
@@ -29,6 +30,11 @@ func newFake() *fakeDriver {
 	return &fakeDriver{tel: make(chan bike.Telemetry, 16), ev: make(chan bike.Event, 16)}
 }
 
+func (f *fakeDriver) ArmWatchdog() {
+	f.mu.Lock()
+	f.arms++
+	f.mu.Unlock()
+}
 func (f *fakeDriver) Connect(context.Context) error { return nil }
 func (f *fakeDriver) SetLevel(_ context.Context, l int) (int, error) {
 	f.mu.Lock()
@@ -1195,5 +1201,65 @@ func TestSetTargetPowerShowsImmediately(t *testing.T) {
 			t.Fatal(err)
 		}
 		check(StatePaused, 260)
+	})
+}
+
+func TestWatchdogPauseAutoResumes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		userPause bool
+		cadence   float64
+		want      State
+	}{
+		{"watchdog pause resumes on cadence", false, 70, StateRiding},
+		{"watchdog pause ignores zero cadence", false, 0, StatePaused},
+		{"user pause never auto-resumes", true, 70, StatePaused},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := newFake()
+				e := New(Config{Driver: f})
+				sub, cancelSub := e.Subscribe(64)
+				defer cancelSub()
+				_, stop := start(t, e)
+				defer stop()
+				riding(t, f, e)
+				advance(time.Second, sub)
+				if tc.userPause {
+					if err := do(t, e, CmdPause, 0); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					f.ev <- bike.Event{Kind: bike.EventWatchdog}
+				}
+				synctest.Wait()
+				f.tel <- bike.Telemetry{Cadence: tc.cadence}
+				synctest.Wait()
+				if tk := lastTick(t, advance(time.Second, sub)); tk.State != tc.want {
+					t.Fatalf("state %q want %q", tk.State, tc.want)
+				}
+			})
+		})
+	}
+}
+
+func TestWatchdogArmedOnStartAndResume(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newFake()
+		e := New(Config{Driver: f})
+		_, stop := start(t, e)
+		defer stop()
+		riding(t, f, e)
+		arms := func() int { f.mu.Lock(); defer f.mu.Unlock(); return f.arms }
+		if arms() != 1 {
+			t.Fatalf("arms after start %d", arms())
+		}
+		do(t, e, CmdPause, 0)
+		do(t, e, CmdResume, 0)
+		if arms() != 2 {
+			t.Fatalf("arms after resume %d", arms())
+		}
 	})
 }

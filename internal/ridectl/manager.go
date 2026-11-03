@@ -787,4 +787,12 @@ func newTap(d bike.Driver, on func(bike.Event)) *tap {
 
 func (t *tap) Events() <-chan bike.Event { return t.out }
 
+// ArmWatchdog forwards to the wrapped driver so the engine can restart the
+// supervisor's cadence watchdog clock through the tap.
+func (t *tap) ArmWatchdog() {
+	if a, ok := t.Driver.(interface{ ArmWatchdog() }); ok {
+		a.ArmWatchdog()
+	}
+}
+
 func clamp(v, lo, hi int) int { return max(lo, min(hi, v)) }

@@ -154,6 +154,7 @@ type Engine struct {
 	haveTel    bool
 	connected  bool
 	alert      string
+	wdPaused   bool // paused by the watchdog, not the rider: cadence auto-resumes
 	lastTick   time.Time
 	lastOut    ModeOutput // the mode's latest output, for workout and target ticks
 
@@ -313,6 +314,9 @@ func (e *Engine) Run(ctx context.Context) (err error) {
 			e.lastTel, e.telAt, e.haveTel = v, time.Now(), true
 			e.telFresh = true
 			e.trackLevel(e.telAt)
+			if e.wdPaused && e.state == StatePaused && v.Cadence > 0 {
+				e.resume(ctx)
+			}
 		case v, ok := <-ev:
 			if !ok {
 				ev = nil
@@ -480,10 +484,29 @@ func (e *Engine) event(ctx context.Context, v bike.Event) {
 	case bike.EventWatchdog:
 		if e.state == StateRiding {
 			e.pause(ctx)
+			e.wdPaused = true
 			e.alert = "watchdog: no cadence for 30s"
 		}
 	}
 	e.refresh(time.Now())
+}
+
+// resume returns a paused ride to riding and restarts the watchdog clock.
+func (e *Engine) resume(ctx context.Context) {
+	e.wdPaused = false
+	e.alert = ""
+	e.state = StateRiding
+	e.lastReq = 0
+	e.lastTick = time.Now()
+	e.armWatchdog()
+	e.apply(ctx)
+}
+
+// armWatchdog restarts the driver's cadence watchdog clock, if it has one.
+func (e *Engine) armWatchdog() {
+	if a, ok := e.drv.(watchdogArmer); ok {
+		a.ArmWatchdog()
+	}
 }
 
 func (e *Engine) pause(ctx context.Context) {
@@ -492,9 +515,16 @@ func (e *Engine) pause(ctx context.Context) {
 	e.floor(ctx)
 }
 
+// watchdogArmer is implemented by drivers with a cadence watchdog.
+type watchdogArmer interface{ ArmWatchdog() }
+
 func (e *Engine) command(ctx context.Context, c Command) error {
 	if e.state == StateFinished {
 		return ErrStopped
+	}
+	switch c.Kind {
+	case CmdStart, CmdPause, CmdResume, CmdStop:
+		e.wdPaused = false
 	}
 	switch c.Kind {
 	case CmdStart:
@@ -511,6 +541,7 @@ func (e *Engine) command(ctx context.Context, c Command) error {
 		e.state = StateRiding
 		e.lastReq = 0
 		e.lastTick = time.Now()
+		e.armWatchdog()
 		e.apply(ctx)
 	case CmdPause:
 		if e.state != StateRiding {
@@ -521,10 +552,7 @@ func (e *Engine) command(ctx context.Context, c Command) error {
 		if e.state != StatePaused {
 			return ErrBadState
 		}
-		e.state = StateRiding
-		e.lastReq = 0
-		e.lastTick = time.Now()
-		e.apply(ctx)
+		e.resume(ctx)
 	case CmdStop:
 		e.finish(ctx)
 		return nil

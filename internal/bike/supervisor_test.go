@@ -787,6 +787,28 @@ func TestWatchdogNoTelemetry(t *testing.T) {
 	})
 }
 
+func TestWatchdogClockRestartsOnArm(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSession(ProtoFitPlus, 16)
+		sup := start(t, s, SupervisorOptions{})
+		time.Sleep(25 * time.Second) // connected long before the ride starts
+		sup.ArmWatchdog()
+		synctest.Wait()
+		time.Sleep(29900 * time.Millisecond) // t=54.9s: 29.9s into the ride
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 0 {
+			t.Fatalf("early watchdog (%d)", n)
+		}
+		time.Sleep(100 * time.Millisecond) // 30s after start
+		synctest.Wait()
+		if n := countKind(drainEventsFull(sup.Events()), EventWatchdog); n != 1 {
+			t.Fatalf("watchdog events %d", n)
+		}
+		sup.Close(ctxb())
+	})
+}
+
 func TestWatchdogWhileDisconnectedFloorsOnReconnect(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

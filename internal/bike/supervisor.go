@@ -129,6 +129,15 @@ func (s *Supervisor) Connect(ctx context.Context) error {
 	return nil
 }
 
+// ArmWatchdog restarts the cadence watchdog clock, so a ride's 30 s grace
+// begins when it starts or resumes rather than when the bike connected.
+func (s *Supervisor) ArmWatchdog() {
+	select {
+	case s.wdArm <- struct{}{}:
+	default:
+	}
+}
+
 // SetLevel clamps level into [floor, max], stores it as the target and wakes
 // the run loop. It returns the clamped target; the write is asynchronous.
 func (s *Supervisor) SetLevel(_ context.Context, level int) (int, error) {

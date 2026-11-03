@@ -7,6 +7,10 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Rebuild the image for this existing release tag (e.g. v0.1.0); empty runs release-please
+        required: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -25,24 +29,36 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.rp.outputs.release_created }}
-      tag_name: ${{ steps.rp.outputs.tag_name }}
-      version: ${{ steps.rp.outputs.version }}
-      pr_branch: ${{ steps.rp.outputs.pr && fromJSON(steps.rp.outputs.pr).headBranchName || '' }}
+      release_created: ${{ steps.out.outputs.release_created }}
+      tag_name: ${{ steps.out.outputs.tag_name }}
+      version: ${{ steps.out.outputs.version }}
     steps:
       - id: rp
+        if: ${{ !inputs.tag }}
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       # PRs opened with GITHUB_TOKEN do not trigger workflows, so run the required CI check explicitly.
+      # The pr output is empty when a release is cut, so parse it in the shell.
       - name: run CI on the release PR
-        if: steps.rp.outputs.pr
+        if: ${{ !inputs.tag }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ fromJSON(steps.rp.outputs.pr).headBranchName }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          PR: ${{ steps.rp.outputs.pr }}
+        run: |
+          branch=$(jq -r '.headBranchName // empty' <<<"${PR:-null}")
+          if [ -n "$branch" ]; then gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"; fi
+      - id: out
+        env:
+          IN_TAG: ${{ inputs.tag }}
+          CREATED: ${{ steps.rp.outputs.release_created }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+          VER: ${{ steps.rp.outputs.version }}
+        run: |
+          if [ -n "$IN_TAG" ]; then CREATED=true TAG="$IN_TAG" VER="${IN_TAG#v}"; fi
+          { echo "release_created=${CREATED:-false}"; echo "tag_name=$TAG"; echo "version=$VER"; } >> "$GITHUB_OUTPUT"
 
   image:
     needs: release-please

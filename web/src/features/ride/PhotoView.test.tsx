@@ -4,12 +4,13 @@ import { setKioskToken, setUnauthorizedHandler } from '@/lib/api';
 import type { Photo } from '@/lib/photo-select';
 import { TickStore } from '@/lib/tick-store';
 import { tickFixture } from '@/test-ws';
-import PhotoView from './PhotoView';
+import PhotoView, { panoCrop } from './PhotoView';
 
 const photo = (d_m: number, over: Partial<Photo> = {}): Photo => ({
   id: String(1000 + d_m),
   d_m,
   bearing_deg: 90,
+  route_bearing_deg: 90,
   captured_at: Date.UTC(2024, 2, 5),
   lat: 45,
   lon: 7,
@@ -155,5 +156,34 @@ describe('PhotoView', () => {
     expect(revoked).not.toContain(first);
     release();
     await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1030'));
+  });
+});
+
+describe('pano forward crop', () => {
+  it('centres on the riding direction and wraps at the seam', () => {
+    const col = (cam: number, ride: number) => panoCrop({ bearing_deg: cam, route_bearing_deg: ride }).col;
+    expect(col(90, 90)).toBeCloseTo(0.5);
+    expect(col(90, 180)).toBeCloseTo(0.75);
+    expect(col(90, 0)).toBeCloseTo(0.25);
+    expect(col(350, 10)).toBeCloseTo(0.5 + 20 / 360); // across north
+    expect(col(10, 350)).toBeCloseTo(0.5 - 20 / 360);
+    expect(col(0, 180)).toBeCloseTo(0); // behind the camera = the seam
+    expect(panoCrop({ bearing_deg: 0, route_bearing_deg: 180 }).backgroundPosition).toContain('cqw');
+  });
+
+  it('crops panos with a repeat-x background and leaves flat photos alone', async () => {
+    const list = [photo(0, { pano: true, bearing_deg: 0, route_bearing_deg: 90 }), photo(100)];
+    const { store } = setup(true, list);
+    await at(store, 0);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1000'));
+    const img = () => Array.from(view().querySelectorAll('img')).find((i) => i.getAttribute('src'))!;
+    expect(img().dataset.pano).toBe('true');
+    expect(img().style.backgroundRepeat).toBe('repeat-x');
+    expect(img().style.backgroundImage).toContain('blob:');
+    await at(store, 100);
+    await waitFor(() => expect(view()).toHaveAttribute('data-photo-id', '1100'));
+    expect(img().dataset.pano).toBeUndefined();
+    expect(img().style.backgroundImage).toBe('');
+    expect(img().style.objectFit).toBe('');
   });
 });

@@ -10,13 +10,14 @@ import (
 
 // Photo is one street photo placed on the route.
 type Photo struct {
-	ID         string  `json:"id" doc:"Mapillary image id"`
-	DM         float64 `json:"d_m" doc:"Distance along the route, metres"`
-	Lat        float64 `json:"lat" doc:"Latitude, degrees"`
-	Lon        float64 `json:"lon" doc:"Longitude, degrees"`
-	BearingDeg float64 `json:"bearing_deg" doc:"Camera heading, degrees clockwise from north"`
-	CapturedAt int64   `json:"captured_at" doc:"Capture time, Unix milliseconds"`
-	Pano       bool    `json:"pano" doc:"360° panorama"`
+	ID              string  `json:"id" doc:"Mapillary image id"`
+	DM              float64 `json:"d_m" doc:"Distance along the route, metres"`
+	Lat             float64 `json:"lat" doc:"Latitude, degrees"`
+	Lon             float64 `json:"lon" doc:"Longitude, degrees"`
+	BearingDeg      float64 `json:"bearing_deg" doc:"Camera heading, degrees clockwise from north"`
+	RouteBearingDeg float64 `json:"route_bearing_deg" doc:"Direction of travel along the route at this photo, degrees clockwise from north"`
+	CapturedAt      int64   `json:"captured_at" doc:"Capture time, Unix milliseconds"`
+	Pano            bool    `json:"pano" doc:"360° panorama"`
 }
 
 // SelectOpts tunes Select; a zero field takes its default.
@@ -191,7 +192,7 @@ func (sel *Selector) Add(cands []Candidate) {
 			continue
 		}
 		ph := scored{
-			Photo: Photo{ID: c.ID, DM: bestAlong, Lat: c.Lat, Lon: c.Lon, BearingDeg: compass, CapturedAt: c.CapturedAt, Pano: c.Pano},
+			Photo: Photo{ID: c.ID, DM: bestAlong, Lat: c.Lat, Lon: c.Lon, BearingDeg: compass, RouteBearingDeg: best.bearing, CapturedAt: c.CapturedAt, Pano: c.Pano},
 			score: bestLat + bestDiff/6,
 		}
 		b := int(math.Floor(bestAlong / o.BucketM))

@@ -1943,6 +1943,11 @@ export interface components {
             lon: number;
             /** @description 360° panorama */
             pano: boolean;
+            /**
+             * Format: double
+             * @description Direction of travel along the route at this photo, degrees clockwise from north
+             */
+            route_bearing_deg: number;
         };
         PowerModelInfo: {
             /**

@@ -157,6 +157,28 @@ func TestBuildRebuildsOnTokenChangeAndStale(t *testing.T) {
 	x.settle(t)
 }
 
+// A list cached in the older format (no route bearing) is rebuilt.
+func TestBuildRebuildsOldCacheFormat(t *testing.T) {
+	t.Parallel()
+	f := mapillarytest.New(t, fakeImages()...)
+	x := newBfix(t, storetest.New(t), f)
+	x.get(t)
+	x.settle(t)
+	ctx := context.Background()
+	row, err := x.st.GetRoutePhotos(ctx, x.route.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.TokenFP = strings.TrimSuffix(row.TokenFP, ":"+photosFormat) // as saved before versioning
+	if err := x.st.PutRoutePhotos(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	if s := x.get(t); s.State != "building" {
+		t.Fatalf("old format: %q, want building", s.State)
+	}
+	x.settle(t)
+}
+
 func TestBuildTokenRejected(t *testing.T) {
 	t.Parallel()
 	f := mapillarytest.New(t, fakeImages()...)
@@ -442,7 +464,7 @@ func TestReconfigureRestartsBuild(t *testing.T) {
 		t.Fatalf("got %+v", s)
 	}
 	row, err := x.st.GetRoutePhotos(context.Background(), x.route.ID)
-	if err != nil || row.TokenFP != "fp:MLY|9|other" {
+	if err != nil || row.TokenFP != "fp:MLY|9|other:"+photosFormat {
 		t.Errorf("row = %+v, %v: want a build under the new token", row, err)
 	}
 	if f.TileRequests() <= first {

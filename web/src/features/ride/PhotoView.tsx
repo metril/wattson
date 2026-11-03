@@ -5,8 +5,50 @@ import type { TickStore } from '@/lib/tick-store';
 
 const FADE_MS = 600;
 const MAX_URLS = 6;
+const PANO_HFOV = 110; // degrees of the sphere across the container width
+const PANO_MAX_VFOV = 70; // never show more than this much height (keeps sky and hood out)
+const PANO_TILT = 8; // view centre this many degrees above the horizon
 type Loaded = { url: string };
 type Shown = { id: string };
+
+const wrap180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * Forward crop of an equirectangular panorama as CSS background styles: the
+ * horizontal centre is the riding direction (the image centre is the camera
+ * heading), scaled so ~110 degrees span the width and at most 70 the height.
+ * Container query units need the parent to be a size container.
+ */
+export function panoCrop(p: Pick<Photo, 'bearing_deg' | 'route_bearing_deg'>) {
+  const col = (((0.5 + wrap180(p.route_bearing_deg - p.bearing_deg) / 360) % 1) + 1) % 1;
+  const row = 0.5 - PANO_TILT / 180;
+  const w = `max(${+(36000 / PANO_HFOV).toFixed(3)}cqw, ${+(36000 / PANO_MAX_VFOV).toFixed(3)}cqh)`;
+  return {
+    col,
+    row,
+    backgroundSize: `${w} auto`,
+    backgroundPosition: `calc(50cqw - ${col} * ${w}) calc(50cqh - ${row} * ${w} / 2)`,
+  };
+}
+
+function applyView(img: HTMLImageElement, p: Photo, url: string) {
+  const st = img.style;
+  if (p.pano) {
+    const c = panoCrop(p);
+    // The <img> still decodes and fades; its own pixels are pushed out of the box and the
+    // crop is painted as a repeat-x background, which wraps at the seam.
+    st.objectFit = 'none';
+    st.objectPosition = '-99999px -99999px';
+    st.backgroundImage = `url("${url}")`;
+    st.backgroundRepeat = 'repeat-x';
+    st.backgroundSize = c.backgroundSize;
+    st.backgroundPosition = c.backgroundPosition;
+    img.dataset.pano = 'true';
+  } else {
+    st.objectFit = st.objectPosition = st.backgroundImage = st.backgroundRepeat = st.backgroundSize = st.backgroundPosition = '';
+    delete img.dataset.pano;
+  }
+}
 
 async function fetchPhoto(id: string, onUnauthorized: () => void): Promise<Loaded> {
   const tok = getKioskToken();
@@ -112,6 +154,7 @@ export default function PhotoView({
       const img = layers[back];
       pending = p.id;
       try {
+        applyView(img, p, l.url);
         img.src = l.url;
         if (typeof img.decode === 'function') await img.decode();
       } finally {
@@ -182,6 +225,7 @@ export default function PhotoView({
     <div
       data-testid="photo-view"
       data-photo-id={shown?.id}
+      style={{ containerType: 'size' }}
       role="group"
       aria-label="Street photo"
       className={`${fill ? 'size-full' : 'ride-viewbox'} relative overflow-hidden rounded-panel border border-line bg-panel`}

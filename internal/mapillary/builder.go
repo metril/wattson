@@ -146,7 +146,7 @@ func (b *Builder) Get(ctx context.Context, routeID int64) (Status, error) {
 		return b.enqueue(routeID, building, seen)
 	case err != nil:
 		return Status{}, err
-	case row.TokenFP != b.fp(tok):
+	case row.TokenFP != b.cacheKey(tok):
 		return b.enqueue(routeID, building, seen)
 	}
 	age := b.now().Sub(row.BuiltAt)
@@ -306,7 +306,7 @@ func (b *Builder) build(id int64) (redo bool) {
 	if err != nil {
 		return false // token removed since the request; the next Get reports disabled
 	}
-	row := store.RoutePhotos{RouteID: id, TokenFP: b.fp(tok)}
+	row := store.RoutePhotos{RouteID: id, TokenFP: b.cacheKey(tok)}
 	var photos []Photo
 	p, err := b.load(ctx, id)
 	if err == nil {
@@ -421,3 +421,10 @@ func (b *Builder) fetch(ctx context.Context, p *route.Profile) ([]Photo, error) 
 	}
 	return out, nil
 }
+
+// photosFormat versions the cached photo list: a list saved in an older format
+// (v1 had no route_bearing_deg) no longer matches and is rebuilt.
+const photosFormat = "v2"
+
+// cacheKey is the stored fingerprint: the token's plus the list format.
+func (b *Builder) cacheKey(tok string) string { return b.fp(tok) + ":" + photosFormat }

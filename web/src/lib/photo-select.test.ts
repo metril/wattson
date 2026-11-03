@@ -1,6 +1,6 @@
 import { photoAt, upcoming, type Photo } from './photo-select';
 
-const p = (d_m: number): Photo => ({ id: `p${d_m}`, d_m, bearing_deg: 0, captured_at: 0, lat: 0, lon: 0, pano: false });
+const p = (d_m: number): Photo => ({ id: `p${d_m}`, d_m, bearing_deg: 0, route_bearing_deg: 0, captured_at: 0, lat: 0, lon: 0, pano: false });
 const photos = [0, 15, 30, 200].map(p);
 
 describe('photoAt', () => {

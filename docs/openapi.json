@@ -1575,6 +1575,11 @@
           "pano": {
             "description": "360° panorama",
             "type": "boolean"
+          },
+          "route_bearing_deg": {
+            "description": "Direction of travel along the route at this photo, degrees clockwise from north",
+            "format": "double",
+            "type": "number"
           }
         },
         "required": [
@@ -1583,6 +1588,7 @@
           "lat",
           "lon",
           "bearing_deg",
+          "route_bearing_deg",
           "captured_at",
           "pano"
         ],

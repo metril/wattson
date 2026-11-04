@@ -81,6 +81,15 @@ func TestOIDCLoginCreatesUser(t *testing.T) {
 	if _, me2 := e.me(t, c2); me2.User.ID != me.User.ID {
 		t.Errorf("second login user %d, want %d", me2.User.ID, me.User.ID)
 	}
+	// An edited display name survives the next OIDC login.
+	if r, b := e.ts.do(t, c2, "PATCH", "/api/auth/me", map[string]any{"display_name": "Edited"}); r.StatusCode != 200 {
+		t.Fatalf("patch me: %d %s", r.StatusCode, b)
+	}
+	c3, resp3 := e.login(t, riderClaims())
+	wantRedirect(t, resp3, "/")
+	if _, me3 := e.me(t, c3); me3.User.DisplayName != "Edited" {
+		t.Errorf("display name after relogin = %q, want Edited", me3.User.DisplayName)
+	}
 	// The state cookie is cleared at the callback.
 	cleared := false
 	for _, ck := range resp.Cookies() {

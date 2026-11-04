@@ -174,7 +174,7 @@ function RiderCard({
     <Card className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1 basis-48">
-          <h2 className="numeral truncate text-xl">{r.name}</h2>
+          <h2 className="numeral break-words text-xl">{r.name}</h2>
           <p className="text-sm text-dim">
             {r.weight_kg} kg · FTP {r.ftp_w} W · levels {r.min_level} to {r.max_level}
           </p>

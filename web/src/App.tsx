@@ -7,6 +7,7 @@ import { dropKioskToken, getKioskToken, setUnauthorizedHandler } from '@/lib/api
 import { KioskPage } from '@/pages/Kiosk';
 import { LoginPage } from '@/pages/Login';
 import { SetupPage } from '@/pages/Setup';
+import { AccountPage } from '@/pages/Account';
 import { RidersPage } from '@/pages/Riders';
 import { RidePage } from '@/pages/Ride';
 import { TokensPage } from '@/pages/settings/Tokens';
@@ -82,6 +83,7 @@ export function AppRoutes() {
       >
         <Route index element={<RidePage />} />
         <Route path="riders" element={<RidersPage />} />
+        <Route path="account" element={<AccountPage />} />
         <Route path="history" element={lazyPage(<HistoryPage />)} />
         <Route path="history/:id" element={lazyPage(<RideDetailPage />)} />
         <Route path="routes" element={lazyPage(<RoutesPage />)} />

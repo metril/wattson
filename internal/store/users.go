@@ -260,6 +260,40 @@ func (s *Store) SetPassword(ctx context.Context, id int64, hash string) error {
 	return nil
 }
 
+// UpdateDisplayName sets the user's display name and, in the same transaction,
+// renames the user's riders whose name equals the previous display name (or the
+// username when none was set); manually renamed riders keep their names.
+// ErrNotFound if no such user.
+func (s *Store) UpdateDisplayName(ctx context.Context, id int64, name string) (User, error) {
+	tx, err := s.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+	u, err := scanUser(tx.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("load user: %w", err)
+	}
+	old := u.DisplayName
+	if old == "" {
+		old = u.Username
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET display_name = ? WHERE id = ?`, name, id); err != nil {
+		return User{}, fmt.Errorf("update display name: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE riders SET name = ?, updated_at = ? WHERE user_id = ? AND name = ?`, name, fmtTime(time.Now().UTC()), id, old); err != nil {
+		return User{}, fmt.Errorf("rename riders: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit: %w", err)
+	}
+	u.DisplayName = name
+	return u, nil
+}
+
 // LinkOIDC attaches an OIDC identity to the user. ErrNotFound if no such
 // user, ErrNameConflict if the identity is already linked to someone and
 // ErrIssSubMismatch unless iss and sub are both set or both empty (unlink).

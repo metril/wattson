@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -58,6 +59,12 @@ type noIn struct{}
 
 type meOut struct {
 	Body MeOut
+}
+
+type patchMeIn struct {
+	Body struct {
+		DisplayName string `json:"display_name" minLength:"1" maxLength:"64" doc:"New display name, 1 to 64 characters after trimming."`
+	}
 }
 
 type passwordIn struct {
@@ -212,6 +219,28 @@ func (d Deps) registerAuthn(api huma.API) {
 				scopes = append(scopes, string(s))
 			}
 			return &meOut{Body: MeOut{User: userOut(id.User), Scopes: scopes, Via: id.Via}}, nil
+		})
+
+	register(api, route{Method: http.MethodPatch, Path: "/api/auth/me", ID: "updateMe", Tag: "auth",
+		Summary: "Update own profile",
+		Description: "Sets the signed-in user's display name (1 to 64 characters after trimming). Riders still carrying the " +
+			"previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`.",
+		Scope: auth.ScopeControl},
+		func(ctx context.Context, in *patchMeIn) (*meOut, error) {
+			id, _ := auth.FromContext(ctx)
+			name := strings.TrimSpace(in.Body.DisplayName)
+			if n := utf8.RuneCountInString(name); n < 1 || n > 64 {
+				return nil, apiErr(http.StatusBadRequest, "invalid_request", "display_name: must be 1 to 64 characters")
+			}
+			u, err := d.Store.UpdateDisplayName(ctx, id.User.ID, name)
+			if err != nil {
+				return nil, err
+			}
+			scopes := make([]string, 0, len(id.Scopes))
+			for _, s := range id.Scopes {
+				scopes = append(scopes, string(s))
+			}
+			return &meOut{Body: MeOut{User: userOut(u), Scopes: scopes, Via: id.Via}}, nil
 		})
 
 	register(api, route{Method: http.MethodPost, Path: "/api/auth/password", ID: "changePassword", Tag: "auth",

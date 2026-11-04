@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/metril/wattson/compare/v0.1.0...v0.1.1) (2026-11-04)
+
+
+### Features
+
+* **docker:** production compose pulls latest image; host Bluetooth opt-in ([b089496](https://github.com/metril/wattson/commit/b0894962cfc283db8e1879d4ceb882727e61b557))
+
 ## 0.1.0 (2026-11-03)
 
 

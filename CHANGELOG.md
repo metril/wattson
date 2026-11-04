@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/metril/wattson/compare/v0.1.1...v0.1.2) (2026-11-04)
+
+
+### Features
+
+* configurable display name; show full rider names ([#3](https://github.com/metril/wattson/issues/3)) ([81b5e8c](https://github.com/metril/wattson/commit/81b5e8c38afb1466e92af310ebb74d2a80fba18c))
+
 ## [0.1.1](https://github.com/metril/wattson/compare/v0.1.0...v0.1.1) (2026-11-04)
 
 

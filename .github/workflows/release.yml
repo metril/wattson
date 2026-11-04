@@ -109,6 +109,7 @@ jobs:
             type=gha,scope=wattson-ci
           cache-to: type=gha,mode=max,scope=wattson-release,ignore-error=true
       - id: meta-brouter
+        if: hashFiles('brouter/Dockerfile') != ''
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}-brouter
@@ -121,7 +122,8 @@ jobs:
             type=raw,value=latest,enable=${{ needs.release-please.outputs.release_created == 'true' }}
             type=raw,value=edge,enable=${{ needs.release-please.outputs.release_created != 'true' }}
             type=raw,value=sha-${{ steps.ver.outputs.short }},enable=${{ needs.release-please.outputs.release_created != 'true' }}
-      - uses: docker/build-push-action@v7
+      - if: hashFiles('brouter/Dockerfile') != ''
+        uses: docker/build-push-action@v7
         with:
           context: brouter
           platforms: linux/amd64,linux/arm64

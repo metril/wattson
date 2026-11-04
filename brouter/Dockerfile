@@ -11,7 +11,8 @@ ADD --keep-git-dir=false https://github.com/abrensch/brouter.git#${BROUTER_REF} 
 WORKDIR /src
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew \
  && ./gradlew --no-daemon :brouter-server:fatJar -x test \
- && cp brouter-server/build/libs/brouter-*-all.jar /brouter.jar
+ && cp brouter-server/build/libs/brouter-*-all.jar /brouter.jar \
+ && mkdir /out /out/segments4 /out/customprofiles
 
 # ---- stage 2: runtime -------------------------------------------------------
 # Pinned to the eclipse-temurin:17-jre tag as of 2026-11-03; bump by
@@ -25,7 +26,8 @@ LABEL org.opencontainers.image.title="wattson-brouter" \
       io.github.metril.brouter.ref="${BROUTER_REF}"
 COPY --from=build /brouter.jar /app/brouter.jar
 COPY --from=build /src/misc/profiles2/ /profiles2/
-RUN mkdir -p /segments4 /customprofiles && chown 65532:65532 /segments4 /customprofiles
+COPY --from=build --chown=65532:65532 /out/segments4/ /segments4/
+COPY --from=build --chown=65532:65532 /out/customprofiles/ /customprofiles/
 USER 65532:65532
 EXPOSE 17777
 # RouteServer args: segments profiles customprofiles port maxthreads bindaddress

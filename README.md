@@ -44,11 +44,11 @@ The image is distroless (about 28 MB, runs as uid 65532) and needs no environmen
 
 `compose.yml` is the production file: it pulls `ghcr.io/metril/wattson:latest` on every `docker compose up`. Host Bluetooth is opt-in: for a bike on this host's adapter, add `compose.bluetooth.yml` (D-Bus socket and the host's numeric `bluetooth` gid); see [Docker in the hardware runbook](docs/hardware-runbook.md#docker). An ESPHome proxy needs neither. The container never uses host networking.
 
-Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` starts with it and reads the map regions that Wattson downloads into the shared `brouter-segments` volume (Settings, Map regions). BRouter is built from upstream source pinned to the v1.7.10 commit (no image is published past v1.7.8, and brouter.de segments need lookup v11, BRouter 1.7.9 or newer), so the first `docker compose up --build` takes a few minutes and works on amd64 and arm64; alternatively delete the `brouter` service and point Settings, BRouter URL at a BRouter elsewhere, leaving the segments directory empty.
+Stopping the container returns the bike to its minimum level first, so compose gives it a 25 s grace period. The `brouter` service in `compose.yml` starts with it and reads the map regions that Wattson downloads into the shared `brouter-segments` volume (Settings, Map regions). BRouter runs from the published multi-arch image `ghcr.io/metril/wattson-brouter` (built from upstream BRouter v1.7.10, since upstream publishes no image past v1.7.8 and brouter.de segments need lookup v11); alternatively delete the `brouter` service and point Settings, BRouter URL at a BRouter elsewhere, leaving the segments directory empty.
 
 ## Releases & images
 
-Multi-arch (amd64, arm64) images are published to GHCR: `ghcr.io/metril/wattson:latest` is the newest release, `:X.Y.Z` pins one, and `:edge` tracks `main`. Versions come from [conventional commits](https://www.conventionalcommits.org/) on `main`: release-please keeps a release PR open, and merging it tags the release and publishes the image. To build from source instead, uncomment `build: .`, drop `pull_policy` in `compose.yml` and run `docker compose up -d --build`.
+Multi-arch (amd64, arm64) images are published to GHCR: `ghcr.io/metril/wattson:latest` is the newest release, `:X.Y.Z` pins one, and `:edge` tracks `main`. The BRouter route engine is published the same way as `ghcr.io/metril/wattson-brouter`. Versions come from [conventional commits](https://www.conventionalcommits.org/) on `main`: release-please keeps a release PR open, and merging it tags the release and publishes the image. To build from source instead, uncomment `build: .`, drop `pull_policy` in `compose.yml` and run `docker compose up -d --build`; for BRouter uncomment `build: ./brouter`.
 
 ## Ride screen (web)
 
@@ -84,7 +84,7 @@ Routes turn the bike into a gradient trainer: Wattson raises the resistance a fe
 
 `docker compose up -d` now also starts BRouter. Drawing needs its map data: open **Settings, Map regions**, find the 5 degree squares you want and download them; progress shows there. A draw over a missing region says which one to download. The regions live in the `brouter-segments` volume and are shared with BRouter.
 
-To use a BRouter running elsewhere, set **Settings, BRouter URL** and leave the segments directory empty; Wattson then skips the local missing-region check. On arm64 (Raspberry Pi) the pinned BRouter image is amd64 only, so it runs under emulation (see Docker above) or on another machine through that URL.
+To use a BRouter running elsewhere, set **Settings, BRouter URL** and leave the segments directory empty; Wattson then skips the local missing-region check.
 
 Privacy: importing and riding use only your own server. The map background is loaded by your browser from `tiles.openfreemap.org`. With **OpenTopoData** on, the coordinates of a track are sent to `api.opentopodata.org` when more than 10 % of its points are missing elevation (an import without elevation, or a BRouter track that comes back without it) and for any track above 60 degrees latitude. With **public fallback** on, the waypoints of a drawn route are sent to `brouter.de` only when the route needs map regions you have not downloaded; it is never used when BRouter itself is down. Both are off by default.
 

@@ -108,3 +108,27 @@ jobs:
             type=gha,scope=wattson-release
             type=gha,scope=wattson-ci
           cache-to: type=gha,mode=max,scope=wattson-release,ignore-error=true
+      - id: meta-brouter
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-brouter
+          labels: |
+            org.opencontainers.image.revision=${{ steps.ver.outputs.sha }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }},enable=${{ needs.release-please.outputs.release_created == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }},enable=${{ needs.release-please.outputs.release_created == 'true' && !startsWith(needs.release-please.outputs.tag_name, 'v0.') }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag_name }},enable=${{ needs.release-please.outputs.release_created == 'true' && !startsWith(needs.release-please.outputs.tag_name, 'v0.') }}
+            type=raw,value=latest,enable=${{ needs.release-please.outputs.release_created == 'true' }}
+            type=raw,value=edge,enable=${{ needs.release-please.outputs.release_created != 'true' }}
+            type=raw,value=sha-${{ steps.ver.outputs.short }},enable=${{ needs.release-please.outputs.release_created != 'true' }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: brouter
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-brouter.outputs.tags }}
+          labels: ${{ steps.meta-brouter.outputs.labels }}
+          cache-from: |
+            type=gha,scope=brouter-release
+            type=gha,scope=brouter-ci
+          cache-to: type=gha,mode=max,scope=brouter-release,ignore-error=true

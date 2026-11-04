@@ -218,10 +218,30 @@ jobs:
           push: false
           cache-from: type=gha,scope=wattson-ci
 
+  brouter-image:
+    name: BRouter image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: build (linux/amd64, loaded)
+        uses: docker/build-push-action@v7
+        with:
+          context: brouter
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: wattson-brouter:ci
+          cache-from: type=gha,scope=brouter-ci
+          cache-to: type=gha,mode=max,scope=brouter-ci,ignore-error=true
+      - name: smoke (answers HTTP, non-root, hardened runtime)
+        run: scripts/brouter-smoke.sh wattson-brouter:ci --read-only --tmpfs /tmp --cap-drop ALL
+
   ci:
     # Single required check for branch protection; aggregates every job.
     name: CI
-    needs: [lint, test, build, web, drift, e2e, perf, docker]
+    needs: [lint, test, build, web, drift, e2e, perf, docker, brouter-image]
     if: always()
     runs-on: ubuntu-latest
     steps:

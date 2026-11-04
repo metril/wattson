@@ -20,17 +20,15 @@ services:
   # Route drawing. Wattson downloads map regions into the shared volume
   # (Settings -> Map regions); brouter only reads them.
   #
-  # Built from upstream source, pinned to the v1.7.10 commit. The project publishes no image
-  # past v1.7.8, whose lookups.dat is v10, but segments from brouter.de are lookup v11 (BRouter
-  # v1.7.9+), so v1.7.8 fails with "lookup version mismatch (old rd5?)". The upstream
-  # Dockerfile builds multi-arch (amd64 and arm64); listens on 17777, reads segments from
-  # /segments4 and profiles from /profiles2. First build takes a few minutes (gradle).
+  # Built in this repo from the pinned upstream v1.7.10 commit (brouter/Dockerfile) and
+  # published as a multi-arch image: upstream ships none past v1.7.8, which cannot read
+  # current brouter.de segments (lookup v11).
   # The port is not published: wattson reaches it as http://brouter:17777 (the default
   # BRouter URL in Settings).
   brouter:
-    build:
-      context: https://github.com/abrensch/brouter.git#4d2639af77ea5ed9c30d3e400764eb6f9e8522da
-    image: brouter:1.7.10-local
+    image: ghcr.io/metril/wattson-brouter:latest
+    pull_policy: always
+    # build: ./brouter
     volumes:
       - brouter-segments:/segments4:ro
     # Start after wattson so the volume is first created from wattson's /segments,

@@ -133,7 +133,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update own profile
+         * @description Sets the signed-in user's display name (1 to 64 characters after trimming). Riders still carrying the previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`. Requires the `control` scope.
+         */
+        patch: operations["updateMe"];
         trace?: never;
     };
     "/api/auth/oidc/{slug}/callback": {
@@ -1812,6 +1816,10 @@ export interface components {
             current_password: string;
             /** @description The new password, 10 to 256 bytes. */
             new_password: string;
+        };
+        PatchMeInBody: {
+            /** @description New display name, 1 to 64 characters after trimming. */
+            display_name: string;
         };
         PatchProviderInBody: {
             /** @description Group whose members are admins; empty leaves admin status unmanaged. Default empty. */
@@ -3590,6 +3598,75 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchMeInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

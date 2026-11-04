@@ -117,7 +117,7 @@ export function BikeBar({
         <div className="flex w-full items-end gap-3 md:ml-auto md:w-auto">
           {/* On a TV the route view's View menu is shown here (see RouteView). */}
           <div id={VIEW_SLOT_ID} className="contents" />
-          <div className="min-w-0 flex-1 md:w-48 md:flex-none">
+          <div className="min-w-0 flex-1 md:w-auto md:min-w-48 md:flex-none">
             <Select
               label="Rider"
               value={riderId}

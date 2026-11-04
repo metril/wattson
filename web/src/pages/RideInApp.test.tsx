@@ -46,11 +46,13 @@ describe('ride screen inside the app shell', () => {
     expect(screen.getByRole('button', { name: 'Pause' })).toHaveFocus();
   });
 
-  it('arrows leave the ride for the nav bar and reach Tokens and Sign out in the More menu', async () => {
+  it('arrows leave the ride for the nav bar and reach Account, Tokens and Sign out in the More menu', async () => {
     await rideInApp();
     await userEvent.click(screen.getByRole('button', { name: 'More' }));
     const more = screen.getByRole('button', { name: 'More' });
     more.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveFocus();
     await userEvent.keyboard('{ArrowRight}');
     expect(screen.getByRole('link', { name: 'Tokens' })).toHaveFocus();
     await userEvent.keyboard('{ArrowRight}');

@@ -1,19 +1,18 @@
 services:
   wattson:
-    # Pulled from GHCR (latest release; use :edge for main). To build locally instead:
-    #   docker compose build --pull   after uncommenting `build: .`
+    # Production: always pulls the newest release from GHCR on `docker compose up`.
+    # Pin a version with :X.Y.Z, or track main with :edge.
+    # To build locally instead, uncomment `build: .` and drop pull_policy.
     # build: .
     image: ghcr.io/metril/wattson:latest
+    pull_policy: always
     ports: ["8070:8080"]
     volumes:
       - wattson-data:/data
       # BRouter map regions (rd5 segments) that wattson downloads and brouter reads.
       - brouter-segments:/segments
-      # BlueZ over D-Bus, for a bike on this host's adapter. Not needed for the
-      # simulator or the ESPHome proxy; remove the line if the host has no bluetoothd.
-      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
-    # host bluetooth gid: getent group bluetooth | cut -d: -f3 (not needed for the simulator or the ESPHome proxy)
-    group_add: ["112"]
+    # Host Bluetooth (BlueZ over D-Bus) is opt-in: see compose.bluetooth.yml.
+    # The simulator and the ESPHome proxy need nothing extra.
     restart: unless-stopped
     # A stop returns the bike to its minimum level first (up to 10 s), then drains HTTP (up to 10 s).
     stop_grace_period: 25s

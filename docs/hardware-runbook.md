@@ -23,13 +23,21 @@ You must be on the bike or next to it. Pedal to wake it.
 
 ### Docker
 
-`compose.yml` is set up for this; the simulator and the ESPHome proxy need none of it. A bike on the host's own adapter needs:
+Host Bluetooth is opt-in through `compose.bluetooth.yml`; the simulator and the ESPHome proxy need none of it. Enable it with a `.env` next to `compose.yml`:
+
+```
+COMPOSE_FILE=compose.yml:compose.bluetooth.yml
+BLUETOOTH_GID=112   # getent group bluetooth | cut -d: -f3
+```
+
+The override adds:
 
 - The system D-Bus socket, mounted read-only: `/run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro`. The image sets `DBUS_SYSTEM_BUS_ADDRESS` to that path, so there is nothing to configure.
-- The host's `bluetooth` group, by number: the image has no group names to resolve, so `group_add` must carry the host's gid. Find it with `getent group bluetooth | cut -d: -f3` and put it in `compose.yml` (`group_add: ["112"]` is only a placeholder). With plain Docker: `--group-add "$(getent group bluetooth | cut -d: -f3)"`.
-- The host still runs `bluetoothd` (`systemctl status bluetooth`). If the logs say `access denied` or `permission denied` for BlueZ, the gid is wrong or the socket is missing.
+- The host's `bluetooth` group, by number (`BLUETOOTH_GID`): the image has no group names to resolve. With plain Docker: `--group-add "$(getent group bluetooth | cut -d: -f3)"`.
 
-No host networking and no `--privileged`. If the host has no `bluetoothd`, delete the socket line from `compose.yml`; Docker would otherwise create a directory at that path.
+The host must run `bluetoothd` (`systemctl status bluetooth`); otherwise Docker creates a directory at the socket path. If the logs say `access denied` or `permission denied` for BlueZ, the gid is wrong or the socket is missing.
+
+No host networking and no `--privileged`.
 
 ### ESPHome proxy (alternative)
 

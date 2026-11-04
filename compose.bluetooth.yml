@@ -1,0 +1,15 @@
+# Opt-in: a bike on this host's own Bluetooth adapter, via the host's BlueZ over D-Bus.
+# Not needed for the simulator or the ESPHome proxy.
+#
+# Enable it in .env next to compose.yml:
+#   COMPOSE_FILE=compose.yml:compose.bluetooth.yml
+#   BLUETOOTH_GID=112   # getent group bluetooth | cut -d: -f3
+# or per command: docker compose -f compose.yml -f compose.bluetooth.yml up -d
+#
+# The host must run bluetoothd; otherwise Docker creates a directory at the socket path.
+services:
+  wattson:
+    volumes:
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+    # The image has no group names, so this must be the host's numeric bluetooth gid.
+    group_add: ["${BLUETOOTH_GID:?set BLUETOOTH_GID to the host bluetooth gid (getent group bluetooth | cut -d: -f3)}"]

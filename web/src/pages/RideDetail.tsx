@@ -1,3 +1,5 @@
+import { useUnits } from '@/lib/auth';
+import { distUnit, elevUnit, speedUnit, toDist, toElev, toSpeed } from '@/lib/format';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
@@ -32,6 +34,7 @@ export function RideDetailPage() {
   const id = Number(useParams().id);
   const valid = Number.isInteger(id) && id > 0;
   const qc = useQueryClient();
+  const units = useUnits();
   const navigate = useNavigate();
 
   const ride = useQuery({
@@ -42,7 +45,7 @@ export function RideDetailPage() {
   });
 
   const s = ride.data?.series;
-  const km = useMemo(() => (s ? s.distance_m.map((d) => d / 1000) : []), [s]);
+  const xs = useMemo(() => (s ? s.distance_m.map((d) => toDist(d, units)) : []), [s, units]);
   const trace = useMemo(() => {
     if (!s?.lat || !s.lon || s.lat.length === 0) return null;
     const coordinates = s.lon.map((lo, i) => [lo, s.lat![i]]);
@@ -105,8 +108,8 @@ export function RideDetailPage() {
     { label: 'Power', unit: 'W', color: '--accent', y: sr.power_w },
     ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--danger', y: sr.hr_bpm }] : []),
     { label: 'Cadence', unit: 'rpm', color: '--ok', y: sr.cadence_rpm },
-    { label: 'Speed', unit: 'km/h', color: '--warn', y: sr.speed_kmh },
-    ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: 'm', color: '--chalk', y: sr.ele_m }] : []),
+    { label: 'Speed', unit: speedUnit(units), color: '--warn', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
+    ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--chalk', y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
   ];
 
   return (
@@ -143,13 +146,13 @@ export function RideDetailPage() {
       <div className={trace ? 'grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
         {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
         <Card className="flex flex-col justify-between gap-5">
-          <RideStats ride={r} />
+          <RideStats ride={r} units={units} />
         </Card>
       </div>
 
       <Card className="grid gap-5 xl:grid-cols-2">
         {charts.map((c) => (
-          <SeriesChart key={c.label} x={km} y={c.y} label={c.label} unit={c.unit} color={c.color} />
+          <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} />
         ))}
       </Card>
     </div>

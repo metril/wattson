@@ -8,6 +8,8 @@ import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Field } from '@/components/Field';
+import { Select } from '@/components/Select';
+import type { Units } from '@/lib/format';
 
 export function AccountPage() {
   const qc = useQueryClient();
@@ -27,6 +29,11 @@ export function AccountPage() {
       setSaved(true);
     },
     onMutate: () => setSaved(false),
+  });
+
+  const setUnits = useMutation({
+    mutationFn: async (units: Units) => unwrap(await api.PATCH('/api/auth/me', { body: { units } })),
+    onSuccess: (m) => qc.setQueryData(ME_KEY, m),
   });
 
   return (
@@ -56,6 +63,19 @@ export function AccountPage() {
             </Button>
           </div>
         </form>
+      </Card>
+      <Card className="flex flex-col gap-4">
+        <Select
+          label="Units"
+          hint="Distance, speed and elevation across the app."
+          value={me.data?.user.units ?? 'metric'}
+          disabled={setUnits.isPending}
+          onChange={(e) => setUnits.mutate(e.target.value as Units)}
+        >
+          <option value="metric">Metric (km, km/h, m)</option>
+          <option value="imperial">Imperial (mi, mph, ft)</option>
+        </Select>
+        {setUnits.isError && <Banner tone="error">{errMessage(setUnits.error)}</Banner>}
       </Card>
     </div>
   );

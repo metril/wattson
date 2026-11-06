@@ -1,5 +1,5 @@
 import type { components } from '@/lib/openapi';
-import { fixed0, km } from '@/lib/format';
+import { distUnit, elevUnit, toDist, toElev, type Units } from '@/lib/format';
 
 type Route = components['schemas']['RouteOut'];
 
@@ -14,11 +14,11 @@ const SOURCE: Record<Route['source'], string> = {
 export const sourceLabel = (s: Route['source']) => SOURCE[s];
 
 /** Distance, climb and steepest grades of a route. */
-export function RouteStats({ route }: { route: Route }) {
+export function RouteStats({ route, units = 'metric' }: { route: Route; units?: Units }) {
   const items: [string, string, string][] = [
-    ['Distance', km(route.distance_m), 'km'],
-    ['Ascent', fixed0(route.ascent_m), 'm'],
-    ['Descent', fixed0(route.descent_m), 'm'],
+    ['Distance', toDist(route.distance_m, units).toFixed(2), distUnit(units)],
+    ['Ascent', toElev(route.ascent_m, units).toFixed(0), elevUnit(units)],
+    ['Descent', toElev(route.descent_m, units).toFixed(0), elevUnit(units)],
     ['Steepest climb', route.max_grade_pct.toFixed(1), '%'],
     ['Steepest descent', route.min_grade_pct.toFixed(1), '%'],
   ];

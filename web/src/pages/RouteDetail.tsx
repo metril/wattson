@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Play } from 'lucide-react';
 import { api, ApiError, unwrap } from '@/lib/api';
-import { useMe } from '@/lib/auth';
+import { useMe, useUnits } from '@/lib/auth';
+import { fmtDist } from '@/lib/format';
 import { errMessage } from '@/lib/errors';
 import { getSelectedRiderId, setSelectedRiderId } from '@/lib/rider';
 import { gradeAt, positionAt, type Profile, type RiderTune } from '@/lib/route-math';
@@ -151,6 +152,7 @@ export function RouteDetailPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const me = useMe();
+  const units = useUnits();
 
   const route = useQuery({
     queryKey: routeKey(id),
@@ -263,7 +265,7 @@ export function RouteDetailPage() {
       <div className={synthetic ? 'grid gap-4' : 'grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]'}>
         {!synthetic && <MapView data-testid="route-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
         <Card className="flex flex-col justify-between gap-5">
-          <RouteStats route={rt} />
+          <RouteStats route={rt} units={units} />
           <div className="flex flex-wrap gap-3">
             <Link
               to={`/?route=${rt.id}`}
@@ -304,10 +306,10 @@ export function RouteDetailPage() {
           </Banner>
         ) : (
           <>
-            <ProfileCanvas profile={profile.data} onScrub={synthetic ? undefined : setScrub} height={200} />
+            <ProfileCanvas units={units} profile={profile.data} onScrub={synthetic ? undefined : setScrub} height={200} />
             <p className="numeral h-7 text-lg text-dim" aria-live="off">
               {scrub !== null
-                ? `${(scrub / 1000).toFixed(2)} km · ${gradeAt(profile.data, scrub).toFixed(1)} %`
+                ? `${fmtDist(scrub, units)} · ${gradeAt(profile.data, scrub).toFixed(1)} %`
                 : ''}
             </p>
           </>

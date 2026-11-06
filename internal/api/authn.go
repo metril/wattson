@@ -63,7 +63,8 @@ type meOut struct {
 
 type patchMeIn struct {
 	Body struct {
-		DisplayName string `json:"display_name" minLength:"1" maxLength:"64" doc:"New display name, 1 to 64 characters after trimming."`
+		DisplayName *string `json:"display_name,omitempty" minLength:"1" maxLength:"64" doc:"New display name, 1 to 64 characters after trimming."`
+		Units       *string `json:"units,omitempty" enum:"metric,imperial" doc:"Preferred display units."`
 	}
 }
 
@@ -223,18 +224,36 @@ func (d Deps) registerAuthn(api huma.API) {
 
 	register(api, route{Method: http.MethodPatch, Path: "/api/auth/me", ID: "updateMe", Tag: "auth",
 		Summary: "Update own profile",
-		Description: "Sets the signed-in user's display name (1 to 64 characters after trimming). Riders still carrying the " +
+		Description: "Sets the signed-in user's display name (1 to 64 characters after trimming) and/or unit preference (`metric` or `imperial`); at least one is required. Riders still carrying the " +
 			"previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`.",
 		Scope: auth.ScopeControl},
 		func(ctx context.Context, in *patchMeIn) (*meOut, error) {
 			id, _ := auth.FromContext(ctx)
-			name := strings.TrimSpace(in.Body.DisplayName)
-			if n := utf8.RuneCountInString(name); n < 1 || n > 64 {
-				return nil, apiErr(http.StatusBadRequest, "invalid_request", "display_name: must be 1 to 64 characters")
+			if in.Body.DisplayName == nil && in.Body.Units == nil {
+				return nil, apiErr(http.StatusBadRequest, "invalid_request", "display_name or units is required")
 			}
-			u, err := d.Store.UpdateDisplayName(ctx, id.User.ID, name)
-			if err != nil {
-				return nil, err
+			var name string
+			if in.Body.DisplayName != nil {
+				name = strings.TrimSpace(*in.Body.DisplayName)
+				if n := utf8.RuneCountInString(name); n < 1 || n > 64 {
+					return nil, apiErr(http.StatusBadRequest, "invalid_request", "display_name: must be 1 to 64 characters")
+				}
+			}
+			if in.Body.Units != nil && *in.Body.Units != "metric" && *in.Body.Units != "imperial" {
+				return nil, apiErr(http.StatusBadRequest, "invalid_request", "units: must be metric or imperial")
+			}
+			u := id.User
+			var err error
+			if in.Body.DisplayName != nil {
+				if u, err = d.Store.UpdateDisplayName(ctx, id.User.ID, name); err != nil {
+					return nil, err
+				}
+			}
+			if in.Body.Units != nil {
+				if err = d.Store.UpdateUnits(ctx, id.User.ID, *in.Body.Units); err != nil {
+					return nil, err
+				}
+				u.Units = *in.Body.Units
 			}
 			scopes := make([]string, 0, len(id.Scopes))
 			for _, s := range id.Scopes {

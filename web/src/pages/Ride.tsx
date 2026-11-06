@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSearchParams } from 'react-router';
+import { useUnits } from '@/lib/auth';
 import { Banner } from '@/components/Banner';
 import { BikeBar } from '@/features/ride/BikeBar';
 import { LevelControls } from '@/features/ride/LevelControls';
@@ -25,6 +26,7 @@ const ALERT_MS = 10_000;
  * bike, ride state or alert changes.
  */
 export function RidePage() {
+  const units = useUnits();
   const [socket] = useState(() =>
     createRideSocket(() => notifyUnauthorized(location.pathname + location.search)),
   );
@@ -161,7 +163,7 @@ export function RidePage() {
         </div>
       )}
       <div className="ride-metrics">
-        <MetricGrid ticks={socket.ticks} showLevel={false} route={routeMode} erg={ergMode} hr={bike?.hr}>
+        <MetricGrid units={units} ticks={socket.ticks} showLevel={false} route={routeMode} erg={ergMode} hr={bike?.hr}>
           {ergMode ? (
             <ErgControls send={send} ticks={socket.ticks} free={workoutId === 0} disabled={!connected || !active} onError={onError} />
           ) : (

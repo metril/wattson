@@ -9,6 +9,19 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('MetricGrid', () => {
+  it('shows imperial units', () => {
+    const ticks = new TickStore();
+    render(<MetricGrid ticks={ticks} units="imperial" />);
+    act(() => {
+      ticks.set(tickFixture({ speed_kmh: 32.1869, distance_m: 1609.344 }));
+      vi.runAllTimers();
+    });
+    expect(screen.getByText('mph')).toBeInTheDocument();
+    expect(screen.getByText('mi')).toBeInTheDocument();
+    expect(screen.getByText('20.0')).toBeInTheDocument();
+    expect(screen.getByText('1.00')).toBeInTheDocument();
+  });
+
   it('formats ticks without re-rendering', () => {
     const ticks = new TickStore();
     let renders = 0;

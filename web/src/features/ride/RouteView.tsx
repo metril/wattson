@@ -1,3 +1,4 @@
+import { useUnits } from '@/lib/auth';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -106,6 +107,7 @@ export function useRouteId(ticks: TickStore): number {
  * the live metrics alone.
  */
 export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStore }) {
+  const units = useUnits();
   const route = useQuery({
     queryKey: routeKey(routeId),
     staleTime: Infinity,
@@ -390,7 +392,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
             </Suspense>
           </div>
         )}
-        {prof && <ProfileCanvas profile={prof} cursor={ticks} height={tv ? 96 : rail ? 180 : hasMap ? 220 : 160} />}
+        {prof && <ProfileCanvas profile={prof} units={units} cursor={ticks} height={tv ? 96 : rail ? 180 : hasMap ? 220 : 160} />}
       </div>
     </section>
   );

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Navigate, useLocation } from 'react-router';
 import { Banner } from '@/components/Banner';
 import { api, dropKioskToken, getKioskToken, unwrap, wasKioskDropped } from './api';
+import type { Units } from './format';
 import type { components } from './openapi';
 
 type Schemas = components['schemas'];
@@ -27,6 +28,12 @@ export function useMe() {
       return unwrap(r);
     },
   });
+}
+
+/** The caller's display units; metric until the profile loads. */
+export function useUnits(): Units {
+  const me = useMe();
+  return me.data?.user.units ?? 'metric';
 }
 
 /** Sign-in options and whether first-run setup is still pending. */

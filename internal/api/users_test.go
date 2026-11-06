@@ -109,3 +109,37 @@ func TestUpdateOwnDisplayName(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitsPreference(t *testing.T) {
+	t.Parallel()
+	ts := newTS(t)
+	ts.setupAdmin(t)
+	ts.addUser(t, "dave", "dave-password-1", false)
+	c := ts.loginAs(t, "dave", "dave-password-1")
+
+	_, b := ts.do(t, c, "GET", "/api/auth/me", nil)
+	if u := decode[MeOut](t, b).User.Units; u != "metric" {
+		t.Fatalf("default units %q, want metric", u)
+	}
+	resp, b := ts.do(t, c, "PATCH", "/api/auth/me", map[string]any{"units": "imperial"})
+	if resp.StatusCode != 200 || decode[MeOut](t, b).User.Units != "imperial" {
+		t.Fatalf("set imperial: %d %s", resp.StatusCode, b)
+	}
+	_, b = ts.do(t, c, "GET", "/api/auth/me", nil)
+	if u := decode[MeOut](t, b).User.Units; u != "imperial" {
+		t.Errorf("units after set %q, want imperial", u)
+	}
+	for _, body := range []map[string]any{{"units": "furlongs"}, {"units": ""}, {}} {
+		if resp, b := ts.do(t, c, "PATCH", "/api/auth/me", body); resp.StatusCode < 400 || resp.StatusCode >= 500 {
+			t.Errorf("body %v: %d %s, want 4xx", body, resp.StatusCode, b)
+		}
+	}
+	resp, b = ts.do(t, c, "PATCH", "/api/auth/me", map[string]any{"display_name": "Dave D"})
+	if m := decode[MeOut](t, b); resp.StatusCode != 200 || m.User.DisplayName != "Dave D" || m.User.Units != "imperial" {
+		t.Errorf("name-only patch: %d %s", resp.StatusCode, b)
+	}
+	resp, b = ts.do(t, c, "PATCH", "/api/auth/me", map[string]any{"display_name": "Dave E", "units": "metric"})
+	if m := decode[MeOut](t, b); resp.StatusCode != 200 || m.User.DisplayName != "Dave E" || m.User.Units != "metric" {
+		t.Errorf("both patch: %d %s", resp.StatusCode, b)
+	}
+}

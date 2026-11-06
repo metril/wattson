@@ -1350,11 +1350,16 @@
             "maxLength": 64,
             "minLength": 1,
             "type": "string"
+          },
+          "units": {
+            "description": "Preferred display units.",
+            "enum": [
+              "metric",
+              "imperial"
+            ],
+            "type": "string"
           }
         },
-        "required": [
-          "display_name"
-        ],
         "type": "object"
       },
       "PatchProviderInBody": {
@@ -3611,6 +3616,14 @@
             "description": "Whether the account is linked to an OIDC identity.",
             "type": "boolean"
           },
+          "units": {
+            "description": "Preferred display units.",
+            "enum": [
+              "metric",
+              "imperial"
+            ],
+            "type": "string"
+          },
           "username": {
             "description": "Unique login name (case-insensitive).",
             "type": "string"
@@ -3624,6 +3637,7 @@
           "is_admin",
           "is_bootstrap",
           "disabled",
+          "units",
           "oidc",
           "created_at"
         ],
@@ -4462,7 +4476,7 @@
         ]
       },
       "patch": {
-        "description": "Sets the signed-in user's display name (1 to 64 characters after trimming). Riders still carrying the previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`. Requires the `control` scope.",
+        "description": "Sets the signed-in user's display name (1 to 64 characters after trimming) and/or unit preference (`metric` or `imperial`); at least one is required. Riders still carrying the previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`. Requires the `control` scope.",
         "operationId": "updateMe",
         "requestBody": {
           "content": {

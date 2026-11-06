@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/metril/wattson/compare/v0.1.2...v0.1.3) (2026-11-06)
+
+
+### Features
+
+* sortable routes list and per-user metric/imperial units ([#5](https://github.com/metril/wattson/issues/5)) ([ac1c4b9](https://github.com/metril/wattson/commit/ac1c4b9c6079f4e90295c89de5af108217b29942))
+
 ## [0.1.2](https://github.com/metril/wattson/compare/v0.1.1...v0.1.2) (2026-11-04)
 
 

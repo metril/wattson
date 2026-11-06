@@ -1,16 +1,53 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PenLine, SlidersHorizontal, Upload } from 'lucide-react';
 import { api, ApiError, unwrap } from '@/lib/api';
+import { useUnits } from '@/lib/auth';
 import { errMessage } from '@/lib/errors';
-import { fixed0, km } from '@/lib/format';
+import { fmtDist, fmtElev, rideDate } from '@/lib/format';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
 import { ROUTES_KEY } from '@/features/routes/queries';
 import { sourceLabel } from '@/features/routes/RouteStats';
 
 type Route = components['schemas']['RouteOut'];
+
+type SortKey = 'name' | 'distance' | 'ascent' | 'source' | 'created';
+type SortDir = 'asc' | 'desc';
+type Sort = { key: SortKey; dir: SortDir };
+
+const SORT_KEY = 'wattson.routes.sort';
+const DEFAULT_SORT: Sort = { key: 'created', dir: 'desc' };
+const KEYS: SortKey[] = ['name', 'distance', 'ascent', 'source', 'created'];
+const firstDir = (k: SortKey): SortDir => (k === 'name' || k === 'source' ? 'asc' : 'desc');
+
+function loadSort(): Sort {
+  try {
+    const v = JSON.parse(localStorage.getItem(SORT_KEY) ?? 'null') as Sort | null;
+    if (v && KEYS.includes(v.key) && (v.dir === 'asc' || v.dir === 'desc')) return { key: v.key, dir: v.dir };
+  } catch {
+    /* unreadable or unavailable storage: use the default */
+  }
+  return DEFAULT_SORT;
+}
+
+const collator = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
+function compare(a: Route, b: Route, key: SortKey): number {
+  switch (key) {
+    case 'name':
+      return collator(a.name, b.name);
+    case 'source':
+      return collator(sourceLabel(a.source), sourceLabel(b.source));
+    case 'distance':
+      return a.distance_m - b.distance_m;
+    case 'ascent':
+      return a.ascent_m - b.ascent_m;
+    case 'created':
+      return Date.parse(a.created_at) - Date.parse(b.created_at) || 0;
+  }
+}
 
 const btn =
   'inline-flex min-h-touch items-center justify-center gap-2 rounded-control px-4 font-medium';
@@ -26,6 +63,7 @@ export function importMessage(e: unknown): string {
 }
 
 export function RoutesPage() {
+  const units = useUnits();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const q = useQuery<Route[]>({
@@ -53,7 +91,41 @@ export function RoutesPage() {
     onError: (e) => setError(importMessage(e)),
   });
 
-  const routes = q.data ?? [];
+  const [sort, setSort] = useState<Sort>(loadSort);
+  const routes = useMemo(() => {
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    return [...(q.data ?? [])].sort((a, b) => sign * compare(a, b, sort.key) || collator(a.name, b.name));
+  }, [q.data, sort]);
+
+  const toggleSort = (key: SortKey) => {
+    const next: Sort =
+      sort.key === key ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: firstDir(key) };
+    setSort(next);
+    try {
+      localStorage.setItem(SORT_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable: sort still applies for this visit */
+    }
+  };
+
+  const th = (key: SortKey, label: string, right = false) => (
+    <th
+      scope="col"
+      aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={`px-4 py-3 font-medium ${right ? 'text-right' : ''}`}
+    >
+      <button
+        type="button"
+        onClick={() => toggleSort(key)}
+        className="inline-flex min-h-touch items-center gap-1 font-medium hover:text-chalk"
+      >
+        {label}
+        <span aria-hidden className="w-3 text-xs">
+          {sort.key === key ? (sort.dir === 'asc' ? '▲' : '▼') : ''}
+        </span>
+      </button>
+    </th>
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
@@ -107,10 +179,11 @@ export function RoutesPage() {
           <table className="w-full text-left">
             <thead className="text-sm text-dim">
               <tr className="border-b border-line">
-                <th scope="col" className="px-4 py-3 font-medium">Name</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">Distance</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">Ascent</th>
-                <th scope="col" className="px-4 py-3 font-medium">Source</th>
+                {th('name', 'Name')}
+                {th('distance', 'Distance', true)}
+                {th('ascent', 'Ascent', true)}
+                {th('source', 'Source')}
+                {th('created', 'Created')}
               </tr>
             </thead>
             <tbody>
@@ -125,13 +198,14 @@ export function RoutesPage() {
                       {r.name}
                     </Link>
                   </td>
-                  <td className="numeral whitespace-nowrap px-4 text-right text-lg">{km(r.distance_m)} km</td>
-                  <td className="numeral whitespace-nowrap px-4 text-right text-lg">{fixed0(r.ascent_m)} m</td>
+                  <td className="numeral whitespace-nowrap px-4 text-right text-lg">{fmtDist(r.distance_m, units)}</td>
+                  <td className="numeral whitespace-nowrap px-4 text-right text-lg">{fmtElev(r.ascent_m, units)}</td>
                   <td className="px-4">
                     <span className="rounded-full border border-line px-2.5 py-0.5 text-xs text-dim">
                       {sourceLabel(r.source)}
                     </span>
                   </td>
+                  <td className="whitespace-nowrap px-4 text-dim">{rideDate(r.created_at)}</td>
                 </tr>
               ))}
             </tbody>

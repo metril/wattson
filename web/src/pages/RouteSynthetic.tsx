@@ -1,3 +1,5 @@
+import { useUnits } from '@/lib/auth';
+import { distUnit, elevUnit, toDist, toElev } from '@/lib/format';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +25,7 @@ const valid = (r: Row) => {
 };
 
 export function RouteSyntheticPage() {
+  const units = useUnits();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [name, setName] = useState('');
@@ -106,9 +109,9 @@ export function RouteSyntheticPage() {
         </Card>
 
         <Card className="flex flex-col gap-4">
-          <ProfileCanvas profile={null} synthetic={synthetic} height={220} />
+          <ProfileCanvas units={units} profile={null} synthetic={synthetic} height={220} />
           <p className="numeral text-2xl" aria-live="polite">
-            {(totalM / 1000).toFixed(2)} km · +{Math.round(ascent)} m
+            {toDist(totalM, units).toFixed(2)} {distUnit(units)} · +{Math.round(toElev(ascent, units))} {elevUnit(units)}
           </p>
           <p className="text-sm text-dim">
             Segment lengths run 10 m to 100 km, grades -25 to 25 %. The route starts at 100 m elevation.

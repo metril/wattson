@@ -22,6 +22,8 @@ export function SeriesChart(p: {
   y: number[];
   label: string;
   unit: string;
+  /** Unit of x (distance); km by default. */
+  xUnit?: string;
   color: string;
   height?: number;
 }) {
@@ -29,7 +31,8 @@ export function SeriesChart(p: {
   const h = p.height ?? 140;
   const [hover, setHover] = useState<number | null>(null);
   const geo = useMemo(() => chartGeometry(p.x, p.y, width, h, PAD), [p.x, p.y, width, h]);
-  const decimals = p.unit === 'km/h' ? 1 : 0;
+  const xUnit = p.xUnit ?? 'km';
+  const decimals = p.unit === 'km/h' || p.unit === 'mph' ? 1 : 0;
 
   useEffect(() => {
     const c = canvas.current;
@@ -65,7 +68,7 @@ export function SeriesChart(p: {
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${geo.min.toFixed(decimals)} ${p.unit}`, PAD + 2, h - 1);
     ctx.textAlign = 'right';
-    ctx.fillText(`${p.x[n - 1].toFixed(1)} km`, width - PAD, h - 1);
+    ctx.fillText(`${p.x[n - 1].toFixed(1)} ${xUnit}`, width - PAD, h - 1);
     ctx.textAlign = 'left';
     if (hover !== null && hover < n) {
       const hx = geo.x(p.x[hover]);
@@ -90,7 +93,7 @@ export function SeriesChart(p: {
     setHover(nearest(p.x, p.x[0] + f * (p.x[n - 1] - p.x[0])));
   }
 
-  const readout = hover !== null && hover < p.y.length ? `${p.y[hover].toFixed(decimals)} ${p.unit} @ ${p.x[hover].toFixed(2)} km` : '';
+  const readout = hover !== null && hover < p.y.length ? `${p.y[hover].toFixed(decimals)} ${p.unit} @ ${p.x[hover].toFixed(2)} ${xUnit}` : '';
 
   return (
     <section className="flex flex-col gap-1">

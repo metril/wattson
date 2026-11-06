@@ -22,13 +22,14 @@ type UserOut struct {
 	IsAdmin     bool      `json:"is_admin" doc:"Whether the user holds the admin scope."`
 	IsBootstrap bool      `json:"is_bootstrap" doc:"Whether this is the first-run admin, who can never be demoted or disabled."`
 	Disabled    bool      `json:"disabled" doc:"Whether sign-in and every credential of the user is refused."`
+	Units       string    `json:"units" enum:"metric,imperial" doc:"Preferred display units."`
 	OIDC        bool      `json:"oidc" doc:"Whether the account is linked to an OIDC identity."`
 	CreatedAt   time.Time `json:"created_at" doc:"Creation time, UTC."`
 }
 
 func userOut(u store.User) UserOut {
 	return UserOut{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Email: u.Email,
-		IsAdmin: u.IsAdmin, IsBootstrap: u.IsBootstrap, Disabled: u.Disabled,
+		IsAdmin: u.IsAdmin, IsBootstrap: u.IsBootstrap, Disabled: u.Disabled, Units: u.Units,
 		OIDC: u.Iss != "", CreatedAt: u.CreatedAt}
 }
 

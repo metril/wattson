@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { fixed0, hms, km } from '@/lib/format';
+import { distUnit, fixed0, hms, speedUnit, toDist, toSpeed, type Units } from '@/lib/format';
 import { useTickText, type TickStore } from '@/lib/tick-store';
 import { COMPACT_QUERY, useMedia } from '@/lib/use-media';
 import type { BikeStatus, Tick } from '@/lib/ws-types';
@@ -45,12 +45,12 @@ function Tile({
 
 const pickPower = (t: Tick) => fixed0(t.power_w);
 const pickCadence = (t: Tick) => fixed0(t.cadence_rpm);
-const pickSpeed = (t: Tick) => t.speed_kmh.toFixed(1);
-const pickDistance = (t: Tick) => km(t.distance_m);
+const pickSpeed = (u: Units) => (t: Tick) => toSpeed(t.speed_kmh, u).toFixed(1);
+const pickDistance = (u: Units) => (t: Tick) => toDist(t.distance_m, u).toFixed(2);
 const pickTime = (t: Tick) => hms(t.elapsed_s);
 const pickGrade = (t: Tick) => t.grade_pct.toFixed(1);
 const pickAhead = (t: Tick) => t.grade_ahead_pct.toFixed(1);
-const pickRemaining = (t: Tick) => km(Math.max(0, t.route_length_m - t.distance_m));
+const pickRemaining = (u: Units) => (t: Tick) => toDist(Math.max(0, t.route_length_m - t.distance_m), u).toFixed(2);
 const pickHR = (t: Tick) => (t.heart_rate_bpm > 0 ? fixed0(t.heart_rate_bpm) : '—');
 const pickTarget = (t: Tick) => fixed0(t.target_power_w);
 const pickLevel = (t: Tick) => `L${t.level} (${t.reported_level > 0 ? t.reported_level : '–'})`;
@@ -77,6 +77,7 @@ export function MetricGrid({
   route = false,
   erg = false,
   hr,
+  units = 'metric',
   children,
 }: {
   ticks: TickStore;
@@ -87,6 +88,8 @@ export function MetricGrid({
   erg?: boolean;
   /** Heart rate source status; absent when no source is set. */
   hr?: BikeStatus['hr'];
+  /** Display units; metric by default. */
+  units?: Units;
   children?: ReactNode;
 }) {
   const compact = useMedia(COMPACT_QUERY);
@@ -96,7 +99,7 @@ export function MetricGrid({
   return (
     <div role="group" aria-label="Ride metrics" className="metric-grid">
       <Tile name="Power" unit="W" ticks={ticks} pick={pickPower} cls="m-power" valueCls="metric-hero" />
-      <Tile name="Speed" unit="km/h" ticks={ticks} pick={pickSpeed} cls="m-speed" />
+      <Tile name="Speed" unit={speedUnit(units)} ticks={ticks} pick={pickSpeed(units)} cls="m-speed" />
       {route ? (
         <Tile name="Grade" unit="%" ticks={ticks} pick={pickGrade} cls="m-grade" />
       ) : (
@@ -121,7 +124,7 @@ export function MetricGrid({
       {rest && (
         <>
           {route && <Tile name="Cadence" unit="rpm" ticks={ticks} pick={pickCadence} cls="m-rest" />}
-          <Tile name="Distance" unit="km" ticks={ticks} pick={pickDistance} cls="m-rest m-dist" />
+          <Tile name="Distance" unit={distUnit(units)} ticks={ticks} pick={pickDistance(units)} cls="m-rest m-dist" />
           <Tile name="Time" ticks={ticks} pick={pickTime} cls="m-time" />
           <Tile name="HR" unit="bpm" ticks={ticks} pick={pickHR} cls="m-hr">
             {hr && <p className="truncate text-xs text-dim">{hrStatus(hr)}</p>}
@@ -130,7 +133,7 @@ export function MetricGrid({
           {route && (
             <>
               <Tile name="Ahead" unit="%" ticks={ticks} pick={pickAhead} cls="m-rest" />
-              <Tile name="Remaining" unit="km" ticks={ticks} pick={pickRemaining} cls="m-rest" />
+              <Tile name="Remaining" unit={distUnit(units)} ticks={ticks} pick={pickRemaining(units)} cls="m-rest" />
             </>
           )}
         </>

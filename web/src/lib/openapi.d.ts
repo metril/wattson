@@ -135,7 +135,7 @@ export interface paths {
         head?: never;
         /**
          * Update own profile
-         * @description Sets the signed-in user's display name (1 to 64 characters after trimming). Riders still carrying the previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`. Requires the `control` scope.
+         * @description Sets the signed-in user's display name (1 to 64 characters after trimming) and/or unit preference (`metric` or `imperial`); at least one is required. Riders still carrying the previous display name are renamed too; riders renamed by hand keep their names. Returns the same shape as `getMe`. Requires the `control` scope.
          */
         patch: operations["updateMe"];
         trace?: never;
@@ -1819,7 +1819,12 @@ export interface components {
         };
         PatchMeInBody: {
             /** @description New display name, 1 to 64 characters after trimming. */
-            display_name: string;
+            display_name?: string;
+            /**
+             * @description Preferred display units.
+             * @enum {string}
+             */
+            units?: "metric" | "imperial";
         };
         PatchProviderInBody: {
             /** @description Group whose members are admins; empty leaves admin status unmanaged. Default empty. */
@@ -3005,6 +3010,11 @@ export interface components {
             is_bootstrap: boolean;
             /** @description Whether the account is linked to an OIDC identity. */
             oidc: boolean;
+            /**
+             * @description Preferred display units.
+             * @enum {string}
+             */
+            units: "metric" | "imperial";
             /** @description Unique login name (case-insensitive). */
             username: string;
         };

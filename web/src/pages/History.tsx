@@ -4,7 +4,8 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { RIDES_KEY } from '@/lib/rides';
-import { fixed0, hms, km, rideDate } from '@/lib/format';
+import { useUnits } from '@/lib/auth';
+import { distUnit, fixed0, hms, rideDate, toDist, type Units } from '@/lib/format';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
 import { Button } from '@/components/Button';
@@ -47,7 +48,7 @@ function Stat({ label, children }: { label: string; children: string }) {
   );
 }
 
-function Row({ r }: { r: Ride }) {
+function Row({ r, units }: { r: Ride; units: Units }) {
   return (
     <li>
       <Link
@@ -61,7 +62,7 @@ function Row({ r }: { r: Ride }) {
         <span className="truncate text-right text-sm text-dim md:text-left">{r.rider_name}</span>
         <span className="col-span-3 min-w-0 truncate font-medium md:col-span-1">{r.route_name || 'Free ride'}</span>
         <Stat label="Time">{hms(r.duration_s)}</Stat>
-        <Stat label="km">{km(r.distance_m)}</Stat>
+        <Stat label={distUnit(units)}>{toDist(r.distance_m, units).toFixed(2)}</Stat>
         <Stat label="Avg W">{fixed0(r.avg_power_w)}</Stat>
         <Stat label="NP">{fixed0(r.np_w)}</Stat>
         <Stat label="kJ">{fixed0(r.kj)}</Stat>
@@ -76,6 +77,7 @@ function Row({ r }: { r: Ride }) {
 }
 
 export function HistoryPage() {
+  const units = useUnits();
   const riders = useQuery<Rider[]>({
     queryKey: RIDERS_KEY,
     queryFn: async () => unwrap(await api.GET('/api/riders')),
@@ -152,7 +154,7 @@ export function HistoryPage() {
               <span>Rider</span>
               <span>Route</span>
               <span>Time</span>
-              <span>km</span>
+              <span>{distUnit(units)}</span>
               <span>Avg W</span>
               <span>NP</span>
               <span>kJ</span>
@@ -160,7 +162,7 @@ export function HistoryPage() {
             </div>
             <ul className="divide-y divide-line">
               {list.map((r) => (
-                <Row key={r.id} r={r} />
+                <Row key={r.id} r={r} units={units} />
               ))}
             </ul>
           </Card>

@@ -20,8 +20,12 @@ type User struct {
 	IsAdmin      bool
 	IsBootstrap  bool
 	Disabled     bool
+	Units        string // "metric" or "imperial"
 	CreatedAt    time.Time
 }
+
+// ErrInvalidUnits is returned for a units value other than metric or imperial.
+var ErrInvalidUnits = errors.New("store: units must be metric or imperial")
 
 var userCols = userColumns("")
 
@@ -33,7 +37,7 @@ func userColumns(alias string) string {
 	}
 	return alias + "id, " + alias + "username, COALESCE(" + alias + "email,''), " + alias + "display_name, " +
 		"COALESCE(" + alias + "password_hash,''), COALESCE(" + alias + "iss,''), COALESCE(" + alias + "sub,''), " +
-		alias + "is_admin, " + alias + "is_bootstrap, " + alias + "disabled, " + alias + "created_at"
+		alias + "is_admin, " + alias + "is_bootstrap, " + alias + "disabled, " + alias + "units, " + alias + "created_at"
 }
 
 type scanner interface{ Scan(dest ...any) error }
@@ -42,7 +46,7 @@ func scanUser(r scanner) (User, error) {
 	var u User
 	var created string
 	if err := r.Scan(&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.PasswordHash,
-		&u.Iss, &u.Sub, &u.IsAdmin, &u.IsBootstrap, &u.Disabled, &created); err != nil {
+		&u.Iss, &u.Sub, &u.IsAdmin, &u.IsBootstrap, &u.Disabled, &u.Units, &created); err != nil {
 		return User{}, err
 	}
 	t, err := time.Parse(TimeFormat, created)
@@ -292,6 +296,18 @@ func (s *Store) UpdateDisplayName(ctx context.Context, id int64, name string) (U
 	}
 	u.DisplayName = name
 	return u, nil
+}
+
+// UpdateUnits sets the user's unit preference ("metric" or "imperial");
+// ErrInvalidUnits for other values, ErrNotFound if no such user.
+func (s *Store) UpdateUnits(ctx context.Context, id int64, units string) error {
+	if units != "metric" && units != "imperial" {
+		return ErrInvalidUnits
+	}
+	if err := s.execOne(ctx, `UPDATE users SET units = ? WHERE id = ?`, units, id); err != nil {
+		return fmt.Errorf("update units: %w", err)
+	}
+	return nil
 }
 
 // LinkOIDC attaches an OIDC identity to the user. ErrNotFound if no such

@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Crosshair, Eraser, Trash2, Undo2 } from 'lucide-react';
 import { api, ApiError, unwrap } from '@/lib/api';
-import { useMe } from '@/lib/auth';
+import { useMe, useUnits } from '@/lib/auth';
 import { errMessage } from '@/lib/errors';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
@@ -89,6 +89,7 @@ function MissingTiles({ tiles, admin }: { tiles: string[]; admin: boolean }) {
 }
 
 export function RouteDrawPage() {
+  const units = useUnits();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [params] = useSearchParams();
@@ -286,8 +287,8 @@ export function RouteDrawPage() {
       {preview && (
         <Card className="flex flex-col gap-4" aria-busy={busy}>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-            <RouteStats route={preview.route} />
-            <ProfileCanvas profile={preview.profile} height={200} />
+            <RouteStats route={preview.route} units={units} />
+            <ProfileCanvas units={units} profile={preview.profile} height={200} />
           </div>
           <form
             className="flex flex-wrap items-end gap-2"

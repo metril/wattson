@@ -142,6 +142,7 @@ export function userFixture(
     is_bootstrap: false,
     disabled: false,
     oidc: false,
+    units: 'metric',
     created_at: '2026-01-01T00:00:00Z',
     ...over,
   };

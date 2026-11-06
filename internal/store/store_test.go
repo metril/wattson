@@ -52,8 +52,8 @@ func TestOpenIdempotent(t *testing.T) {
 	if err := s.Read.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 6 {
-		t.Fatalf("migrations = %d, want 6", n)
+	if n != 7 {
+		t.Fatalf("migrations = %d, want 7", n)
 	}
 	if err := s.Ping(context.Background()); err != nil {
 		t.Fatal(err)

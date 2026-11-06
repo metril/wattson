@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { distUnit, elevUnit, toDist, toElev, type Units } from '@/lib/format';
 import { profileGeometry } from '@/lib/profile-geometry';
 import type { Profile } from '@/lib/route-math';
 import type { TickStore } from '@/lib/tick-store';
@@ -43,10 +44,12 @@ export function ProfileCanvas(p: {
   synthetic?: { distance: number[]; ele: number[] };
   cursor?: TickStore;
   height?: number;
+  units?: Units;
   onScrub?(distanceM: number | null): void;
 }) {
   const { box, canvas, width } = useCanvasBox();
   const h = p.height ?? 180;
+  const units = p.units ?? 'metric';
   const series = useMemo<Series | null>(
     () => (p.profile ? fromProfile(p.profile) : p.synthetic ? fromSynthetic(p.synthetic) : null),
     [p.profile, p.synthetic],
@@ -106,13 +109,13 @@ export function ProfileCanvas(p: {
     ctx.fillStyle = tok('--dim', '#93a8ae');
     ctx.font = '12px "Saira Variable", system-ui, sans-serif';
     ctx.textBaseline = 'top';
-    ctx.fillText(`${Math.round(geo.maxEle)} m`, PAD + 2, 2);
+    ctx.fillText(`${Math.round(toElev(geo.maxEle, units))} ${elevUnit(units)}`, PAD + 2, 2);
     ctx.textBaseline = 'bottom';
     ctx.textAlign = 'right';
-    ctx.fillText(`${(length / 1000).toFixed(1)} km`, width - PAD, h - 1);
+    ctx.fillText(`${toDist(length, units).toFixed(1)} ${distUnit(units)}`, width - PAD, h - 1);
     ctx.textAlign = 'left';
-    ctx.fillText(`${Math.round(geo.minEle)} m`, PAD + 2, h - 1);
-  }, [series, geo, width, h, canvas, length]);
+    ctx.fillText(`${Math.round(toElev(geo.minEle, units))} ${elevUnit(units)}`, PAD + 2, h - 1);
+  }, [series, geo, width, h, canvas, length, units]);
 
   // Ride cursor: no React state, one DOM write per frame.
   const cur = useRef<HTMLDivElement>(null);
@@ -163,7 +166,7 @@ export function ProfileCanvas(p: {
         role="img"
         aria-label={
           series
-            ? `Elevation profile, ${(length / 1000).toFixed(1)} km, from ${Math.round(geo?.minEle ?? 0)} to ${Math.round(geo?.maxEle ?? 0)} m`
+            ? `Elevation profile, ${toDist(length, units).toFixed(1)} ${distUnit(units)}, from ${Math.round(toElev(geo?.minEle ?? 0, units))} to ${Math.round(toElev(geo?.maxEle ?? 0, units))} ${elevUnit(units)}`
             : 'Elevation profile'
         }
         className="block"

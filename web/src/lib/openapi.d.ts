@@ -688,6 +688,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rides/{id}/power-curve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a ride's power curve
+         * @description Returns the best average power of one finished ride for each of about 45 durations from 1 second to 2 hours. A ride of another user returns 404 unless the caller is an admin; a ride still recording is 409 `ride_in_progress`. Requires the `read` scope.
+         */
+        get: operations["getRidePowerCurve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rides/{id}/strava": {
         parameters: {
             query?: never;
@@ -1036,6 +1056,66 @@ export interface paths {
          * @description Reports whether first-run setup is still needed. No authentication required.
          */
         get: operations["getSetupStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/fitness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fitness, fatigue and form
+         * @description Returns daily chronic training load (CTL, 42-day constant), acute training load (ATL, 7-day constant) and training stress balance (TSB = CTL - ATL) from ride TSS. Days without a ride count as zero load. The series is computed from the first ride, so the returned window is warmed up. Rides are assigned to days in the time zone given by `tz`. Requires the `read` scope.
+         */
+        get: operations["getStatsFitness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/power-curve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * All-time power curve
+         * @description Returns the best average power for each of about 45 durations from 1 second to 2 hours across the caller's finished rides in the window, with watts per kilogram and the ride that set each point, plus the estimated FTP (95 percent of the best 20-minute power). With `rider_id` only that rider's rides are used; a rider of another user is a 404 unless the caller is an admin. Requires the `read` scope.
+         */
+        get: operations["getStatsPowerCurve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ride totals and streaks
+         * @description Returns ride count, time, distance, climbing, work and TSS per week, month or year, oldest first and zero-filled up to the current period, plus the current and longest streaks of consecutive days and ISO weeks with a ride. Rides are assigned to days in the time zone given by `tz`. With `rider_id` only that rider is counted; a rider of another user is a 404 unless the caller is an admin. Requires the `read` scope.
+         */
+        get: operations["getStatsTotals"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1543,6 +1623,30 @@ export interface components {
             /** @description The API token. Shown only in this response; store it now. */
             token: string;
         };
+        CurvePoint: {
+            /** @description Start of that ride, UTC, YYYY-MM-DD. */
+            date: string;
+            /**
+             * Format: int64
+             * @description Duration in seconds.
+             */
+            dur_s: number;
+            /**
+             * Format: int64
+             * @description The ride that set it.
+             */
+            ride_id: number;
+            /**
+             * Format: double
+             * @description Watts per kilogram, using the rider's weight on that ride; 0 when unknown.
+             */
+            w_per_kg: number;
+            /**
+             * Format: double
+             * @description Best average power over this duration, in watts.
+             */
+            watts: number;
+        };
         Device: {
             /** @description Bluetooth address, with a /random suffix for random addresses. */
             address: string;
@@ -1654,6 +1758,36 @@ export interface components {
         ErrorResponse: {
             /** @description Error details. */
             error: components["schemas"]["ErrorBody"];
+        };
+        FitnessDay: {
+            /**
+             * Format: double
+             * @description Acute training load (fatigue), a 7-day exponentially weighted average of TSS.
+             */
+            atl: number;
+            /**
+             * Format: double
+             * @description Chronic training load (fitness), a 42-day exponentially weighted average of TSS.
+             */
+            ctl: number;
+            /** @description Local day, YYYY-MM-DD. */
+            date: string;
+            /**
+             * Format: double
+             * @description Training stress balance (form): ctl minus atl.
+             */
+            tsb: number;
+            /**
+             * Format: double
+             * @description Training stress score of the day's rides; 0 on a rest day.
+             */
+            tss: number;
+        };
+        FitnessOut: {
+            /** @description Oldest first, one entry per day up to today; empty when there are no rides. */
+            days: components["schemas"]["FitnessDay"][];
+            /** @description The IANA time zone used to assign rides to days. */
+            tz: string;
         };
         GeneralOut: {
             /** @description External base URL of this server (http or https, no path); empty when unset. */
@@ -1972,6 +2106,17 @@ export interface components {
              */
             route_bearing_deg: number;
         };
+        PowerCurveOut: {
+            /**
+             * Format: double
+             * @description Estimated FTP: 95 percent of the best 20-minute power in the window; null without a 20-minute effort.
+             */
+            eftp_w: number | null;
+            /** @description About 45 points, shortest duration first; durations longer than any ride are absent. */
+            points: components["schemas"]["CurvePoint"][];
+            /** @description The requested window: 90d, 1y or all. */
+            window: string;
+        };
         PowerModelInfo: {
             /**
              * Format: double
@@ -2120,6 +2265,22 @@ export interface components {
             subscription: "ok" | "held_by_other" | "unknown";
             /** @description ESPHome version running on the device. */
             version?: string;
+        };
+        RideCurveOut: {
+            /** @description Shortest duration first; durations longer than the ride are absent. Empty for a ride not yet computed. */
+            points: components["schemas"]["RideCurvePoint"][];
+        };
+        RideCurvePoint: {
+            /**
+             * Format: int64
+             * @description Duration in seconds.
+             */
+            dur_s: number;
+            /**
+             * Format: double
+             * @description Best average power over this duration within the ride, in watts.
+             */
+            watts: number;
         };
         RideDetail: {
             /**
@@ -2917,6 +3078,28 @@ export interface components {
              */
             upload_id: number;
         };
+        Streaks: {
+            /**
+             * Format: int64
+             * @description Consecutive days with a ride, ending today or yesterday; 0 when the streak has lapsed.
+             */
+            current_days: number;
+            /**
+             * Format: int64
+             * @description Consecutive ISO weeks with a ride, ending this week or last; 0 when lapsed.
+             */
+            current_weeks: number;
+            /**
+             * Format: int64
+             * @description Longest run of consecutive days with a ride.
+             */
+            longest_days: number;
+            /**
+             * Format: int64
+             * @description Longest run of consecutive ISO weeks with a ride.
+             */
+            longest_weeks: number;
+        };
         SyntheticInBody: {
             /** @description Route name, 1 to 100 characters. */
             name: string;
@@ -3143,6 +3326,50 @@ export interface components {
             prefix: string;
             /** @description Scopes the token grants: read, control, admin. */
             scopes: string[];
+        };
+        TotalsOut: {
+            /** @description The requested granularity: week, month or year. */
+            period: string;
+            /** @description Oldest first and without gaps, ending with the current period: the last 26 weeks, 24 months or 10 years. */
+            periods: components["schemas"]["TotalsPeriod"][];
+            /** @description Streaks over the whole ride history. */
+            streaks: components["schemas"]["Streaks"];
+            /** @description The IANA time zone used to assign rides to days. */
+            tz: string;
+        };
+        TotalsPeriod: {
+            /**
+             * Format: double
+             * @description Total climbing in metres.
+             */
+            ascent_m: number;
+            /**
+             * Format: double
+             * @description Total distance in metres.
+             */
+            distance_m: number;
+            /**
+             * Format: double
+             * @description Total moving time in seconds.
+             */
+            duration_s: number;
+            /**
+             * Format: double
+             * @description Total work in kilojoules.
+             */
+            kj: number;
+            /**
+             * Format: int64
+             * @description Number of finished rides.
+             */
+            rides: number;
+            /** @description First local day of the period, YYYY-MM-DD (the Monday for weeks). */
+            start: string;
+            /**
+             * Format: double
+             * @description Total training stress score; rides without a TSS count as 0.
+             */
+            tss: number;
         };
         UserOut: {
             /**
@@ -6065,6 +6292,83 @@ export interface operations {
             };
         };
     };
+    getRidePowerCurve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Ride ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RideCurveOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getRideStrava: {
         parameters: {
             query?: never;
@@ -7548,6 +7852,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+        };
+    };
+    getStatsFitness: {
+        parameters: {
+            query?: {
+                /** @description Only this rider. A rider of another user is a 404 unless you are an admin. Default: every rider of yours. */
+                rider_id?: number;
+                /** @description How many days to return, 7 to 730. */
+                days?: number;
+                /** @description IANA time zone that decides which local day a ride belongs to. */
+                tz?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitnessOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStatsPowerCurve: {
+        parameters: {
+            query?: {
+                /** @description Only this rider. A rider of another user is a 404 unless you are an admin. Default: every rider of yours. */
+                rider_id?: number;
+                /** @description Only rides started within this window. */
+                window?: "90d" | "1y" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PowerCurveOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getStatsTotals: {
+        parameters: {
+            query?: {
+                /** @description Only this rider. A rider of another user is a 404 unless you are an admin. Default: every rider of yours. */
+                rider_id?: number;
+                /** @description Bucket size. Weeks are ISO weeks starting Monday. */
+                period?: "week" | "month" | "year";
+                /** @description IANA time zone (for example Europe/Paris) that decides which local day a ride belongs to. */
+                tz?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotalsOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

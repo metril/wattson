@@ -1,70 +1,74 @@
-import { useEffect, useState } from 'react';
-import { prepCanvas, tok, useCanvasBox } from '@/features/routes/canvas';
+import { useMemo } from 'react';
+import type { EChartsCoreOption } from 'echarts/core';
+import { ChartBox } from '@/features/charts/ChartBox';
+import { alpha, axisText, gridLine, tooltipBase, useChartTheme, type ChartTheme } from '@/features/charts/theme';
 
-const PAD = 14;
-const H = 180;
+const H = 200;
 
 export interface Bar {
   label: string;
   value: number;
 }
 
-/** One bar per period. `fmt` formats a value for the readout and the axis maximum. */
+/** ECharts option: rounded bars, the latest period in full colour, value labels when there is room. */
+export function totalsOption(bars: Bar[], fmt: (v: number) => string, t: ChartTheme): EChartsCoreOption {
+  const labelled = bars.length <= 12;
+  return {
+    animationDuration: 500,
+    grid: { left: labelled ? 12 : 52, right: 12, top: 24, bottom: 26 },
+    tooltip: {
+      ...tooltipBase(t),
+      trigger: 'axis',
+      confine: true,
+      axisPointer: { type: 'shadow', shadowStyle: { color: alpha(t.chalk, 0.06) } },
+      formatter: (items: { name: string; value: number }[]) =>
+        `<span style="color:${t.dim}">${items[0].name}</span><br/><b style="font-size:14px">${fmt(items[0].value)}</b>`,
+    },
+    xAxis: {
+      type: 'category',
+      data: bars.map((b) => b.label),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: alpha(t.chalk, 0.12) } },
+      axisLabel: { ...axisText(t), hideOverlap: true },
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      splitNumber: 3,
+      axisLabel: { ...axisText(t), show: !labelled, formatter: (v: number) => fmt(v) },
+      splitLine: gridLine(t),
+    },
+    series: [
+      {
+        type: 'bar',
+        barMaxWidth: 28,
+        barCategoryGap: '30%',
+        data: bars.map((b, i) => ({
+          value: b.value,
+          itemStyle: { color: i === bars.length - 1 ? t.accent : alpha(t.accent, 0.5), borderRadius: [5, 5, 0, 0] },
+        })),
+        label: labelled ? { show: true, position: 'top', color: t.dim, fontFamily: t.font, fontSize: 11, formatter: (q: { value: number }) => (q.value > 0 ? fmt(q.value) : '') } : { show: false },
+      },
+    ],
+  };
+}
+
+/** One bar per period. `fmt` formats a value for labels and the tooltip. */
 export function TotalsChart({ title, bars, fmt }: { title: string; bars: Bar[]; fmt: (v: number) => string }) {
-  const { box, canvas, width } = useCanvasBox();
-  const [hover, setHover] = useState<number | null>(null);
-  const top = Math.max(0, ...bars.map((b) => b.value));
-
-  useEffect(() => {
-    const c = canvas.current;
-    if (!c || width <= 0 || bars.length === 0) return;
-    const ctx = prepCanvas(c, width, H);
-    if (!ctx) return;
-    const slot = (width - 2 * PAD) / bars.length;
-    const bw = Math.max(1, slot * 0.7);
-    const base = H - PAD - 6;
-    bars.forEach((b, i) => {
-      const bh = top > 0 ? (b.value / top) * (base - PAD - 12) : 0;
-      ctx.fillStyle = tok(i === hover ? '--chalk' : '--accent', '#54a9ff');
-      ctx.fillRect(PAD + i * slot + (slot - bw) / 2, base - bh, bw, Math.max(bh, b.value > 0 ? 1 : 0));
-    });
-    ctx.fillStyle = tok('--dim', '#93a8ae');
-    ctx.font = '12px "Saira Variable", system-ui, sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText(fmt(top), PAD + 2, 2);
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(bars[0].label, PAD, H - 1);
-    ctx.textAlign = 'right';
-    ctx.fillText(bars[bars.length - 1].label, width - PAD, H - 1);
-    ctx.textAlign = 'left';
-  }, [bars, top, fmt, width, hover, canvas]);
-
-  function point(e: React.PointerEvent<HTMLDivElement>) {
-    if (bars.length === 0) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const f = (e.clientX - r.left - PAD) / Math.max(1, r.width - 2 * PAD);
-    setHover(Math.max(0, Math.min(bars.length - 1, Math.floor(f * bars.length))));
-  }
-
-  const b = hover !== null ? bars[hover] : undefined;
+  const t = useChartTheme();
+  const option = useMemo(() => totalsOption(bars, fmt, t), [bars, fmt, t]);
+  const latest = bars[bars.length - 1];
   return (
-    <section className="flex flex-col gap-1">
+    <section className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <h3 className="text-sm font-medium text-dim">{title}</h3>
-        <p data-testid="totals-readout" className="numeral h-6 text-base text-chalk">
-          {b ? `${b.label}: ${fmt(b.value)}` : ''}
-        </p>
+        <h3 className="label">{title}</h3>
+        {latest && (
+          <p data-testid="totals-readout" className="numeral text-sm text-dim">
+            {latest.label}: {fmt(latest.value)}
+          </p>
+        )}
       </div>
-      <div
-        ref={box}
-        className="relative w-full touch-pan-y overflow-hidden rounded-control bg-ground"
-        style={{ height: H }}
-        onPointerMove={point}
-        onPointerDown={point}
-        onPointerLeave={() => setHover(null)}
-      >
-        <canvas ref={canvas} role="img" aria-label={`${title} per period`} className="block" style={{ width, height: H }} />
-      </div>
+      <ChartBox option={option} height={H} label={`${title} per period`} />
     </section>
   );
 }

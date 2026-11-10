@@ -157,7 +157,7 @@ make serve     # build and run the server on :8080 with ./data
 make lint      # gofmt check + go vet + web type-check
 make e2e       # Playwright over the simulator, in phone, tablet and TV sizes (npx playwright install chromium once)
 make perf      # Lighthouse budgets (mobile) against the built binary; reports in web/lighthouse-report
-cd web && npm run size          # main bundle < 400 KB gz; maplibre, ride3d and photo chunk budgets
+cd web && npm run size          # main bundle < 400 KB gz; maplibre, ride3d, photo and echarts chunk budgets
 cd web && npm run screenshots   # regenerates docs/images with real map tiles (needs internet and `make build`)
 ```
 

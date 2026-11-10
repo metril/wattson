@@ -602,3 +602,10 @@ html.ride-dark .ride-view .ride-viewbox {
     font-size: 1.25rem;
   }
 }
+
+@keyframes chart-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

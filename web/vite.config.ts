@@ -48,7 +48,7 @@ function serviceWorker(): Plugin {
 
 const backend = 'http://localhost:8080';
 
-const LAZY_NAMES: Record<string, string> = { Ride3D: 'ride3d', PhotoView: 'photo' };
+const LAZY_NAMES: Record<string, string> = { Ride3D: 'ride3d', PhotoView: 'photo', EChart: 'echarts' };
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorker(), restoreGitkeep()],

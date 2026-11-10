@@ -17,7 +17,8 @@ import { RideHero, RideStats } from '@/features/history/RideStats';
 import { ZonesCard } from '@/features/history/ZonesCard';
 import { Reveal } from '@/components/Reveal';
 import { RIDERS_KEY } from '@/pages/Riders';
-import { SeriesChart } from '@/features/history/SeriesChart';
+import { zoneBounds } from '@/lib/zones';
+import { SeriesChart, type Band } from '@/features/history/SeriesChart';
 import { invalidateRideData, RIDES_KEY } from '@/lib/rides';
 import { PowerCurve } from '@/features/stats/PowerCurve';
 import { curveKey } from '@/features/stats/queries';
@@ -119,6 +120,22 @@ export function RideDetailPage() {
     },
   });
 
+  const rd = ride.data;
+  const charts = useMemo(() => {
+    if (!rd) return [];
+    const sr = rd.series;
+    const edges = rd.ftp_w ? [0, ...zoneBounds('power', rd.ftp_w)] : [];
+    const powerBands: Band[] = edges.map((from, i) => ({ from, to: edges[i + 1] ?? null, color: `--zone-${i + 1}` }));
+    const out: { label: string; unit: string; color: string; y: number[]; zero?: boolean; bands?: Band[] }[] = [
+      { label: 'Power', unit: 'W', color: '--m-power', y: sr.power_w, bands: powerBands },
+      ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--m-hr', y: sr.hr_bpm }] : []),
+      { label: 'Cadence', unit: 'rpm', color: '--m-cadence', y: sr.cadence_rpm },
+      { label: 'Speed', unit: speedUnit(units), color: '--m-speed', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
+      ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--m-elev', zero: false, y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
+    ];
+    return out;
+  }, [rd, units]);
+
   if (!valid) return <Gone />;
   if (ride.isPending) return <p role="status" className="text-dim">Loading…</p>;
   if (ride.isError) {
@@ -131,15 +148,6 @@ export function RideDetailPage() {
     );
   }
   const r = ride.data;
-  const sr = r.series;
-  const charts: { label: string; unit: string; color: string; y: number[] }[] = [
-    { label: 'Power', unit: 'W', color: '--m-power', y: sr.power_w },
-    ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--m-hr', y: sr.hr_bpm }] : []),
-    { label: 'Cadence', unit: 'rpm', color: '--m-cadence', y: sr.cadence_rpm },
-    { label: 'Speed', unit: speedUnit(units), color: '--m-speed', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
-    ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--m-elev', y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
-  ];
-
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -201,7 +209,7 @@ export function RideDetailPage() {
       <Reveal delay={0.24}>
         <Card className="grid gap-5">
           {charts.map((c) => (
-            <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} />
+            <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} zero={c.zero} bands={c.bands} group="ride" />
           ))}
         </Card>
       </Reveal>

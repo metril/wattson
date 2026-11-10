@@ -103,3 +103,24 @@ func TestRecorderWithStore(t *testing.T) {
 		t.Fatalf("rides = %+v", rides)
 	}
 }
+
+func TestRecoverFillsSnapshots(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := storetest.New(t)
+	rider := seedRider(t, s)
+	r := openRide(t, s, rider.ID, 12)
+	if _, err := s.Write.ExecContext(ctx, `UPDATE rides SET ftp_w=NULL, weight_kg=NULL WHERE id=?`, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := history.Recover(ctx, s, 10, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Ride(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FTPW != rider.FTPW || got.WeightKg != rider.WeightKg || got.Summary.TSS == nil {
+		t.Errorf("recovered ride = ftp %d weight %v tss %v", got.FTPW, got.WeightKg, got.Summary.TSS)
+	}
+}

@@ -54,12 +54,14 @@ func Backfill(ctx context.Context, st *store.Store, log *slog.Logger) (int, erro
 	}
 }
 
-func backfillRide(ctx context.Context, st *store.Store, r store.Ride) (bool, error) {
+// snapshotOf returns the ride's snapshot, filling any missing value from the
+// rider's current profile and the route's distance.
+func snapshotOf(ctx context.Context, st *store.Store, r store.Ride) (store.Snapshot, error) {
 	snap := store.Snapshot{FTPW: r.FTPW, HRMaxBpm: r.HRMaxBpm, WeightKg: r.WeightKg, RouteDistanceM: r.RouteDistanceM}
 	if snap.FTPW == 0 || snap.WeightKg == 0 || snap.HRMaxBpm == 0 {
 		rd, err := st.RiderByID(ctx, r.RiderID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return false, err
+			return snap, err
 		}
 		if err == nil {
 			if snap.FTPW == 0 {
@@ -76,15 +78,25 @@ func backfillRide(ctx context.Context, st *store.Store, r store.Ride) (bool, err
 	if snap.RouteDistanceM == 0 && r.RouteID != 0 {
 		d, err := st.RouteDistance(ctx, r.RouteID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return false, err
+			return snap, err
 		}
 		snap.RouteDistanceM = d
+	}
+	return snap, nil
+}
+
+func paramsOfSnapshot(snap store.Snapshot) Params {
+	return Params{FTPW: snap.FTPW, MaxHRBpm: snap.HRMaxBpm, WeightKg: snap.WeightKg, RouteDistanceM: snap.RouteDistanceM}
+}
+
+func backfillRide(ctx context.Context, st *store.Store, r store.Ride) (bool, error) {
+	snap, err := snapshotOf(ctx, st, r)
+	if err != nil {
+		return false, err
 	}
 	ss, err := st.Samples(ctx, r.ID)
 	if err != nil {
 		return false, err
 	}
-	sum := Summarize(ss, Params{FTPW: snap.FTPW, MaxHRBpm: snap.HRMaxBpm, WeightKg: snap.WeightKg,
-		RouteDistanceM: snap.RouteDistanceM})
-	return st.ApplyRideStats(ctx, r.ID, sum, snap)
+	return st.ApplyRideStats(ctx, r.ID, Summarize(ss, paramsOfSnapshot(snap)), snap)
 }

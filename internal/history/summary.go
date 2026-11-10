@@ -139,7 +139,7 @@ func NormalizedPower(watts []float64) float64 {
 // when any sample has it; otherwise elevation is integrated from
 // grade_pct x distance travelled between samples.
 func Ascent(ss []store.Sample) float64 {
-	var ele []float64
+	ele := make([]float64, 0, len(ss))
 	for _, s := range ss {
 		if !math.IsNaN(s.EleM) {
 			ele = append(ele, s.EleM)

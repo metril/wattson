@@ -293,7 +293,7 @@ func (s *Store) ApplyRideStats(ctx context.Context, id int64, sum Summary, snap 
 		return false, fmt.Errorf("apply ride stats: %w", err)
 	}
 	defer tx.Rollback()
-	args := append(statsArgs(sum), nullInt(int64(snap.FTPW)), nullF(snap.WeightKg), nullInt(int64(snap.HRMaxBpm)),
+	args := append(statsArgs(sum), nullInt(int64(snap.FTPW)), nullInt0(snap.WeightKg), nullInt(int64(snap.HRMaxBpm)),
 		nullInt0(snap.RouteDistanceM), id, sum.StatsVersion)
 	res, err := tx.ExecContext(ctx,
 		`UPDATE rides SET `+statsSet+`, ftp_w=COALESCE(ftp_w,?), weight_kg=COALESCE(weight_kg,?),
@@ -365,6 +365,19 @@ func writeDetail(ctx context.Context, tx *sql.Tx, id int64, sum Summary) error {
 	add("hr", sum.HRZones)
 	_, err := tx.ExecContext(ctx, b.String(), args...)
 	return err
+}
+
+// FillRideSnapshot stores the snapshot values the ride lacks, leaving set ones.
+func (s *Store) FillRideSnapshot(ctx context.Context, id int64, snap Snapshot) error {
+	_, err := s.Write.ExecContext(ctx,
+		`UPDATE rides SET ftp_w=COALESCE(ftp_w,?), weight_kg=COALESCE(weight_kg,?),
+			hr_max_bpm=COALESCE(hr_max_bpm,?), route_distance_m=COALESCE(route_distance_m,?) WHERE id=?`,
+		nullInt(int64(snap.FTPW)), nullInt0(snap.WeightKg), nullInt(int64(snap.HRMaxBpm)),
+		nullInt0(snap.RouteDistanceM), id)
+	if err != nil {
+		return fmt.Errorf("fill ride snapshot: %w", err)
+	}
+	return nil
 }
 
 // RidesNeedingStats returns up to limit finished rides with id above afterID

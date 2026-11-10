@@ -109,10 +109,6 @@ export function Layout() {
           </button>
         ) : (
           <>
-            <NavLink to="/stats" data-nav className={link}>
-              <ChartNoAxesCombined aria-hidden className="size-6" />
-              Stats
-            </NavLink>
             <NavLink to="/routes" data-nav className={link}>
               <Route aria-hidden className="size-6" />
               Routes
@@ -139,7 +135,7 @@ export function Layout() {
                 aria-expanded={more}
                 aria-controls="more-menu"
                 onClick={() => setMore((v) => !v)}
-                className={`${link} w-full ${more || (loc.pathname === '/settings/tokens' || loc.pathname === '/account') ? 'bg-raised text-chalk' : ''}`}
+                className={`${link} w-full ${more || (loc.pathname === '/stats' || loc.pathname === '/settings/tokens' || loc.pathname === '/account') ? 'bg-raised text-chalk' : ''}`}
               >
                 <Ellipsis aria-hidden className="size-6" />
                 More
@@ -149,6 +145,14 @@ export function Layout() {
                   id="more-menu"
                   className="absolute right-0 bottom-full z-20 mb-1 flex w-44 flex-col gap-1 rounded-panel border border-line bg-panel p-1 shadow-lg md:bottom-0 md:left-full md:mb-0 md:ml-2 md:right-auto"
                 >
+                  <NavLink
+                    to="/stats"
+                    data-nav
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-raised"
+                  >
+                    <ChartNoAxesCombined aria-hidden className="size-5" />
+                    Stats
+                  </NavLink>
                   <NavLink
                     to="/account"
                     data-nav

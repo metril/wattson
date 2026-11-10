@@ -820,6 +820,26 @@ export interface paths {
         patch: operations["renameRoute"];
         trace?: never;
     };
+    "/api/routes/{id}/ghost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the PR ghost of a route
+         * @description Returns the track of the caller's fastest completed ride on the route as `[distance_m, elapsed_s]` points at least 10 metres apart. Errors: 404 `no_pr` when there is no completed ride. With `rider_id` only that rider's rides count. Requires the `read` scope.
+         */
+        get: operations["getRouteGhost"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/routes/{id}/mapillary": {
         parameters: {
             query?: never;
@@ -852,6 +872,26 @@ export interface paths {
          * @description Returns the route resampled every `step_m` metres as parallel arrays (latitude, longitude, elevation, grade). The response is gzip-compressed when the client sends `Accept-Encoding: gzip`. Requires the `read` scope.
          */
         get: operations["getRouteProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/routes/{id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a route's attempt statistics
+         * @description Returns the caller's finished rides on the route with best, average and last time, the personal record and an attempt list. A completed attempt covers at least 98 percent of the route. With `rider_id` only that rider's rides count; a rider of another user returns 404 unless the caller is an admin. Requires the `read` scope.
+         */
+        get: operations["getRouteStats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1244,6 +1284,47 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AttemptOut: {
+            /**
+             * Format: int64
+             * @description Average heart rate in beats per minute; 0 when none was recorded.
+             */
+            avg_hr_bpm: number;
+            /**
+             * Format: double
+             * @description Average power in watts.
+             */
+            avg_power_w: number;
+            /**
+             * Format: double
+             * @description Average speed in kilometres per hour.
+             */
+            avg_speed_kmh: number;
+            /** @description True when the ride covered at least 98 percent of the route. */
+            completed: boolean;
+            /**
+             * Format: double
+             * @description Ride time in seconds.
+             */
+            elapsed_s: number;
+            /** @description True for the current personal record, the fastest completed attempt. */
+            is_pr: boolean;
+            /**
+             * Format: double
+             * @description Normalized power in watts.
+             */
+            np_w: number;
+            /**
+             * Format: int64
+             * @description Ride ID.
+             */
+            ride_id: number;
+            /**
+             * Format: date-time
+             * @description Start time, UTC.
+             */
+            started_at: string;
+        };
         AuthOut: {
             /** @description Whether username and password sign-in is enabled. The bootstrap admin can always sign in with a password. */
             allow_local_login: boolean;
@@ -1662,6 +1743,15 @@ export interface components {
         GeneralPatch: {
             /** @description External base URL of this server (http or https, no path); empty clears it. */
             public_url?: string;
+        };
+        GhostOut: {
+            /** @description [distance_m, elapsed_s] pairs at least 10 metres apart, in ride order. */
+            points: number[][];
+            /**
+             * Format: double
+             * @description The PR time in seconds.
+             */
+            time_s: number;
         };
         HAEntities: {
             /** @description Matching entities sorted by entity_id, at most 1000. */
@@ -2700,6 +2790,65 @@ export interface components {
             segments?: components["schemas"]["SegmentIn"][];
             /** @description Waypoints as [longitude, latitude] pairs (drawn routes). */
             waypoints?: number[][];
+        };
+        RouteStatsOut: {
+            /**
+             * Format: int64
+             * @description Number of finished rides on the route.
+             */
+            attempts: number;
+            /**
+             * Format: double
+             * @description Average heart rate over completed attempts that recorded one.
+             */
+            avg_hr_bpm: number | null;
+            /**
+             * Format: double
+             * @description Average power over completed attempts in watts.
+             */
+            avg_power_w: number | null;
+            /**
+             * Format: double
+             * @description Average completed time in seconds.
+             */
+            avg_s: number | null;
+            /**
+             * Format: double
+             * @description Highest normalized power of a completed attempt in watts.
+             */
+            best_np_w: number | null;
+            /**
+             * Format: double
+             * @description Fastest completed time in seconds; null without a completed attempt.
+             */
+            best_s: number | null;
+            /**
+             * Format: double
+             * @description Highest average speed of a completed attempt in kilometres per hour.
+             */
+            best_speed_kmh: number | null;
+            /**
+             * Format: int64
+             * @description Number of those that covered at least 98 percent of the route.
+             */
+            completed: number;
+            /**
+             * Format: double
+             * @description Time of the latest completed attempt in seconds.
+             */
+            last_s: number | null;
+            /** @description Every finished attempt, oldest first. */
+            list: components["schemas"]["AttemptOut"][];
+            /**
+             * Format: date-time
+             * @description Start time of the PR ride, UTC.
+             */
+            pr_date: string | null;
+            /**
+             * Format: int64
+             * @description ID of the PR ride; 0 when there is none.
+             */
+            pr_ride_id: number;
         };
         ScanInBody: {
             /**
@@ -6778,6 +6927,77 @@ export interface operations {
             };
         };
     };
+    getRouteGhost: {
+        parameters: {
+            query?: {
+                /** @description Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders. */
+                rider_id?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GhostOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getRoutePhotos: {
         parameters: {
             query?: never;
@@ -6874,6 +7094,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRouteStats: {
+        parameters: {
+            query?: {
+                /** @description Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders. */
+                rider_id?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Route ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteStatsOut"];
                 };
             };
             /** @description Bad Request */

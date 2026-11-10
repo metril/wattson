@@ -1,6 +1,66 @@
 {
   "components": {
     "schemas": {
+      "AttemptOut": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_hr_bpm": {
+            "description": "Average heart rate in beats per minute; 0 when none was recorded.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "avg_power_w": {
+            "description": "Average power in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "avg_speed_kmh": {
+            "description": "Average speed in kilometres per hour.",
+            "format": "double",
+            "type": "number"
+          },
+          "completed": {
+            "description": "True when the ride covered at least 98 percent of the route.",
+            "type": "boolean"
+          },
+          "elapsed_s": {
+            "description": "Ride time in seconds.",
+            "format": "double",
+            "type": "number"
+          },
+          "is_pr": {
+            "description": "True for the current personal record, the fastest completed attempt.",
+            "type": "boolean"
+          },
+          "np_w": {
+            "description": "Normalized power in watts.",
+            "format": "double",
+            "type": "number"
+          },
+          "ride_id": {
+            "description": "Ride ID.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "started_at": {
+            "description": "Start time, UTC.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ride_id",
+          "started_at",
+          "elapsed_s",
+          "avg_speed_kmh",
+          "np_w",
+          "avg_power_w",
+          "avg_hr_bpm",
+          "completed",
+          "is_pr"
+        ],
+        "type": "object"
+      },
       "AuthOut": {
         "additionalProperties": false,
         "properties": {
@@ -917,6 +977,34 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "GhostOut": {
+        "additionalProperties": false,
+        "properties": {
+          "points": {
+            "description": "[distance_m, elapsed_s] pairs at least 10 metres apart, in ride order.",
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "time_s": {
+            "description": "The PR time in seconds.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time_s",
+          "points"
+        ],
         "type": "object"
       },
       "HAEntities": {
@@ -2927,6 +3015,112 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "RouteStatsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "description": "Number of finished rides on the route.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "avg_hr_bpm": {
+            "description": "Average heart rate over completed attempts that recorded one.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_power_w": {
+            "description": "Average power over completed attempts in watts.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_s": {
+            "description": "Average completed time in seconds.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "best_np_w": {
+            "description": "Highest normalized power of a completed attempt in watts.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "best_s": {
+            "description": "Fastest completed time in seconds; null without a completed attempt.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "best_speed_kmh": {
+            "description": "Highest average speed of a completed attempt in kilometres per hour.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "completed": {
+            "description": "Number of those that covered at least 98 percent of the route.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_s": {
+            "description": "Time of the latest completed attempt in seconds.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "list": {
+            "description": "Every finished attempt, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/AttemptOut"
+            },
+            "type": "array"
+          },
+          "pr_date": {
+            "description": "Start time of the PR ride, UTC.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pr_ride_id": {
+            "description": "ID of the PR ride; 0 when there is none.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempts",
+          "completed",
+          "best_s",
+          "avg_s",
+          "last_s",
+          "best_speed_kmh",
+          "pr_ride_id",
+          "pr_date",
+          "best_np_w",
+          "avg_power_w",
+          "avg_hr_bpm",
+          "list"
+        ],
         "type": "object"
       },
       "ScanInBody": {
@@ -8748,6 +8942,111 @@
         ]
       }
     },
+    "/api/routes/{id}/ghost": {
+      "get": {
+        "description": "Returns the track of the caller's fastest completed ride on the route as `[distance_m, elapsed_s]` points at least 10 metres apart. Errors: 404 `no_pr` when there is no completed ride. With `rider_id` only that rider's rides count. Requires the `read` scope.",
+        "operationId": "getRouteGhost",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders.",
+            "explode": false,
+            "in": "query",
+            "name": "rider_id",
+            "schema": {
+              "description": "Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GhostOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get the PR ghost of a route",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
     "/api/routes/{id}/mapillary": {
       "get": {
         "description": "Returns the Mapillary street photos selected along the route: at most one per 15 m, each with its distance along the route and camera heading. The list is built in the background the first time it is asked for (`status` `building`; poll every few seconds), cached for 30 days and rebuilt when the Mapillary token changes. Fetch a photo's image from `GET /api/mapillary/images/{id}`. The token is never returned. Requires the `read` scope.",
@@ -8939,6 +9238,111 @@
           }
         ],
         "summary": "Get a route's elevation profile",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
+    "/api/routes/{id}/stats": {
+      "get": {
+        "description": "Returns the caller's finished rides on the route with best, average and last time, the personal record and an attempt list. A completed attempt covers at least 98 percent of the route. With `rider_id` only that rider's rides count; a rider of another user returns 404 unless the caller is an admin. Requires the `read` scope.",
+        "operationId": "getRouteStats",
+        "parameters": [
+          {
+            "description": "Route ID.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Route ID.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders.",
+            "explode": false,
+            "in": "query",
+            "name": "rider_id",
+            "schema": {
+              "description": "Only this rider's rides. A rider of another user is a 404 unless you are an admin. Default: every ride of your own riders.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteStatsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a route's attempt statistics",
         "tags": [
           "routes"
         ]

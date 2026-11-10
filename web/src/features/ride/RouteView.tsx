@@ -26,6 +26,7 @@ import { ProfileCanvas } from '@/features/routes/ProfileCanvas';
 import { photosKey, profileKey, routeKey } from '@/features/routes/queries';
 import type { components } from '@/lib/openapi';
 import { VIEW_SLOT_ID } from './BikeBar';
+import { GhostPill } from './GhostPill';
 import { ViewMenu } from './ViewMenu';
 
 type PhotosOut = components['schemas']['RoutePhotosOut'];
@@ -299,6 +300,7 @@ export function RouteView({ routeId, ticks }: { routeId: number; ticks: TickStor
   return (
     <section aria-label="Route" className="flex flex-col gap-3">
       {note && <Banner tone="info">{note}</Banner>}
+      <GhostPill routeId={routeId} ticks={ticks} />
       {hasMap && tv && slot && createPortal(viewMenu, slot)}
       {hasMap && !(tv && slot) && (
         <div className="flex flex-wrap items-start gap-3">

@@ -69,6 +69,23 @@ function RiderForm({
   );
   const [maxHr, setMaxHr] = useState(rider?.max_hr_bpm ? String(rider.max_hr_bpm) : '');
   const [err, setErr] = useState<{ field?: string; text: string } | null>(null);
+  const [eftpMsg, setEftpMsg] = useState<string | null>(null);
+
+  // Fills FTP with 95 % of the best 20-minute power of the last 90 days; the rider still has to save.
+  const eftp = useMutation({
+    mutationFn: async () =>
+      unwrap(await api.GET('/api/stats/power-curve', { params: { query: { window: '90d', rider_id: rider?.id } } })),
+    onSuccess: (d) => {
+      if (d.eftp_w == null) {
+        setEftpMsg('No 20-minute effort in the last 90 days.');
+        return;
+      }
+      const v = Math.min(600, Math.max(50, Math.round(d.eftp_w)));
+      setVals((p) => ({ ...p, ftp_w: String(v) }));
+      setEftpMsg(`eFTP is ${v} W (95% of your best 20 minutes in the last 90 days). Save to apply it.`);
+    },
+    onError: (e) => setEftpMsg(errMessage(e)),
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -147,6 +164,18 @@ function RiderForm({
           error={fe('max_hr_bpm')}
         />
       </div>
+      {rider && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button disabled={eftp.isPending} onClick={() => eftp.mutate()}>
+            Use eFTP
+          </Button>
+          {eftpMsg && (
+            <p role="status" className="min-w-0 flex-1 basis-60 text-sm text-dim">
+              {eftpMsg}
+            </p>
+          )}
+        </div>
+      )}
       {banner && <Banner tone="error">{banner}</Banner>}
       <div className="flex flex-wrap gap-3">
         <Button type="submit" variant="primary" disabled={save.isPending || !name.trim()}>

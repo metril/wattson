@@ -29,6 +29,8 @@ const RouteSyntheticPage = lazy(() =>
 const WorkoutsPage = lazy(() => import('@/pages/Workouts').then((m) => ({ default: m.WorkoutsPage })));
 const WorkoutEditPage = lazy(() => import('@/pages/WorkoutEdit').then((m) => ({ default: m.WorkoutEditPage })));
 
+const StatsPage = lazy(() => import('@/pages/Stats').then((m) => ({ default: m.StatsPage })));
+
 const HistoryPage = lazy(() => import('@/pages/History').then((m) => ({ default: m.HistoryPage })));
 const RideDetailPage = lazy(() => import('@/pages/RideDetail').then((m) => ({ default: m.RideDetailPage })));
 
@@ -84,6 +86,7 @@ export function AppRoutes() {
         <Route index element={<RidePage />} />
         <Route path="riders" element={<RidersPage />} />
         <Route path="account" element={<AccountPage />} />
+        <Route path="stats" element={lazyPage(<StatsPage />)} />
         <Route path="history" element={lazyPage(<HistoryPage />)} />
         <Route path="history/:id" element={lazyPage(<RideDetailPage />)} />
         <Route path="routes" element={lazyPage(<RoutesPage />)} />

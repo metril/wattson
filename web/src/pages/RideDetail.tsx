@@ -16,6 +16,8 @@ import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
 import { RideStats } from '@/features/history/RideStats';
 import { SeriesChart } from '@/features/history/SeriesChart';
 import { RIDES_KEY } from '@/lib/rides';
+import { PowerCurve } from '@/features/stats/PowerCurve';
+import { curveKey } from '@/features/stats/queries';
 
 const rideKey = (id: number) => [...RIDES_KEY, 'detail', id] as const;
 
@@ -43,6 +45,21 @@ export function RideDetailPage() {
     retry: false,
     queryFn: async () => unwrap(await api.GET('/api/rides/{id}', { params: { path: { id }, query: { points: 600 } } })),
   });
+
+  // This ride's power curve against the rider's all-time best.
+  const riderId = ride.data?.rider_id ?? 0;
+  const rideCurve = useQuery({
+    queryKey: [...rideKey(id), 'curve'],
+    enabled: ride.isSuccess,
+    queryFn: async () => unwrap(await api.GET('/api/rides/{id}/power-curve', { params: { path: { id } } })),
+  });
+  const bestCurve = useQuery({
+    queryKey: curveKey(riderId, 'all'),
+    enabled: ride.isSuccess && riderId > 0,
+    queryFn: async () => unwrap(await api.GET('/api/stats/power-curve', { params: { query: { window: 'all', rider_id: riderId } } })),
+  });
+  const thisCurve = rideCurve.data?.points;
+  const bestPts = bestCurve.data?.points;
 
   const s = ride.data?.series;
   const xs = useMemo(() => (s ? s.distance_m.map((d) => toDist(d, units)) : []), [s, units]);
@@ -149,6 +166,12 @@ export function RideDetailPage() {
           <RideStats ride={r} units={units} />
         </Card>
       </div>
+
+      {thisCurve && thisCurve.length > 0 && (
+        <Card>
+          <PowerCurve points={bestPts && bestPts.length > 0 ? bestPts : thisCurve} ride={bestPts && bestPts.length > 0 ? thisCurve : undefined} rideLabel="this ride" label="Power curve" />
+        </Card>
+      )}
 
       <Card className="grid gap-5 xl:grid-cols-2">
         {charts.map((c) => (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bike, Dumbbell, Ellipsis, History, KeyRound, LogOut, Route, Settings, Unlink, User, Users } from 'lucide-react';
+import { Bike, ChartNoAxesCombined, Dumbbell, Ellipsis, History, KeyRound, LogOut, Route, Settings, Unlink, User, Users } from 'lucide-react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner } from '@/components/Banner';
@@ -109,6 +109,10 @@ export function Layout() {
           </button>
         ) : (
           <>
+            <NavLink to="/stats" data-nav className={link}>
+              <ChartNoAxesCombined aria-hidden className="size-6" />
+              Stats
+            </NavLink>
             <NavLink to="/routes" data-nav className={link}>
               <Route aria-hidden className="size-6" />
               Routes

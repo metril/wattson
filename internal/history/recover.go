@@ -33,7 +33,7 @@ func Recover(ctx context.Context, st *store.Store, minSamples int, onFinished fu
 			deleted++
 			continue
 		}
-		fin, err := st.FinishRide(ctx, r.ID, ss[len(ss)-1].At, Summarize(ss), len(ss))
+		fin, err := st.FinishRide(ctx, r.ID, ss[len(ss)-1].At, Summarize(ss, ParamsOf(r)), len(ss))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("ride %d: %w", r.ID, err))
 			continue

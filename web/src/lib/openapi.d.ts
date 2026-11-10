@@ -1481,6 +1481,11 @@ export interface components {
             lead_s?: number;
             /**
              * Format: int64
+             * @description Maximum heart rate in beats per minute, 100 to 230, or 0 to clear it. Used for heart-rate zones.
+             */
+            max_hr_bpm?: number;
+            /**
+             * Format: int64
              * @description Highest resistance level, 1 to 32 and at least min_level. Default 16.
              */
             max_level?: number;
@@ -1890,6 +1895,11 @@ export interface components {
             lead_s?: number;
             /**
              * Format: int64
+             * @description Maximum heart rate in beats per minute, 100 to 230, or 0 to clear it. Used for heart-rate zones.
+             */
+            max_hr_bpm?: number;
+            /**
+             * Format: int64
              * @description Highest resistance level, 1 to 32 and at least min_level. Default 16.
              */
             max_level?: number;
@@ -2137,6 +2147,13 @@ export interface components {
              * @description Average speed in kilometres per hour.
              */
             avg_speed_kmh: number;
+            /** @description True when a route ride covered at least 98 percent of the route's distance. */
+            completed: boolean;
+            /**
+             * Format: double
+             * @description Percent the power-to-heart-rate ratio fell from the first to the second half; null for rides under 20 minutes or without heart rate.
+             */
+            decoupling_pct: number | null;
             /**
              * Format: double
              * @description Distance ridden in metres.
@@ -2149,6 +2166,11 @@ export interface components {
             duration_s: number;
             /**
              * Format: double
+             * @description Normalized power divided by average heart rate; null without heart rate.
+             */
+            efficiency_factor: number | null;
+            /**
+             * Format: double
              * @description Riding time of the last sample in seconds, as the ride clock counted it.
              */
             elapsed_s: number;
@@ -2159,14 +2181,31 @@ export interface components {
             ended_at: string | null;
             /**
              * Format: int64
+             * @description FTP in watts the metrics were computed with; null if unknown.
+             */
+            ftp_w: number | null;
+            /** @description Seconds spent in each of five heart-rate zones, lowest first; null without heart rate or max heart rate. */
+            hr_zone_s: number[] | null;
+            /**
+             * Format: int64
              * @description Ride ID.
              */
             id: number;
             /**
              * Format: double
+             * @description Normalized power divided by FTP; null without FTP.
+             */
+            intensity_factor: number | null;
+            /**
+             * Format: double
              * @description Work done in kilojoules.
              */
             kj: number;
+            /**
+             * Format: double
+             * @description Highest cadence of one sample in revolutions per minute.
+             */
+            max_cadence_rpm: number;
             /**
              * Format: int64
              * @description Highest heart rate in beats per minute; 0 when no heart rate was recorded.
@@ -2189,6 +2228,33 @@ export interface components {
              * @description Normalized power in watts (30 s rolling average, fourth-power mean).
              */
             np_w: number;
+            /**
+             * Format: double
+             * @description Best 1 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_1m_w: number | null;
+            /**
+             * Format: double
+             * @description Best 20 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_20m_w: number | null;
+            /**
+             * Format: double
+             * @description Best 5 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_5m_w: number | null;
+            /**
+             * Format: double
+             * @description Best 5 second average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_5s_w: number | null;
+            /**
+             * Format: double
+             * @description Best 60 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_60m_w: number | null;
+            /** @description Seconds spent in each of the seven Coggan power zones, lowest first; null without FTP. */
+            power_zone_s: number[] | null;
             /**
              * Format: int64
              * @description ID of the rider who rode.
@@ -2217,6 +2283,21 @@ export interface components {
             started_at: string;
             /** @description Strava upload state of the ride. */
             strava: components["schemas"]["StravaStatusOut"];
+            /**
+             * Format: double
+             * @description Training stress score; null without FTP.
+             */
+            tss: number | null;
+            /**
+             * Format: double
+             * @description Average climbing rate in metres per hour; null without climbing.
+             */
+            vam_m_per_h: number | null;
+            /**
+             * Format: double
+             * @description Normalized power divided by average power; null when there was no power.
+             */
+            variability_index: number | null;
         };
         RideList: {
             /**
@@ -2253,6 +2334,13 @@ export interface components {
              * @description Average speed in kilometres per hour.
              */
             avg_speed_kmh: number;
+            /** @description True when a route ride covered at least 98 percent of the route's distance. */
+            completed: boolean;
+            /**
+             * Format: double
+             * @description Percent the power-to-heart-rate ratio fell from the first to the second half; null for rides under 20 minutes or without heart rate.
+             */
+            decoupling_pct: number | null;
             /**
              * Format: double
              * @description Distance ridden in metres.
@@ -2265,6 +2353,11 @@ export interface components {
             duration_s: number;
             /**
              * Format: double
+             * @description Normalized power divided by average heart rate; null without heart rate.
+             */
+            efficiency_factor: number | null;
+            /**
+             * Format: double
              * @description Riding time of the last sample in seconds, as the ride clock counted it.
              */
             elapsed_s: number;
@@ -2275,14 +2368,31 @@ export interface components {
             ended_at: string | null;
             /**
              * Format: int64
+             * @description FTP in watts the metrics were computed with; null if unknown.
+             */
+            ftp_w: number | null;
+            /** @description Seconds spent in each of five heart-rate zones, lowest first; null without heart rate or max heart rate. */
+            hr_zone_s: number[] | null;
+            /**
+             * Format: int64
              * @description Ride ID.
              */
             id: number;
             /**
              * Format: double
+             * @description Normalized power divided by FTP; null without FTP.
+             */
+            intensity_factor: number | null;
+            /**
+             * Format: double
              * @description Work done in kilojoules.
              */
             kj: number;
+            /**
+             * Format: double
+             * @description Highest cadence of one sample in revolutions per minute.
+             */
+            max_cadence_rpm: number;
             /**
              * Format: int64
              * @description Highest heart rate in beats per minute; 0 when no heart rate was recorded.
@@ -2305,6 +2415,33 @@ export interface components {
              * @description Normalized power in watts (30 s rolling average, fourth-power mean).
              */
             np_w: number;
+            /**
+             * Format: double
+             * @description Best 1 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_1m_w: number | null;
+            /**
+             * Format: double
+             * @description Best 20 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_20m_w: number | null;
+            /**
+             * Format: double
+             * @description Best 5 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_5m_w: number | null;
+            /**
+             * Format: double
+             * @description Best 5 second average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_5s_w: number | null;
+            /**
+             * Format: double
+             * @description Best 60 minute average power in watts; null if the ride was shorter or not yet computed.
+             */
+            peak_60m_w: number | null;
+            /** @description Seconds spent in each of the seven Coggan power zones, lowest first; null without FTP. */
+            power_zone_s: number[] | null;
             /**
              * Format: int64
              * @description ID of the rider who rode.
@@ -2331,6 +2468,21 @@ export interface components {
             started_at: string;
             /** @description Strava upload state of the ride. */
             strava: components["schemas"]["StravaStatusOut"];
+            /**
+             * Format: double
+             * @description Training stress score; null without FTP.
+             */
+            tss: number | null;
+            /**
+             * Format: double
+             * @description Average climbing rate in metres per hour; null without climbing.
+             */
+            vam_m_per_h: number | null;
+            /**
+             * Format: double
+             * @description Normalized power divided by average power; null when there was no power.
+             */
+            variability_index: number | null;
         };
         RiderOut: {
             /**
@@ -2378,6 +2530,11 @@ export interface components {
              * @description Lookahead for route grade, in seconds: on a route the resistance follows the grade this many seconds of riding ahead. 0 to 15.
              */
             lead_s: number;
+            /**
+             * Format: int64
+             * @description Maximum heart rate in beats per minute, used for heart-rate zones; null when not set.
+             */
+            max_hr_bpm: number | null;
             /**
              * Format: int64
              * @description Highest resistance level used in rides, 1 to 32.

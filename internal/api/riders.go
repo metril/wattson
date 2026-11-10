@@ -22,6 +22,7 @@ type RiderOut struct {
 	WeightKg        float64   `json:"weight_kg" doc:"Rider mass in kilograms."`
 	BikeKg          float64   `json:"bike_kg" doc:"Virtual bike mass in kilograms."`
 	FTPW            int       `json:"ftp_w" doc:"Functional threshold power in watts."`
+	MaxHRBpm        *int      `json:"max_hr_bpm" nullable:"true" doc:"Maximum heart rate in beats per minute, used for heart-rate zones; null when not set."`
 	MinLevel        int       `json:"min_level" doc:"Lowest resistance level used in rides, 1 to 32. The bike returns to this level on release."`
 	MaxLevel        int       `json:"max_level" doc:"Highest resistance level used in rides, 1 to 32."`
 	Gain            float64   `json:"gain" doc:"Resistance levels added per 1 percent of road grade."`
@@ -36,7 +37,11 @@ type RiderOut struct {
 }
 
 func riderOut(r store.Rider) RiderOut {
-	return RiderOut{ID: r.ID, UserID: r.UserID, Name: r.Name, WeightKg: r.WeightKg, BikeKg: r.BikeKg,
+	var maxHR *int
+	if r.MaxHRBpm > 0 {
+		maxHR = &r.MaxHRBpm
+	}
+	return RiderOut{MaxHRBpm: maxHR, ID: r.ID, UserID: r.UserID, Name: r.Name, WeightKg: r.WeightKg, BikeKg: r.BikeKg,
 		FTPW: r.FTPW, MinLevel: r.MinLevel, MaxLevel: r.MaxLevel, Gain: r.Gain, OffsetLevel: r.OffsetLevel,
 		DownhillScale: r.DownhillScale, CdA: r.CdA, Crr: r.Crr, PowerMultiplier: r.PowerMultiplier, LeadS: r.LeadS,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
@@ -47,6 +52,7 @@ type RiderParams struct {
 	WeightKg        *float64 `json:"weight_kg,omitempty" minimum:"30" maximum:"200" doc:"Rider mass in kilograms, 30 to 200. Default 75."`
 	BikeKg          *float64 `json:"bike_kg,omitempty" minimum:"0" maximum:"30" doc:"Virtual bike mass in kilograms, 0 to 30. Default 8."`
 	FTPW            *int     `json:"ftp_w,omitempty" minimum:"50" maximum:"600" doc:"Functional threshold power in watts, 50 to 600. Default 200."`
+	MaxHRBpm        *int     `json:"max_hr_bpm,omitempty" minimum:"0" maximum:"230" doc:"Maximum heart rate in beats per minute, 100 to 230, or 0 to clear it. Used for heart-rate zones."`
 	MinLevel        *int     `json:"min_level,omitempty" minimum:"1" maximum:"32" doc:"Lowest resistance level, 1 to 32 and at most max_level. Default 1."`
 	MaxLevel        *int     `json:"max_level,omitempty" minimum:"1" maximum:"32" doc:"Highest resistance level, 1 to 32 and at least min_level. Default 16."`
 	Gain            *float64 `json:"gain,omitempty" minimum:"0" maximum:"5" doc:"Resistance levels per 1 percent grade, 0 to 5. Default 1.0."`
@@ -63,6 +69,7 @@ func (p RiderParams) apply(r *store.Rider) {
 	set(&r.WeightKg, p.WeightKg)
 	set(&r.BikeKg, p.BikeKg)
 	set(&r.FTPW, p.FTPW)
+	set(&r.MaxHRBpm, p.MaxHRBpm)
 	set(&r.MinLevel, p.MinLevel)
 	set(&r.MaxLevel, p.MaxLevel)
 	set(&r.Gain, p.Gain)
@@ -79,6 +86,9 @@ func checkRider(r *store.Rider) error {
 	r.Name = strings.TrimSpace(r.Name)
 	if r.Name == "" {
 		return apiErr(http.StatusBadRequest, "invalid_request", "name: must not be blank")
+	}
+	if r.MaxHRBpm != 0 && (r.MaxHRBpm < 100 || r.MaxHRBpm > 230) {
+		return apiErr(http.StatusBadRequest, "invalid_request", "max_hr_bpm: must be 0 or between 100 and 230")
 	}
 	if r.MinLevel > r.MaxLevel {
 		return apiErr(http.StatusBadRequest, "invalid_request", "min_level: must not exceed max_level")

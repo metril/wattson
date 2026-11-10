@@ -474,6 +474,13 @@
             "minimum": 0,
             "type": "number"
           },
+          "max_hr_bpm": {
+            "description": "Maximum heart rate in beats per minute, 100 to 230, or 0 to clear it. Used for heart-rate zones.",
+            "format": "int64",
+            "maximum": 230,
+            "minimum": 0,
+            "type": "integer"
+          },
           "max_level": {
             "description": "Highest resistance level, 1 to 32 and at least min_level. Default 16.",
             "format": "int64",
@@ -1487,6 +1494,13 @@
             "minimum": 0,
             "type": "number"
           },
+          "max_hr_bpm": {
+            "description": "Maximum heart rate in beats per minute, 100 to 230, or 0 to clear it. Used for heart-rate zones.",
+            "format": "int64",
+            "maximum": 230,
+            "minimum": 0,
+            "type": "integer"
+          },
           "max_level": {
             "description": "Highest resistance level, 1 to 32 and at least min_level. Default 16.",
             "format": "int64",
@@ -1988,6 +2002,18 @@
             "format": "double",
             "type": "number"
           },
+          "completed": {
+            "description": "True when a route ride covered at least 98 percent of the route's distance.",
+            "type": "boolean"
+          },
+          "decoupling_pct": {
+            "description": "Percent the power-to-heart-rate ratio fell from the first to the second half; null for rides under 20 minutes or without heart rate.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "distance_m": {
             "description": "Distance ridden in metres.",
             "format": "double",
@@ -1997,6 +2023,14 @@
             "description": "Moving time in seconds, excluding pauses.",
             "format": "double",
             "type": "number"
+          },
+          "efficiency_factor": {
+            "description": "Normalized power divided by average heart rate; null without heart rate.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "elapsed_s": {
             "description": "Riding time of the last sample in seconds, as the ride clock counted it.",
@@ -2011,13 +2045,45 @@
               "null"
             ]
           },
+          "ftp_w": {
+            "description": "FTP in watts the metrics were computed with; null if unknown.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "hr_zone_s": {
+            "description": "Seconds spent in each of five heart-rate zones, lowest first; null without heart rate or max heart rate.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "id": {
             "description": "Ride ID.",
             "format": "int64",
             "type": "integer"
           },
+          "intensity_factor": {
+            "description": "Normalized power divided by FTP; null without FTP.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "kj": {
             "description": "Work done in kilojoules.",
+            "format": "double",
+            "type": "number"
+          },
+          "max_cadence_rpm": {
+            "description": "Highest cadence of one sample in revolutions per minute.",
             "format": "double",
             "type": "number"
           },
@@ -2044,6 +2110,57 @@
             "description": "Normalized power in watts (30 s rolling average, fourth-power mean).",
             "format": "double",
             "type": "number"
+          },
+          "peak_1m_w": {
+            "description": "Best 1 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_20m_w": {
+            "description": "Best 20 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_5m_w": {
+            "description": "Best 5 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_5s_w": {
+            "description": "Best 5 second average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_60m_w": {
+            "description": "Best 60 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "power_zone_s": {
+            "description": "Seconds spent in each of the seven Coggan power zones, lowest first; null without FTP.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "rider_id": {
             "description": "ID of the rider who rode.",
@@ -2080,6 +2197,30 @@
           "strava": {
             "$ref": "#/components/schemas/StravaStatusOut",
             "description": "Strava upload state of the ride."
+          },
+          "tss": {
+            "description": "Training stress score; null without FTP.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "vam_m_per_h": {
+            "description": "Average climbing rate in metres per hour; null without climbing.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "variability_index": {
+            "description": "Normalized power divided by average power; null when there was no power.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2106,7 +2247,23 @@
           "avg_speed_kmh",
           "max_speed_kmh",
           "sample_count",
-          "strava"
+          "strava",
+          "max_cadence_rpm",
+          "completed",
+          "ftp_w",
+          "intensity_factor",
+          "tss",
+          "variability_index",
+          "efficiency_factor",
+          "decoupling_pct",
+          "vam_m_per_h",
+          "peak_5s_w",
+          "peak_1m_w",
+          "peak_5m_w",
+          "peak_20m_w",
+          "peak_60m_w",
+          "power_zone_s",
+          "hr_zone_s"
         ],
         "type": "object"
       },
@@ -2160,6 +2317,18 @@
             "format": "double",
             "type": "number"
           },
+          "completed": {
+            "description": "True when a route ride covered at least 98 percent of the route's distance.",
+            "type": "boolean"
+          },
+          "decoupling_pct": {
+            "description": "Percent the power-to-heart-rate ratio fell from the first to the second half; null for rides under 20 minutes or without heart rate.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "distance_m": {
             "description": "Distance ridden in metres.",
             "format": "double",
@@ -2169,6 +2338,14 @@
             "description": "Moving time in seconds, excluding pauses.",
             "format": "double",
             "type": "number"
+          },
+          "efficiency_factor": {
+            "description": "Normalized power divided by average heart rate; null without heart rate.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "elapsed_s": {
             "description": "Riding time of the last sample in seconds, as the ride clock counted it.",
@@ -2183,13 +2360,45 @@
               "null"
             ]
           },
+          "ftp_w": {
+            "description": "FTP in watts the metrics were computed with; null if unknown.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "hr_zone_s": {
+            "description": "Seconds spent in each of five heart-rate zones, lowest first; null without heart rate or max heart rate.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "id": {
             "description": "Ride ID.",
             "format": "int64",
             "type": "integer"
           },
+          "intensity_factor": {
+            "description": "Normalized power divided by FTP; null without FTP.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "kj": {
             "description": "Work done in kilojoules.",
+            "format": "double",
+            "type": "number"
+          },
+          "max_cadence_rpm": {
+            "description": "Highest cadence of one sample in revolutions per minute.",
             "format": "double",
             "type": "number"
           },
@@ -2216,6 +2425,57 @@
             "description": "Normalized power in watts (30 s rolling average, fourth-power mean).",
             "format": "double",
             "type": "number"
+          },
+          "peak_1m_w": {
+            "description": "Best 1 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_20m_w": {
+            "description": "Best 20 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_5m_w": {
+            "description": "Best 5 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_5s_w": {
+            "description": "Best 5 second average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "peak_60m_w": {
+            "description": "Best 60 minute average power in watts; null if the ride was shorter or not yet computed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "power_zone_s": {
+            "description": "Seconds spent in each of the seven Coggan power zones, lowest first; null without FTP.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "rider_id": {
             "description": "ID of the rider who rode.",
@@ -2248,6 +2508,30 @@
           "strava": {
             "$ref": "#/components/schemas/StravaStatusOut",
             "description": "Strava upload state of the ride."
+          },
+          "tss": {
+            "description": "Training stress score; null without FTP.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "vam_m_per_h": {
+            "description": "Average climbing rate in metres per hour; null without climbing.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "variability_index": {
+            "description": "Normalized power divided by average power; null when there was no power.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2273,7 +2557,23 @@
           "avg_speed_kmh",
           "max_speed_kmh",
           "sample_count",
-          "strava"
+          "strava",
+          "max_cadence_rpm",
+          "completed",
+          "ftp_w",
+          "intensity_factor",
+          "tss",
+          "variability_index",
+          "efficiency_factor",
+          "decoupling_pct",
+          "vam_m_per_h",
+          "peak_5s_w",
+          "peak_1m_w",
+          "peak_5m_w",
+          "peak_20m_w",
+          "peak_60m_w",
+          "power_zone_s",
+          "hr_zone_s"
         ],
         "type": "object"
       },
@@ -2325,6 +2625,14 @@
             "format": "double",
             "type": "number"
           },
+          "max_hr_bpm": {
+            "description": "Maximum heart rate in beats per minute, used for heart-rate zones; null when not set.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "max_level": {
             "description": "Highest resistance level used in rides, 1 to 32.",
             "format": "int64",
@@ -2372,6 +2680,7 @@
           "weight_kg",
           "bike_kg",
           "ftp_w",
+          "max_hr_bpm",
           "min_level",
           "max_level",
           "gain",

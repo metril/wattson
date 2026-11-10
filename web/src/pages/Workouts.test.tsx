@@ -21,6 +21,7 @@ const rider = (over: Partial<Rider> = {}): Rider => ({
   weight_kg: 70,
   bike_kg: 8,
   ftp_w: 200,
+  max_hr_bpm: null,
   cda: 0.32,
   crr: 0.004,
   power_multiplier: 1,

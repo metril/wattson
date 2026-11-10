@@ -329,7 +329,7 @@ func SampleFIT(t testing.TB) []byte {
 			Lat: math.NaN(), Lon: math.NaN(), EleM: math.NaN()}
 	}
 	end := ss[len(ss)-1].At
-	r := store.Ride{ID: 1, RiderID: 1, Mode: "free", StartedAt: t0, EndedAt: &end, Summary: history.Summarize(ss), SampleCount: len(ss)}
+	r := store.Ride{ID: 1, RiderID: 1, Mode: "free", StartedAt: t0, EndedAt: &end, Summary: history.Summarize(ss, history.Params{}), SampleCount: len(ss)}
 	var buf bytes.Buffer
 	if err := fitexport.Encode(&buf, r, ss); err != nil {
 		t.Fatal(err)

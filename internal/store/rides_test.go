@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func TestRideLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.EndedAt == nil || got.Summary != sum || got.SampleCount != 20 || got.UserID != f.a.ID || got.RiderName != "A1" {
+	if got.EndedAt == nil || !reflect.DeepEqual(got.Summary, sum) || got.SampleCount != 20 || got.UserID != f.a.ID || got.RiderName != "A1" {
 		t.Fatalf("finish = %+v", got)
 	}
 	if _, err := f.s.Ride(ctx, 9999); err == nil {
@@ -341,5 +342,26 @@ func TestClaimStravaUploadNeedsFinished(t *testing.T) {
 	}
 	if ok, err := f.s.ClaimStravaUpload(ctx, open.ID, t0); ok || err != nil {
 		t.Fatalf("claim open ride = %v, %v", ok, err)
+	}
+}
+
+func TestCreateRideSnapshots(t *testing.T) {
+	t.Parallel()
+	f := newRideFix(t)
+	ctx := t.Context()
+	rd := f.a1
+	rd.MaxHRBpm, rd.FTPW = 185, 260
+	if _, err := f.s.UpdateRider(ctx, rd); err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.s.CreateRide(ctx, store.Ride{RiderID: rd.ID, RouteID: f.route.ID, Mode: "route", StartedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.FTPW != 260 || r.HRMaxBpm != 185 || r.WeightKg != rd.WeightKg || r.RouteDistanceM != f.route.DistanceM {
+		t.Errorf("snapshot = %+v (route %v)", r, f.route.DistanceM)
+	}
+	if _, err := f.s.CreateRide(ctx, store.Ride{RiderID: 9999, Mode: "free", StartedAt: t0}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown rider err = %v", err)
 	}
 }

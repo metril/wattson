@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/metril/wattson/compare/v0.1.3...v0.1.4) (2026-11-10)
+
+
+### Features
+
+* ride statistics — training metrics, route PRs, live ghost, totals, fitness and power curve ([#7](https://github.com/metril/wattson/issues/7)) ([a9faa93](https://github.com/metril/wattson/commit/a9faa93b370efd4c158be15ee67c07ae4990de2b))
+
 ## [0.1.3](https://github.com/metril/wattson/compare/v0.1.2...v0.1.3) (2026-11-06)
 
 

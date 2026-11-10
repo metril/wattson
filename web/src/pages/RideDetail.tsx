@@ -13,7 +13,10 @@ import { Card } from '@/components/Card';
 import MapView, { type MapApi } from '@/features/map/MapView';
 import { FitButton } from '@/features/history/FitButton';
 import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
-import { RideStats } from '@/features/history/RideStats';
+import { RideHero, RideStats } from '@/features/history/RideStats';
+import { ZonesCard } from '@/features/history/ZonesCard';
+import { Reveal } from '@/components/Reveal';
+import { RIDERS_KEY } from '@/pages/Riders';
 import { SeriesChart } from '@/features/history/SeriesChart';
 import { invalidateRideData, RIDES_KEY } from '@/lib/rides';
 import { PowerCurve } from '@/features/stats/PowerCurve';
@@ -58,6 +61,13 @@ export function RideDetailPage() {
     enabled: ride.isSuccess && riderId > 0,
     queryFn: async () => unwrap(await api.GET('/api/stats/power-curve', { params: { query: { window: 'all', rider_id: riderId } } })),
   });
+  // The rider's current max HR sets the heart-rate zone ranges; the zones card copes without it.
+  const riders = useQuery({
+    queryKey: RIDERS_KEY,
+    enabled: ride.isSuccess,
+    queryFn: async () => unwrap(await api.GET('/api/riders')),
+  });
+  const maxHr = riders.data?.find((x) => x.id === riderId)?.max_hr_bpm ?? null;
   const thisCurve = rideCurve.data?.points;
   const bestPts = bestCurve.data?.points;
 
@@ -123,11 +133,11 @@ export function RideDetailPage() {
   const r = ride.data;
   const sr = r.series;
   const charts: { label: string; unit: string; color: string; y: number[] }[] = [
-    { label: 'Power', unit: 'W', color: '--accent', y: sr.power_w },
-    ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--danger', y: sr.hr_bpm }] : []),
-    { label: 'Cadence', unit: 'rpm', color: '--ok', y: sr.cadence_rpm },
-    { label: 'Speed', unit: speedUnit(units), color: '--warn', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
-    ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--chalk', y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
+    { label: 'Power', unit: 'W', color: '--m-power', y: sr.power_w },
+    ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--m-hr', y: sr.hr_bpm }] : []),
+    { label: 'Cadence', unit: 'rpm', color: '--m-cadence', y: sr.cadence_rpm },
+    { label: 'Speed', unit: speedUnit(units), color: '--m-speed', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
+    ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--m-elev', y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
   ];
 
   return (
@@ -161,24 +171,40 @@ export function RideDetailPage() {
 
       {error && <Banner tone="error">{error}</Banner>}
 
-      <div className={trace ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
-        {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
-        <Card className="flex flex-col justify-between gap-5">
-          <RideStats ride={r} units={units} />
+      <Reveal>
+        <Card>
+          <RideHero ride={r} units={units} />
         </Card>
-      </div>
+      </Reveal>
+
+      <Reveal delay={0.06}>
+        <div className={trace ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
+          {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
+          <Card>
+            <RideStats ride={r} units={units} />
+          </Card>
+        </div>
+      </Reveal>
+
+      <Reveal delay={0.12}>
+        <ZonesCard ride={r} maxHr={maxHr} />
+      </Reveal>
 
       {thisCurve && thisCurve.length > 0 && (
-        <Card>
-          <PowerCurve points={bestPts && bestPts.length > 0 ? bestPts : thisCurve} ride={bestPts && bestPts.length > 0 ? thisCurve : undefined} rideLabel="this ride" label="Power curve" />
-        </Card>
+        <Reveal delay={0.18}>
+          <Card>
+            <PowerCurve points={bestPts && bestPts.length > 0 ? bestPts : thisCurve} ride={bestPts && bestPts.length > 0 ? thisCurve : undefined} rideLabel="this ride" label="Power curve" />
+          </Card>
+        </Reveal>
       )}
 
-      <Card className="grid gap-5 xl:grid-cols-2">
-        {charts.map((c) => (
-          <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} />
-        ))}
-      </Card>
+      <Reveal delay={0.24}>
+        <Card className="grid gap-5">
+          {charts.map((c) => (
+            <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} />
+          ))}
+        </Card>
+      </Reveal>
     </div>
   );
 }

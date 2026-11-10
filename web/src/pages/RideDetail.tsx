@@ -161,7 +161,7 @@ export function RideDetailPage() {
 
       {error && <Banner tone="error">{error}</Banner>}
 
-      <div className={trace ? 'grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
+      <div className={trace ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
         {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
         <Card className="flex flex-col justify-between gap-5">
           <RideStats ride={r} units={units} />

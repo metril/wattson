@@ -15,8 +15,8 @@ export function ZoneBars({ title, kind, seconds }: { title: string; kind: 'power
       <h3 className="mb-2 text-sm text-dim">{title}</h3>
       <ul className="flex flex-col gap-1.5">
         {seconds.map((sec, i) => (
-          <li key={i} className="grid grid-cols-[7rem_1fr_6.5rem] items-center gap-3 text-sm">
-            <span className="truncate">
+          <li key={i} className="grid grid-cols-[minmax(9rem,auto)_1fr_6.5rem] items-center gap-3 text-sm">
+            <span>
               Z{i + 1} <span className="text-dim">{names[i]}</span>
             </span>
             <span className="h-3 rounded bg-raised" aria-hidden>

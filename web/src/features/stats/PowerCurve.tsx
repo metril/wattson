@@ -34,7 +34,7 @@ export function PowerCurve(p: { points: CurveData[]; ride?: CurveData[]; rideLab
       all.map((q) => Math.log10(q.dur_s)),
       all.map((q) => q.watts),
       width,
-      H,
+      H - 16,
       PAD,
     );
   }, [p.points, p.ride, width]);
@@ -71,7 +71,7 @@ export function PowerCurve(p: { points: CurveData[]; ride?: CurveData[]; rideLab
       ctx.beginPath();
       pts.forEach((q, i) => {
         const x = geo.x(Math.log10(q.dur_s));
-        const y = geo.y(q.watts) - 8;
+        const y = geo.y(q.watts) + 8;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
@@ -87,7 +87,7 @@ export function PowerCurve(p: { points: CurveData[]; ride?: CurveData[]; rideLab
     if (hover !== null && hover < p.points.length) {
       const q = p.points[hover];
       ctx.beginPath();
-      ctx.arc(geo.x(Math.log10(q.dur_s)), geo.y(q.watts) - 8, 4, 0, Math.PI * 2);
+      ctx.arc(geo.x(Math.log10(q.dur_s)), geo.y(q.watts) + 8, 4, 0, Math.PI * 2);
       ctx.fillStyle = accent;
       ctx.fill();
     }

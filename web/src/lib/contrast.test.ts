@@ -52,3 +52,31 @@ describe('cockpit tokens', () => {
     }
   });
 });
+
+describe('redesign tokens', () => {
+  const themes: [string, string, string][] = [
+    ['dark', ':root,\nhtml.ride-dark {', 'dark'],
+    ['light', ':root:not(.ride-dark) {', 'light'],
+    ['cockpit', 'html.ride-dark {\n  --ground', 'cockpit'],
+  ];
+  for (const [name, scope] of themes) {
+    // The cockpit palette only overrides some tokens; the rest come from the dark block.
+    const t = (n: string) => {
+      try {
+        return token(n, scope);
+      } catch {
+        return token(n, ':root,\nhtml.ride-dark {');
+      }
+    };
+    it(`${name}: text and metric colours are at least 4.5:1 on ground, panel and sunken`, () => {
+      for (const bg of ['--ground', '--panel', '--sunken']) {
+        for (const fg of ['--chalk', '--dim', '--label', '--m-power', '--m-hr', '--m-cadence', '--m-speed', '--m-elev', '--accent']) {
+          expect(contrastRatio(t(fg), t(bg)), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    });
+    it(`${name}: control borders are at least 3:1 on the panel`, () => {
+      expect(contrastRatio(t('--line'), t('--panel'))).toBeGreaterThanOrEqual(3);
+    });
+  }
+});

@@ -33,18 +33,25 @@ html.ride-dark {
   --focus: #e8f53b; /* hivis */
 
   /* surfaces */
-  --ground: #0a1215; /* tarmac */
-  --panel: #111c20; /* cards, rail */
-  --raised: #192830; /* inputs, hovered rows */
-  --line: #2a3d45; /* borders, dividers */
+  --ground: #0d0f12; /* charcoal */
+  --sunken: #090b0d; /* chart wells */
+  --panel: #15181d; /* cards, rail */
+  --raised: #1d2128; /* inputs, hovered rows */
+  --overlay: #252a33; /* popovers, tooltips */
+  --line: #5f6a76; /* control borders */
+  --line-soft: rgb(255 255 255 / 0.07); /* card borders, dividers */
+  --elevation: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 10px 28px -14px rgb(0 0 0 / 0.7);
+  --glow: radial-gradient(900px 380px at 50% -8%, rgb(84 169 255 / 0.09), transparent 70%);
 
   /* text */
-  --chalk: #eaf1ee; /* primary text, numerals */
-  --dim: #93a8ae; /* secondary text (AA on ground and panel) */
-  --faint: #6b8289; /* decorative only, never body text */
+  --chalk: #eef0f2; /* primary text, numerals */
+  --dim: #a3b6bb; /* secondary text (AA on ground and panel) */
+  --label: #8d9aa6; /* small uppercase micro-labels (AA on panel) */
+  --faint: #6f7b86; /* decorative only, never body text */
 
   /* brand + status */
-  --accent: #54a9ff; /* sprinter's line */
+  --accent: #54a9ff; /* sprinter's line: actions and navigation */
+  --accent-soft: rgb(84 169 255 / 0.16); /* active or selected items */
   --accent-ink: #04121f; /* text on accent */
   --ok: #6fd36a;
   --warn: #f1c232;
@@ -59,20 +66,39 @@ html.ride-dark {
   --zone-5: #f5923d;
   --zone-6: #f45b50;
   --zone-7: #cc66e6;
+
+  /* metric colours: each metric keeps its own colour everywhere */
+  --m-power: #ffa63d;
+  --m-hr: #ff5a6e;
+  --m-cadence: #4fd67a;
+  --m-speed: #4aa3ff;
+  --m-elev: #8fa1b3;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not(.ride-dark) {
     color-scheme: light;
     --focus: #0a62c7;
-    --ground: #eef2ee;
+    --ground: #f2f4f6;
+    --sunken: #e8ebee;
     --panel: #ffffff;
-    --raised: #e3eae6;
-    --line: #c3d0cb;
+    --raised: #eef1f4;
+    --overlay: #ffffff;
+    --line: #7d8a96;
+    --line-soft: rgb(16 24 40 / 0.09);
+    --elevation: 0 1px 2px rgb(16 24 40 / 0.06), 0 10px 28px -16px rgb(16 24 40 / 0.2);
+    --glow: radial-gradient(900px 380px at 50% -8%, rgb(10 98 199 / 0.07), transparent 70%);
     --chalk: #0e1a1e;
     --dim: #43585f;
+    --label: #566871;
     --faint: #6d8288;
     --accent: #0a62c7;
+    --accent-soft: rgb(10 98 199 / 0.12);
+    --m-power: #9c4e00;
+    --m-hr: #c01f38;
+    --m-cadence: #11702f;
+    --m-speed: #0a5cba;
+    --m-elev: #4d5e6e;
     --accent-ink: #ffffff;
     --ok: #17803a;
     --warn: #8a6500;
@@ -91,9 +117,15 @@ html.ride-dark {
 /* Cockpit palette of the ride screen (hex values mirrored in the @theme tokens below). */
 html.ride-dark {
   --ground: #1c2127; /* tarmac */
+  --sunken: #161a1f;
   --panel: #2a3139; /* kerb */
   --raised: #323b44;
+  --overlay: #3a444e;
   --line: #7b8794;
+  --line-soft: rgb(255 255 255 / 0.12);
+  --glow: none;
+  --m-hr: #ff7683;
+  --label: #9aa5ae;
   --chalk: #eef1ec;
   --dim: #9aa5ae; /* dust */
 }
@@ -101,6 +133,17 @@ html.ride-dark {
 /* Expose tokens as Tailwind utilities (bg-ground, text-chalk, ...). */
 @theme inline {
   --color-ground: var(--ground);
+  --color-sunken: var(--sunken);
+  --color-overlay: var(--overlay);
+  --color-line-soft: var(--line-soft);
+  --color-label: var(--label);
+  --color-accent-soft: var(--accent-soft);
+  --color-m-power: var(--m-power);
+  --color-m-hr: var(--m-hr);
+  --color-m-cadence: var(--m-cadence);
+  --color-m-speed: var(--m-speed);
+  --color-m-elev: var(--m-elev);
+  --shadow-panel: var(--elevation);
   --color-panel: var(--panel);
   --color-raised: var(--raised);
   --color-line: var(--line);
@@ -155,6 +198,10 @@ html.ride-dark {
   --text-lg: 1.25rem;
   --text-xl: 1.625rem;
   --text-2xl: 2.125rem;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-numeral-sm: 1.75rem;
+  --text-numeral-sm--line-height: 1;
   --text-numeral-md: clamp(2rem, 1.2rem + 3.2vw, 4.5rem);
   --text-numeral-lg: clamp(3rem, 1.6rem + 6vw, 8rem);
   --text-numeral-xl: clamp(5rem, 2rem + 16vw, 16rem);
@@ -165,13 +212,15 @@ html.ride-dark {
   /* radii: panels are squarer than controls, pills are full */
   --radius-panel: 0.625rem;
   --radius-control: 0.5rem;
+  --radius-tile: 0.875rem;
+  --spacing-section: 1.5rem;
 
   /* spacing unit stays Tailwind's 0.25rem; touch targets are 3rem */
   --spacing-touch: 3rem;
 }
 
 html {
-  background: var(--ground);
+  background: var(--glow) no-repeat top center / 100% 520px, var(--ground);
 }
 
 body {
@@ -184,6 +233,16 @@ body {
   -webkit-font-smoothing: antialiased;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
+}
+
+/* Small uppercase micro-labels above metrics and section titles. */
+.label {
+  color: var(--label);
+  font-family: var(--font-display);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* Readouts: Barlow Condensed 600, tabular so digits never jitter as values change. */

@@ -2,3 +2,5 @@ export const ROUTES_KEY = ['routes'] as const;
 export const routeKey = (id: number) => ['routes', id] as const;
 export const profileKey = (id: number) => ['routes', id, 'profile'] as const;
 export const photosKey = (id: number) => ['mapillary', id] as const;
+export const routeStatsKey = (id: number) => ['routes', id, 'stats'] as const;
+export const ghostKey = (id: number) => ['routes', id, 'ghost'] as const;

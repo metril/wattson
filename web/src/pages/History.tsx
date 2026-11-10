@@ -110,6 +110,9 @@ export function HistoryPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
       <div className="flex flex-wrap items-end gap-3">
         <h1 className="numeral flex-1 text-2xl">History</h1>
+        <Link to="/stats" className="flex min-h-touch items-center rounded-control px-3 font-medium text-accent hover:bg-raised">
+          Stats
+        </Link>
         {(riders.data?.length ?? 0) > 1 && (
           <div className="w-full sm:w-64">
             <Select

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSearchParams } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateRideData } from '@/lib/rides';
 import { useUnits } from '@/lib/auth';
 import { Banner } from '@/components/Banner';
 import { BikeBar } from '@/features/ride/BikeBar';
@@ -115,6 +117,14 @@ export function RidePage() {
   }, [socket]);
 
   const { connected, state, bike } = status;
+  // A ride that just ended changes the PR ghost, route attempts and stats: drop those caches.
+  const qc = useQueryClient();
+  const prevState = useRef(state);
+  useEffect(() => {
+    const was = prevState.current;
+    prevState.current = state;
+    if ((was === 'riding' || was === 'paused') && state !== 'riding' && state !== 'paused') invalidateRideData(qc);
+  }, [state, qc]);
   // Stays mounted from picking the route into the ride, so pressing Start does not cancel the save.
   const pillRoute = routeMode ? routeId : state === 'ready' && choice.kind === 'route' ? choice.id : 0;
   const ergMode = mode === 'erg';

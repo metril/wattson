@@ -55,6 +55,23 @@ type RideOut struct {
 	MaxSpeedKmh   float64         `json:"max_speed_kmh" doc:"Highest speed in kilometres per hour."`
 	SampleCount   int             `json:"sample_count" doc:"Number of stored 1 Hz samples."`
 	Strava        StravaStatusOut `json:"strava" doc:"Strava upload state of the ride."`
+
+	MaxCadenceRpm    float64   `json:"max_cadence_rpm" doc:"Highest cadence of one sample in revolutions per minute."`
+	Completed        bool      `json:"completed" doc:"True when a route ride covered at least 98 percent of the route's distance."`
+	FTPW             *int      `json:"ftp_w" nullable:"true" doc:"FTP in watts the metrics were computed with; null if unknown."`
+	IntensityFactor  *float64  `json:"intensity_factor" nullable:"true" doc:"Normalized power divided by FTP; null without FTP."`
+	TSS              *float64  `json:"tss" nullable:"true" doc:"Training stress score; null without FTP."`
+	VariabilityIndex *float64  `json:"variability_index" nullable:"true" doc:"Normalized power divided by average power; null when there was no power."`
+	EfficiencyFactor *float64  `json:"efficiency_factor" nullable:"true" doc:"Normalized power divided by average heart rate; null without heart rate."`
+	DecouplingPct    *float64  `json:"decoupling_pct" nullable:"true" doc:"Percent the power-to-heart-rate ratio fell from the first to the second half; null for rides under 20 minutes or without heart rate."`
+	VAMMPerH         *float64  `json:"vam_m_per_h" nullable:"true" doc:"Average climbing rate in metres per hour; null without climbing."`
+	Peak5sW          *float64  `json:"peak_5s_w" nullable:"true" doc:"Best 5 second average power in watts; null if the ride was shorter or not yet computed."`
+	Peak1mW          *float64  `json:"peak_1m_w" nullable:"true" doc:"Best 1 minute average power in watts; null if the ride was shorter or not yet computed."`
+	Peak5mW          *float64  `json:"peak_5m_w" nullable:"true" doc:"Best 5 minute average power in watts; null if the ride was shorter or not yet computed."`
+	Peak20mW         *float64  `json:"peak_20m_w" nullable:"true" doc:"Best 20 minute average power in watts; null if the ride was shorter or not yet computed."`
+	Peak60mW         *float64  `json:"peak_60m_w" nullable:"true" doc:"Best 60 minute average power in watts; null if the ride was shorter or not yet computed."`
+	PowerZoneS       []float64 `json:"power_zone_s" nullable:"true" doc:"Seconds spent in each of the seven Coggan power zones, lowest first; null without FTP."`
+	HRZoneS          []float64 `json:"hr_zone_s" nullable:"true" doc:"Seconds spent in each of five heart-rate zones, lowest first; null without heart rate or max heart rate."`
 }
 
 // stravaStatus renders a ride's stored Strava state.
@@ -69,7 +86,7 @@ func stravaStatus(st store.StravaState) StravaStatusOut {
 	return o
 }
 
-func rideSummary(r store.Ride) RideOut {
+func rideSummary(r store.Ride, ex store.RideExtras) RideOut {
 	s := r.Summary
 	o := RideOut{ID: r.ID, RiderID: r.RiderID, RiderName: r.RiderName, RouteID: r.RouteID, RouteName: r.RouteName,
 		Mode: r.Mode, StartedAt: r.StartedAt.UTC(), DurationS: s.DurationS, ElapsedS: s.ElapsedS, DistanceM: s.DistanceM,
@@ -81,6 +98,20 @@ func rideSummary(r store.Ride) RideOut {
 		t := r.EndedAt.UTC()
 		o.EndedAt = &t
 	}
+	o.MaxCadenceRpm, o.Completed = s.MaxCadenceRpm, s.Completed
+	if r.FTPW > 0 {
+		o.FTPW = &r.FTPW
+	}
+	o.IntensityFactor, o.TSS, o.VariabilityIndex, o.EfficiencyFactor = s.IntensityFactor, s.TSS, s.VI, s.EF
+	o.DecouplingPct, o.VAMMPerH = s.DecouplingPct, s.VAM
+	peak := func(d int) *float64 {
+		if w, ok := ex.PeakW[d]; ok {
+			return &w
+		}
+		return nil
+	}
+	o.Peak5sW, o.Peak1mW, o.Peak5mW, o.Peak20mW, o.Peak60mW = peak(5), peak(60), peak(300), peak(1200), peak(3600)
+	o.PowerZoneS, o.HRZoneS = ex.PowerZones, ex.HRZones
 	return o
 }
 
@@ -259,8 +290,16 @@ func (d Deps) registerRides(api huma.API) {
 				rs = rs[:in.Limit]
 				out.NextBefore = rs[len(rs)-1].ID
 			}
+			ids := make([]int64, len(rs))
+			for i, r := range rs {
+				ids[i] = r.ID
+			}
+			ex, err := d.Store.RideExtras(ctx, ids)
+			if err != nil {
+				return nil, err
+			}
 			for _, r := range rs {
-				out.Rides = append(out.Rides, rideSummary(r))
+				out.Rides = append(out.Rides, rideSummary(r, ex[r.ID]))
 			}
 			return &rideListBody{Body: out}, nil
 		})
@@ -279,7 +318,11 @@ func (d Deps) registerRides(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			return &rideDetailBody{Body: RideDetail{RideOut: rideSummary(r), Series: buildSeries(ss, in.Points)}}, nil
+			ex, err := d.Store.RideExtras(ctx, []int64{r.ID})
+			if err != nil {
+				return nil, err
+			}
+			return &rideDetailBody{Body: RideDetail{RideOut: rideSummary(r, ex[r.ID]), Series: buildSeries(ss, in.Points)}}, nil
 		})
 
 	register(api, route{Method: http.MethodDelete, Path: "/api/rides/{id}", ID: "deleteRideRecord", Tag: "rides",

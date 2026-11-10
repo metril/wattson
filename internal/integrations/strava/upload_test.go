@@ -83,7 +83,7 @@ func bubbleEnv(t *testing.T) (*strava.Service, *store.Store, *processing, store.
 	if err := st.AppendSamples(ctx, r.ID, ss); err != nil {
 		t.Fatal(err)
 	}
-	if r, err = st.FinishRide(ctx, r.ID, ss[29].At, history.Summarize(ss), len(ss)); err != nil {
+	if r, err = st.FinishRide(ctx, r.ID, ss[29].At, history.Summarize(ss, history.Params{}), len(ss)); err != nil {
 		t.Fatal(err)
 	}
 	return svc, st, p, r

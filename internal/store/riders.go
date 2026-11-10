@@ -15,6 +15,7 @@ type Rider struct {
 	Name             string
 	WeightKg, BikeKg float64
 	FTPW             int
+	MaxHRBpm         int // 0 = unknown
 	MinLevel         int
 	MaxLevel         int
 	Gain             float64
@@ -35,16 +36,18 @@ func DefaultRider(userID int64, name string) Rider {
 }
 
 const riderCols = `id, user_id, name, weight_kg, bike_kg, ftp_w, min_level, max_level, gain,
-	offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at`
+	offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at, max_hr_bpm`
 
 func scanRider(r scanner) (Rider, error) {
 	var x Rider
 	var created, updated string
+	var maxHR sql.NullInt64
 	if err := r.Scan(&x.ID, &x.UserID, &x.Name, &x.WeightKg, &x.BikeKg, &x.FTPW, &x.MinLevel,
 		&x.MaxLevel, &x.Gain, &x.OffsetLevel, &x.DownhillScale, &x.CdA, &x.Crr,
-		&x.PowerMultiplier, &x.LeadS, &created, &updated); err != nil {
+		&x.PowerMultiplier, &x.LeadS, &created, &updated, &maxHR); err != nil {
 		return Rider{}, err
 	}
+	x.MaxHRBpm = int(maxHR.Int64)
 	var err error
 	if x.CreatedAt, err = time.Parse(TimeFormat, created); err != nil {
 		return Rider{}, fmt.Errorf("parse created_at: %w", err)
@@ -60,10 +63,10 @@ func (s *Store) CreateRider(ctx context.Context, r Rider) (Rider, error) {
 	now := time.Now().UTC()
 	res, err := s.Write.ExecContext(ctx,
 		`INSERT INTO riders(user_id, name, weight_kg, bike_kg, ftp_w, min_level, max_level, gain,
-			offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at, max_hr_bpm)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.UserID, r.Name, r.WeightKg, r.BikeKg, r.FTPW, r.MinLevel, r.MaxLevel, r.Gain,
-		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, fmtTime(now), fmtTime(now))
+		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, fmtTime(now), fmtTime(now), nullInt(int64(r.MaxHRBpm)))
 	if err != nil {
 		return Rider{}, fmt.Errorf("create rider: %w", err)
 	}
@@ -81,11 +84,11 @@ func (s *Store) EnsureRider(ctx context.Context, r Rider) error {
 	now := fmtTime(time.Now().UTC())
 	if _, err := s.Write.ExecContext(ctx,
 		`INSERT INTO riders(user_id, name, weight_kg, bike_kg, ftp_w, min_level, max_level, gain,
-			offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at)
-		 SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+			offset_level, downhill_scale, cda, crr, power_multiplier, lead_s, created_at, updated_at, max_hr_bpm)
+		 SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
 		 WHERE NOT EXISTS (SELECT 1 FROM riders WHERE user_id = ?)`,
 		r.UserID, r.Name, r.WeightKg, r.BikeKg, r.FTPW, r.MinLevel, r.MaxLevel, r.Gain,
-		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, now, now, r.UserID); err != nil {
+		r.OffsetLevel, r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, now, now, nullInt(int64(r.MaxHRBpm)), r.UserID); err != nil {
 		return fmt.Errorf("ensure rider: %w", err)
 	}
 	return nil
@@ -96,10 +99,10 @@ func (s *Store) EnsureRider(ctx context.Context, r Rider) error {
 func (s *Store) UpdateRider(ctx context.Context, r Rider) (Rider, error) {
 	res, err := s.Write.ExecContext(ctx,
 		`UPDATE riders SET name=?, weight_kg=?, bike_kg=?, ftp_w=?, min_level=?, max_level=?, gain=?,
-			offset_level=?, downhill_scale=?, cda=?, crr=?, power_multiplier=?, lead_s=?, updated_at=?
+			offset_level=?, downhill_scale=?, cda=?, crr=?, power_multiplier=?, lead_s=?, updated_at=?, max_hr_bpm=?
 		 WHERE id=? AND user_id=?`,
 		r.Name, r.WeightKg, r.BikeKg, r.FTPW, r.MinLevel, r.MaxLevel, r.Gain, r.OffsetLevel,
-		r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, fmtTime(time.Now().UTC()), r.ID, r.UserID)
+		r.DownhillScale, r.CdA, r.Crr, r.PowerMultiplier, r.LeadS, fmtTime(time.Now().UTC()), nullInt(int64(r.MaxHRBpm)), r.ID, r.UserID)
 	if err != nil {
 		return Rider{}, fmt.Errorf("update rider: %w", err)
 	}

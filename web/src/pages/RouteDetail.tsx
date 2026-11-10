@@ -15,6 +15,7 @@ import { Card } from '@/components/Card';
 import { Field } from '@/components/Field';
 import { Select } from '@/components/Select';
 import MapView, { type MapApi } from '@/features/map/MapView';
+import { AttemptsCard } from '@/features/routes/AttemptsCard';
 import { PreviewChart } from '@/features/routes/PreviewChart';
 import { ProfileCanvas } from '@/features/routes/ProfileCanvas';
 import { profileKey, ROUTES_KEY, routeKey } from '@/features/routes/queries';
@@ -295,6 +296,8 @@ export function RouteDetailPage() {
           </div>
         </Card>
       </div>
+
+      <AttemptsCard routeId={id} units={units} />
 
       <Card className="flex flex-col gap-3">
         <h2 className="numeral text-xl">Elevation</h2>

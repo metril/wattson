@@ -44,7 +44,7 @@ const SPECS: Spec[] = [
   { key: 'downhill_scale', label: 'Downhill relief (0 to 1)', hint: 'Lower gives less relief on descents.', def: 0.5, min: 0, max: 1, step: '0.05' },
 ];
 
-const KEYS = ['name', ...SPECS.map((s) => s.key)];
+const KEYS = ['name', 'max_hr_bpm', ...SPECS.map((s) => s.key)];
 
 /** `field: problem` or `body.field: problem`, as the API reports rider validation. */
 function parseFieldError(e: unknown): { field?: string; text: string } {
@@ -67,7 +67,25 @@ function RiderForm({
   const [vals, setVals] = useState<Record<Num, string>>(
     () => Object.fromEntries(SPECS.map((s) => [s.key, String(rider?.[s.key] ?? s.def)])) as Record<Num, string>,
   );
+  const [maxHr, setMaxHr] = useState(rider?.max_hr_bpm ? String(rider.max_hr_bpm) : '');
   const [err, setErr] = useState<{ field?: string; text: string } | null>(null);
+  const [eftpMsg, setEftpMsg] = useState<string | null>(null);
+
+  // Fills FTP with 95 % of the best 20-minute power of the last 90 days; the rider still has to save.
+  const eftp = useMutation({
+    mutationFn: async () =>
+      unwrap(await api.GET('/api/stats/power-curve', { params: { query: { window: '90d', rider_id: rider?.id } } })),
+    onSuccess: (d) => {
+      if (d.eftp_w == null) {
+        setEftpMsg('No 20-minute effort in the last 90 days.');
+        return;
+      }
+      const v = Math.min(600, Math.max(50, Math.round(d.eftp_w)));
+      setVals((p) => ({ ...p, ftp_w: String(v) }));
+      setEftpMsg(`eFTP is ${v} W (95% of your best 20 minutes in the last 90 days). Save to apply it.`);
+    },
+    onError: (e) => setEftpMsg(errMessage(e)),
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -77,12 +95,16 @@ function RiderForm({
         if (vals[s.key].trim() === '' || !Number.isFinite(n)) throw new ApiError(400, 'invalid_request', `${s.key}: Enter a number.`);
         nums[s.key] = n;
       }
+      const hrText = maxHr.trim();
+      const hr = hrText === '' ? 0 : Number(hrText);
+      if (!Number.isFinite(hr)) throw new ApiError(400, 'invalid_request', 'max_hr_bpm: Enter a number.');
       if (!rider) {
-        return unwrap(await api.POST('/api/riders', { body: { name: name.trim(), ...nums } }));
+        return unwrap(await api.POST('/api/riders', { body: { name: name.trim(), ...nums, ...(hr > 0 ? { max_hr_bpm: hr } : {}) } }));
       }
       const body: Record<string, string | number> = {};
       if (name.trim() !== rider.name) body.name = name.trim();
       for (const s of SPECS) if (nums[s.key] !== rider[s.key]) body[s.key] = nums[s.key];
+      if (hr !== (rider.max_hr_bpm ?? 0)) body.max_hr_bpm = hr;
       if (Object.keys(body).length === 0) return rider;
       return unwrap(await api.PATCH('/api/riders/{id}', { params: { path: { id: rider.id } }, body }));
     },
@@ -129,7 +151,31 @@ function RiderForm({
             error={fe(s.key)}
           />
         ))}
+        <Field
+          label="Max heart rate (bpm)"
+          hint="Optional, 100 to 230. Used for heart-rate zones."
+          type="number"
+          inputMode="numeric"
+          min={100}
+          max={230}
+          step="1"
+          value={maxHr}
+          onChange={(e) => setMaxHr(e.target.value)}
+          error={fe('max_hr_bpm')}
+        />
       </div>
+      {rider && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button disabled={eftp.isPending} onClick={() => eftp.mutate()}>
+            Use eFTP
+          </Button>
+          {eftpMsg && (
+            <p role="status" className="min-w-0 flex-1 basis-60 text-sm text-dim">
+              {eftpMsg}
+            </p>
+          )}
+        </div>
+      )}
       {banner && <Banner tone="error">{banner}</Banner>}
       <div className="flex flex-wrap gap-3">
         <Button type="submit" variant="primary" disabled={save.isPending || !name.trim()}>

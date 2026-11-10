@@ -337,7 +337,7 @@ func (ts *testServer) seedRide(t testing.TB, riderID int64, n int, route bool) s
 	if err := ts.Store.AppendSamples(ctx, r.ID, ss); err != nil {
 		t.Fatal(err)
 	}
-	r, err = ts.Store.FinishRide(ctx, r.ID, ss[n-1].At, history.Summarize(ss), n)
+	r, err = ts.Store.FinishRide(ctx, r.ID, ss[n-1].At, history.Summarize(ss, history.Params{}), n)
 	if err != nil {
 		t.Fatal(err)
 	}

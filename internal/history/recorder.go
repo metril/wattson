@@ -251,7 +251,7 @@ func (r *Recorder) finalize(ctx context.Context) {
 		}
 		return
 	}
-	fin, err := r.d.Store.FinishRide(ctx, ride.ID, ss[len(ss)-1].At, Summarize(ss), len(ss))
+	fin, err := r.d.Store.FinishRide(ctx, ride.ID, ss[len(ss)-1].At, Summarize(ss, ParamsOf(ride)), len(ss))
 	if err != nil {
 		r.d.Logger.Warn("finish ride", "ride", ride.ID, "err", err)
 		return

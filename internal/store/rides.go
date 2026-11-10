@@ -6,8 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
+
+	"github.com/metril/wattson/internal/stats"
 )
+
+// StatsVersion is the current revision of the per-ride metrics. Finished
+// rides below it are recomputed by the startup backfill.
+const StatsVersion = 1
 
 // Summary holds the aggregate figures of a finished ride. Zero HR = none.
 type Summary struct {
@@ -15,6 +22,15 @@ type Summary struct {
 	AvgPowerW, MaxPowerW, NPW, KJ           float64
 	AvgCadenceRpm, AvgSpeedKmh, MaxSpeedKmh float64
 	AvgHRBpm, MaxHRBpm                      int
+	MaxCadenceRpm                           float64
+	// Derived metrics; nil when they cannot be computed.
+	IntensityFactor, TSS, VI, EF, DecouplingPct, VAM *float64
+	Completed                                        bool
+	// Curve is the power curve; PowerZones and HRZones are seconds per zone
+	// (nil when FTP or heart rate is unknown).
+	Curve               []stats.Point
+	PowerZones, HRZones []float64
+	StatsVersion        int
 }
 
 // StravaState is a ride's Strava upload progress.
@@ -36,6 +52,9 @@ type Ride struct {
 	Summary             Summary
 	SampleCount         int
 	Strava              StravaState
+	// Snapshots taken when the ride was created; zero = unknown.
+	FTPW, HRMaxBpm           int
+	WeightKg, RouteDistanceM float64
 }
 
 // Sample is one 1 Hz ride sample. Lat, Lon and EleM are NaN when absent
@@ -58,7 +77,9 @@ const rideCols = `r.id, r.rider_id, rd.user_id, rd.name, r.route_id, r.route_nam
 	r.started_at, r.ended_at, r.duration_s, r.elapsed_s, r.distance_m, r.ascent_m, r.avg_power_w,
 	r.max_power_w, r.np_w, r.kj, r.avg_cadence_rpm, r.avg_speed_kmh, r.max_speed_kmh,
 	r.avg_hr_bpm, r.max_hr_bpm, r.sample_count, r.strava_status, r.strava_upload_id,
-	r.strava_activity_id, r.strava_error, r.strava_updated_at`
+	r.strava_activity_id, r.strava_error, r.strava_updated_at, r.ftp_w, r.weight_kg, r.hr_max_bpm,
+	r.route_distance_m, r.completed, r.intensity_factor, r.tss, r.variability_index,
+	r.efficiency_factor, r.decoupling_pct, r.vam_mph, r.max_cadence_rpm, r.stats_version`
 
 const rideFrom = ` FROM rides r JOIN riders rd ON rd.id = r.rider_id `
 
@@ -67,15 +88,21 @@ func scanRide(r scanner) (Ride, error) {
 	var route, upload, activity sql.NullInt64
 	var started string
 	var ended, supd sql.NullString
+	var ftp, hrMax sql.NullInt64
+	var wt, rdist, ifac, tss, vi, ef, dec, vam sql.NullFloat64
 	s := &x.Summary
 	if err := r.Scan(&x.ID, &x.RiderID, &x.UserID, &x.RiderName, &route, &x.RouteName, &x.Mode,
 		&started, &ended, &s.DurationS, &s.ElapsedS, &s.DistanceM, &s.AscentM, &s.AvgPowerW,
 		&s.MaxPowerW, &s.NPW, &s.KJ, &s.AvgCadenceRpm, &s.AvgSpeedKmh, &s.MaxSpeedKmh,
 		&s.AvgHRBpm, &s.MaxHRBpm, &x.SampleCount, &x.Strava.Status, &upload, &activity,
-		&x.Strava.Error, &supd); err != nil {
+		&x.Strava.Error, &supd, &ftp, &wt, &hrMax, &rdist, &s.Completed, &ifac, &tss, &vi, &ef,
+		&dec, &vam, &s.MaxCadenceRpm, &s.StatsVersion); err != nil {
 		return Ride{}, err
 	}
 	x.RouteID, x.Strava.UploadID, x.Strava.ActivityID = route.Int64, upload.Int64, activity.Int64
+	x.FTPW, x.HRMaxBpm, x.WeightKg, x.RouteDistanceM = int(ftp.Int64), int(hrMax.Int64), wt.Float64, rdist.Float64
+	s.IntensityFactor, s.TSS, s.VI, s.EF = ptrF(ifac), ptrF(tss), ptrF(vi), ptrF(ef)
+	s.DecouplingPct, s.VAM = ptrF(dec), ptrF(vam)
 	var err error
 	if x.StartedAt, err = time.Parse(TimeFormat, started); err != nil {
 		return Ride{}, fmt.Errorf("parse started_at: %w", err)
@@ -95,13 +122,35 @@ func scanRide(r scanner) (Ride, error) {
 	return x, nil
 }
 
-// CreateRide inserts an open ride (no end time) for r.RiderID.
+func ptrF(v sql.NullFloat64) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Float64
+}
+
+func derefF(p *float64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// CreateRide inserts an open ride (no end time) for r.RiderID, snapshotting
+// the rider's FTP, weight and max HR and the route's distance. ErrNotFound if
+// the rider does not exist.
 func (s *Store) CreateRide(ctx context.Context, r Ride) (Ride, error) {
 	res, err := s.Write.ExecContext(ctx,
-		`INSERT INTO rides(rider_id, route_id, route_name, mode, started_at) VALUES(?,?,?,?,?)`,
-		r.RiderID, nullInt(r.RouteID), r.RouteName, r.Mode, fmtTime(r.StartedAt))
+		`INSERT INTO rides(rider_id, route_id, route_name, mode, started_at, ftp_w, weight_kg, hr_max_bpm,
+			route_distance_m)
+		 SELECT ?,?,?,?,?, rd.ftp_w, rd.weight_kg, rd.max_hr_bpm, (SELECT distance_m FROM routes WHERE id=?)
+		 FROM riders rd WHERE rd.id=?`,
+		r.RiderID, nullInt(r.RouteID), r.RouteName, r.Mode, fmtTime(r.StartedAt), nullInt(r.RouteID), r.RiderID)
 	if err != nil {
 		return Ride{}, fmt.Errorf("create ride: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Ride{}, fmt.Errorf("create ride: rider %d: %w", r.RiderID, ErrNotFound)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
@@ -185,16 +234,32 @@ func nanIfNull(v sql.NullFloat64) float64 {
 	return v.Float64
 }
 
-// FinishRide closes an open ride with its summary and sample count.
+// statsSet assigns the derived-metric columns shared by FinishRide and ApplyRideStats.
+const statsSet = `completed=?, intensity_factor=?, tss=?, variability_index=?, efficiency_factor=?,
+	decoupling_pct=?, vam_mph=?, max_cadence_rpm=?, stats_version=?`
+
+func statsArgs(sum Summary) []any {
+	return []any{sum.Completed, derefF(sum.IntensityFactor), derefF(sum.TSS), derefF(sum.VI), derefF(sum.EF),
+		derefF(sum.DecouplingPct), derefF(sum.VAM), sum.MaxCadenceRpm, sum.StatsVersion}
+}
+
+// FinishRide closes an open ride with its summary and sample count, writing
+// the ride row, power curve and zones in one transaction.
 // ErrNotFound if absent, ErrAlreadyFinished if it already has an end time.
 func (s *Store) FinishRide(ctx context.Context, id int64, endedAt time.Time, sum Summary, n int) (Ride, error) {
-	res, err := s.Write.ExecContext(ctx,
+	tx, err := s.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return Ride{}, fmt.Errorf("finish ride: %w", err)
+	}
+	defer tx.Rollback()
+	args := append([]any{fmtTime(endedAt), sum.DurationS, sum.ElapsedS, sum.DistanceM, sum.AscentM, sum.AvgPowerW,
+		sum.MaxPowerW, sum.NPW, sum.KJ, sum.AvgCadenceRpm, sum.AvgSpeedKmh, sum.MaxSpeedKmh,
+		sum.AvgHRBpm, sum.MaxHRBpm, n}, statsArgs(sum)...)
+	res, err := tx.ExecContext(ctx,
 		`UPDATE rides SET ended_at=?, duration_s=?, elapsed_s=?, distance_m=?, ascent_m=?, avg_power_w=?,
 			max_power_w=?, np_w=?, kj=?, avg_cadence_rpm=?, avg_speed_kmh=?, max_speed_kmh=?,
-			avg_hr_bpm=?, max_hr_bpm=?, sample_count=? WHERE id=? AND ended_at IS NULL`,
-		fmtTime(endedAt), sum.DurationS, sum.ElapsedS, sum.DistanceM, sum.AscentM, sum.AvgPowerW,
-		sum.MaxPowerW, sum.NPW, sum.KJ, sum.AvgCadenceRpm, sum.AvgSpeedKmh, sum.MaxSpeedKmh,
-		sum.AvgHRBpm, sum.MaxHRBpm, n, id)
+			avg_hr_bpm=?, max_hr_bpm=?, sample_count=?, `+statsSet+` WHERE id=? AND ended_at IS NULL`,
+		append(args, id)...)
 	if err != nil {
 		return Ride{}, fmt.Errorf("finish ride: %w", err)
 	}
@@ -204,7 +269,209 @@ func (s *Store) FinishRide(ctx context.Context, id int64, endedAt time.Time, sum
 		}
 		return Ride{}, ErrAlreadyFinished
 	}
+	if err := writeDetail(ctx, tx, id, sum); err != nil {
+		return Ride{}, fmt.Errorf("finish ride: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Ride{}, fmt.Errorf("finish ride: %w", err)
+	}
 	return s.Ride(ctx, id)
+}
+
+// Snapshot is the rider and route state a ride's metrics were computed with.
+type Snapshot struct {
+	FTPW, HRMaxBpm           int
+	WeightKg, RouteDistanceM float64
+}
+
+// ApplyRideStats stores recomputed metrics for a finished ride, filling any
+// snapshot the ride lacks, only while its stats_version is below
+// sum.StatsVersion. It reports whether the ride was updated.
+func (s *Store) ApplyRideStats(ctx context.Context, id int64, sum Summary, snap Snapshot) (bool, error) {
+	tx, err := s.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("apply ride stats: %w", err)
+	}
+	defer tx.Rollback()
+	args := append(statsArgs(sum), nullInt(int64(snap.FTPW)), nullInt0(snap.WeightKg), nullInt(int64(snap.HRMaxBpm)),
+		nullInt0(snap.RouteDistanceM), id, sum.StatsVersion)
+	res, err := tx.ExecContext(ctx,
+		`UPDATE rides SET `+statsSet+`, ftp_w=COALESCE(ftp_w,?), weight_kg=COALESCE(weight_kg,?),
+			hr_max_bpm=COALESCE(hr_max_bpm,?), route_distance_m=COALESCE(route_distance_m,?)
+		 WHERE id=? AND ended_at IS NOT NULL AND stats_version<?`, args...)
+	if err != nil {
+		return false, fmt.Errorf("apply ride stats: %w", err)
+	}
+	if c, _ := res.RowsAffected(); c == 0 {
+		return false, nil
+	}
+	if err := writeDetail(ctx, tx, id, sum); err != nil {
+		return false, fmt.Errorf("apply ride stats: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("apply ride stats: %w", err)
+	}
+	return true, nil
+}
+
+func nullInt0(v float64) any {
+	if v == 0 {
+		return nil
+	}
+	return v
+}
+
+// writeDetail replaces the ride's power curve and zones with one multi-row
+// INSERT each.
+func writeDetail(ctx context.Context, tx *sql.Tx, id int64, sum Summary) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ride_power_curve WHERE ride_id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ride_zones WHERE ride_id=?`, id); err != nil {
+		return err
+	}
+	if len(sum.Curve) > 0 {
+		var b strings.Builder
+		b.WriteString(`INSERT INTO ride_power_curve(ride_id, dur_s, watts) VALUES `)
+		args := make([]any, 0, 3*len(sum.Curve))
+		for i, p := range sum.Curve {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString("(?,?,?)")
+			args = append(args, id, p.DurS, p.Watts)
+		}
+		if _, err := tx.ExecContext(ctx, b.String(), args...); err != nil {
+			return err
+		}
+	}
+	nz := len(sum.PowerZones) + len(sum.HRZones)
+	if nz == 0 {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString(`INSERT INTO ride_zones(ride_id, kind, zone, seconds) VALUES `)
+	args := make([]any, 0, 4*nz)
+	add := func(kind string, zs []float64) {
+		for z, sec := range zs {
+			if len(args) > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString("(?,?,?,?)")
+			args = append(args, id, kind, z+1, sec)
+		}
+	}
+	add("power", sum.PowerZones)
+	add("hr", sum.HRZones)
+	_, err := tx.ExecContext(ctx, b.String(), args...)
+	return err
+}
+
+// FillRideSnapshot stores the snapshot values the ride lacks, leaving set ones.
+func (s *Store) FillRideSnapshot(ctx context.Context, id int64, snap Snapshot) error {
+	_, err := s.Write.ExecContext(ctx,
+		`UPDATE rides SET ftp_w=COALESCE(ftp_w,?), weight_kg=COALESCE(weight_kg,?),
+			hr_max_bpm=COALESCE(hr_max_bpm,?), route_distance_m=COALESCE(route_distance_m,?) WHERE id=?`,
+		nullInt(int64(snap.FTPW)), nullInt0(snap.WeightKg), nullInt(int64(snap.HRMaxBpm)),
+		nullInt0(snap.RouteDistanceM), id)
+	if err != nil {
+		return fmt.Errorf("fill ride snapshot: %w", err)
+	}
+	return nil
+}
+
+// RidesNeedingStats returns up to limit finished rides with id above afterID
+// whose stats_version is below StatsVersion, oldest first.
+func (s *Store) RidesNeedingStats(ctx context.Context, afterID int64, limit int) ([]Ride, error) {
+	return s.queryRides(ctx, `WHERE r.ended_at IS NOT NULL AND r.stats_version<? AND r.id>? ORDER BY r.id LIMIT ?`,
+		StatsVersion, afterID, limit)
+}
+
+// RouteDistance returns the route's length in metres, ErrNotFound if absent.
+func (s *Store) RouteDistance(ctx context.Context, id int64) (float64, error) {
+	var d float64
+	err := s.Read.QueryRowContext(ctx, `SELECT distance_m FROM routes WHERE id=?`, id).Scan(&d)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("route distance: %w", err)
+	}
+	return d, nil
+}
+
+// RideExtras are a ride's peak powers and zone times, for display.
+type RideExtras struct {
+	PeakW               map[int]float64 // by duration in seconds: 5, 60, 300, 1200, 3600
+	PowerZones, HRZones []float64
+}
+
+// PeakDurations are the power-curve durations reported on a ride.
+var PeakDurations = [...]int{5, 60, 300, 1200, 3600}
+
+// RideExtras loads the peaks and zones of the rides in two queries.
+func (s *Store) RideExtras(ctx context.Context, ids []int64) (map[int64]RideExtras, error) {
+	out := make(map[int64]RideExtras, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.Read.QueryContext(ctx,
+		`SELECT ride_id, dur_s, watts FROM ride_power_curve WHERE ride_id IN (`+in+`)
+		 AND dur_s IN (5,60,300,1200,3600)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("ride peaks: %w", err)
+	}
+	for rows.Next() {
+		var id int64
+		var d int
+		var w float64
+		if err := rows.Scan(&id, &d, &w); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan peak: %w", err)
+		}
+		x := out[id]
+		if x.PeakW == nil {
+			x.PeakW = make(map[int]float64, len(PeakDurations))
+		}
+		x.PeakW[d] = w
+		out[id] = x
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("ride peaks: %w", err)
+	}
+	rows.Close()
+	zr, err := s.Read.QueryContext(ctx,
+		`SELECT ride_id, kind, zone, seconds FROM ride_zones WHERE ride_id IN (`+in+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("ride zones: %w", err)
+	}
+	defer zr.Close()
+	for zr.Next() {
+		var id int64
+		var kind string
+		var z int
+		var sec float64
+		if err := zr.Scan(&id, &kind, &z, &sec); err != nil {
+			return nil, fmt.Errorf("scan zone: %w", err)
+		}
+		x := out[id]
+		dst := &x.PowerZones
+		if kind == "hr" {
+			dst = &x.HRZones
+		}
+		for len(*dst) < z {
+			*dst = append(*dst, 0)
+		}
+		(*dst)[z-1] = sec
+		out[id] = x
+	}
+	return out, zr.Err()
 }
 
 // Ride returns the ride by id, ErrNotFound if absent.

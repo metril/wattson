@@ -78,7 +78,7 @@ func encode(t *testing.T, r store.Ride, ss []store.Sample) *filedef.Activity {
 func TestRoundTrip(t *testing.T) {
 	t.Parallel()
 	ss := ramp120()
-	r := store.Ride{ID: 7, RouteID: 3, Mode: "route", StartedAt: t0, Summary: history.Summarize(ss)}
+	r := store.Ride{ID: 7, RouteID: 3, Mode: "route", StartedAt: t0, Summary: history.Summarize(ss, history.Params{})}
 	act := encode(t, r, ss)
 	if act.FileId.Type != typedef.FileActivity || act.FileId.Manufacturer != typedef.ManufacturerDevelopment ||
 		act.FileId.ProductName != "Wattson" || act.FileId.SerialNumber != 7 {
@@ -150,7 +150,7 @@ func TestFreeRideNoPosition(t *testing.T) {
 	for i := range ss {
 		ss[i].Lat, ss[i].Lon, ss[i].EleM, ss[i].HRBpm = math.NaN(), math.NaN(), math.NaN(), 0
 	}
-	r := store.Ride{ID: 8, Mode: "free", StartedAt: t0, Summary: history.Summarize(ss)}
+	r := store.Ride{ID: 8, Mode: "free", StartedAt: t0, Summary: history.Summarize(ss, history.Params{})}
 	act := encode(t, r, ss)
 	rec := act.Records[0]
 	if rec.PositionLat != basetype.Sint32Invalid || rec.PositionLong != basetype.Sint32Invalid ||
@@ -171,7 +171,7 @@ func TestPauseEvents(t *testing.T) {
 	for i := 60; i < len(ss); i++ {
 		ss[i].At = ss[i].At.Add(time.Minute)
 	}
-	r := store.Ride{ID: 9, Mode: "free", StartedAt: t0, Summary: history.Summarize(ss)}
+	r := store.Ride{ID: 9, Mode: "free", StartedAt: t0, Summary: history.Summarize(ss, history.Params{})}
 	act := encode(t, r, ss)
 	var types []typedef.EventType
 	var at []time.Time
@@ -207,7 +207,7 @@ func TestPauseThreshold(t *testing.T) {
 			for i := 30; i < len(ss); i++ {
 				ss[i].At = ss[i].At.Add(c.shift)
 			}
-			act := encode(t, store.Ride{ID: 9, Mode: "free", StartedAt: t0, Summary: history.Summarize(ss)}, ss)
+			act := encode(t, store.Ride{ID: 9, Mode: "free", StartedAt: t0, Summary: history.Summarize(ss, history.Params{})}, ss)
 			n := 0
 			for _, e := range act.Events {
 				if e.Event == typedef.EventTimer {
@@ -225,7 +225,7 @@ func TestSummariesAreLast(t *testing.T) {
 	t.Parallel()
 	ss := ramp120()
 	var buf bytes.Buffer
-	if err := fitexport.Encode(&buf, store.Ride{ID: 1, Summary: history.Summarize(ss)}, ss); err != nil {
+	if err := fitexport.Encode(&buf, store.Ride{ID: 1, Summary: history.Summarize(ss, history.Params{})}, ss); err != nil {
 		t.Fatal(err)
 	}
 	var nums []uint16

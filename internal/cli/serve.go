@@ -186,6 +186,20 @@ func runServer(ctx context.Context, cfg serveConfig, logger *slog.Logger, ready 
 	} else if fin+del > 0 {
 		logger.Info("recovered unfinished rides", "finished", fin, "deleted", del)
 	}
+	// Compute metrics for rides recorded before they existed; a no-op once
+	// done. It must finish before the store closes.
+	backfillCtx, stopBackfill := context.WithCancel(ctx)
+	backfillDone := make(chan struct{})
+	go func() {
+		defer close(backfillDone)
+		if n, err := history.Backfill(backfillCtx, st, logger); err != nil && backfillCtx.Err() == nil {
+			logger.Warn("ride stats backfill incomplete", "updated", n, "err", err)
+		} else if n > 0 {
+			logger.Info("backfilled ride stats", "rides", n)
+		}
+	}()
+	defer func() { <-backfillDone }()
+	defer stopBackfill()
 	mgr := ridectl.New(rd)
 	// The MQTT bridge idles until mqtt.url is set and follows settings changes
 	// through api.Deps.MQTT. It is stopped, publishing "offline", before the

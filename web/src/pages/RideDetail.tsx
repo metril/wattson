@@ -15,7 +15,7 @@ import { FitButton } from '@/features/history/FitButton';
 import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
 import { RideStats } from '@/features/history/RideStats';
 import { SeriesChart } from '@/features/history/SeriesChart';
-import { RIDES_KEY } from '@/lib/rides';
+import { invalidateRideData, RIDES_KEY } from '@/lib/rides';
 import { PowerCurve } from '@/features/stats/PowerCurve';
 import { curveKey } from '@/features/stats/queries';
 
@@ -98,6 +98,7 @@ export function RideDetailPage() {
         (old) => old && { ...old, pages: old.pages.map((p) => ({ ...p, rides: p.rides.filter((x) => x.id !== id) })) },
       );
       void qc.invalidateQueries({ queryKey: RIDES_KEY });
+      invalidateRideData(qc);
       navigate('/history', { replace: true });
     },
     onError: (e) => {

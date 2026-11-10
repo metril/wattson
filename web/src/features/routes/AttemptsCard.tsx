@@ -37,7 +37,7 @@ export function AttemptsCard({ routeId, units }: { routeId: number; units: Units
           </div>
         ))}
       </dl>
-      <AttemptTrend attempts={s.list} />
+      {s.list.filter((a) => a.completed).length >= 2 && <AttemptTrend attempts={s.list} />}
       <AttemptsTable attempts={s.list} units={units} />
     </Card>
   );

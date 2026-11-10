@@ -6,7 +6,7 @@ import type { Attempt } from './AttemptsTable';
 
 const PAD = 14;
 
-/** Completed times over attempt order. Redraws only when the attempts or size change. */
+/** Completed times over attempt order. Mount only with 2+ completed attempts (the box ref must exist on mount). Redraws only when the attempts or size change. */
 export function AttemptTrend({ attempts, height = 140 }: { attempts: Attempt[]; height?: number }) {
   const { box, canvas, width } = useCanvasBox();
   const done = useMemo(() => attempts.filter((a) => a.completed), [attempts]);
@@ -40,7 +40,6 @@ export function AttemptTrend({ attempts, height = 140 }: { attempts: Attempt[]; 
     ctx.fillText(hms(geo.min), PAD + 2, height - 1);
   }, [done, ys, geo, width, height, canvas]);
 
-  if (done.length < 2) return null;
   return (
     <div ref={box} className="relative w-full overflow-hidden rounded-control bg-ground" style={{ height }}>
       <canvas

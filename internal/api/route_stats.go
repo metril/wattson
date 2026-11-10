@@ -61,8 +61,8 @@ type ghostBody struct {
 	Body GhostOut
 }
 
-// riderScope resolves the optional rider_id to (riderID, userID) for a query,
-// applying the same ownership rule as listing rides.
+// riderScope resolves the optional rider_id to the (riderID, userID) the store
+// queries take, applying the same ownership rule as listing rides.
 func (d Deps) riderScope(ctx context.Context, riderID int64) (rider, user int64, err error) {
 	ident, _ := auth.FromContext(ctx)
 	if riderID != 0 {
@@ -79,7 +79,7 @@ func (d Deps) riderScope(ctx context.Context, riderID int64) (rider, user int64,
 		return rd.ID, 0, nil
 	}
 	if ident.User.ID == 0 {
-		return 0, 0, errors.New("route stats: identity has no user")
+		return 0, 0, errors.New("stats: identity has no user")
 	}
 	return 0, ident.User.ID, nil
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/metril/wattson/internal/auth"
 	"github.com/metril/wattson/internal/stats"
-	"github.com/metril/wattson/internal/store"
 )
 
 // TotalsPeriod is the sum of finished rides over one calendar period.
@@ -104,29 +102,6 @@ func loadZone(tz string) (*time.Location, error) {
 	return loc, nil
 }
 
-// statsRider resolves the optional rider_id to the (userID, riderID) the
-// store queries take, checking ownership like the rides list does.
-func (d Deps) statsRider(ctx context.Context, riderID int64) (userID, rid int64, err error) {
-	ident, _ := auth.FromContext(ctx)
-	if riderID != 0 {
-		rd, err := d.Store.RiderByID(ctx, riderID)
-		if errors.Is(err, store.ErrNotFound) {
-			return 0, 0, errNoRider()
-		}
-		if err != nil {
-			return 0, 0, err
-		}
-		if rd.UserID != ident.User.ID && !ident.Has(auth.ScopeAdmin) {
-			return 0, 0, errNoRider()
-		}
-		return rd.UserID, rd.ID, nil
-	}
-	if ident.User.ID == 0 {
-		return 0, 0, errors.New("stats: identity has no user")
-	}
-	return ident.User.ID, 0, nil
-}
-
 // dayRides are the sorted distinct local days with a ride and the TSS per day.
 func dayRides(bs []stats.Bucket, loc *time.Location) (days []int, tss map[int]float64) {
 	tss = make(map[int]float64, len(bs))
@@ -153,7 +128,7 @@ func (d Deps) registerStats(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			uid, rid, err := d.statsRider(ctx, in.RiderID)
+			rid, uid, err := d.riderScope(ctx, in.RiderID)
 			if err != nil {
 				return nil, err
 			}
@@ -185,7 +160,7 @@ func (d Deps) registerStats(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			uid, rid, err := d.statsRider(ctx, in.RiderID)
+			rid, uid, err := d.riderScope(ctx, in.RiderID)
 			if err != nil {
 				return nil, err
 			}
@@ -217,7 +192,7 @@ func (d Deps) registerStats(api huma.API) {
 			"rider of another user is a 404 unless the caller is an admin.",
 		Scope: auth.ScopeRead, Errors: []int{http.StatusNotFound}},
 		func(ctx context.Context, in *curveIn) (*struct{ Body PowerCurveOut }, error) {
-			uid, rid, err := d.statsRider(ctx, in.RiderID)
+			rid, uid, err := d.riderScope(ctx, in.RiderID)
 			if err != nil {
 				return nil, err
 			}

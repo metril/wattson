@@ -57,6 +57,8 @@ export function seriesOption(p: SeriesOptions, t: ChartTheme): EChartsCoreOption
         return `<span style="color:${t.dim}">${x.toFixed(2)} ${xUnit}</span><br/><b style="color:${color};font-size:14px">${y.toFixed(d)} ${p.unit}</b>`;
       },
     },
+    toolbox: { show: true, top: -60, feature: { dataZoom: { yAxisIndex: 'none', filterMode: 'none', title: { zoom: '', back: '' } } } },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none', zoomOnMouseWheel: 'shift', moveOnMouseMove: false }],
     xAxis: {
       type: 'value',
       min: n ? p.x[0] : 0,
@@ -94,7 +96,7 @@ export function seriesOption(p: SeriesOptions, t: ChartTheme): EChartsCoreOption
 }
 
 /** One ride series over distance. Charts sharing a `group` share their crosshair and tooltip. */
-export function SeriesChart(p: SeriesOptions & { label: string; height?: number; group?: string }) {
+export function SeriesChart(p: SeriesOptions & { label: string; height?: number; group?: string; resetToken?: number; onZoom?: (zoomed: boolean) => void }) {
   const t = useChartTheme();
   const roomy = useMedia('(min-width: 768px)');
   const h = p.height ?? (roomy ? 200 : 160);
@@ -123,6 +125,8 @@ export function SeriesChart(p: SeriesOptions & { label: string; height?: number;
         option={option}
         height={h}
         group={p.group}
+        resetToken={p.resetToken}
+        onZoom={p.onZoom}
         label={`${p.label} over distance, ${lo.toFixed(d)} to ${hi.toFixed(d)} ${p.unit}`}
       />
     </section>

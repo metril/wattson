@@ -15,6 +15,7 @@ import { FitButton } from '@/features/history/FitButton';
 import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
 import { RideHero, RideStats } from '@/features/history/RideStats';
 import { ZonesCard } from '@/features/history/ZonesCard';
+import { SectionHeader } from '@/components/SectionHeader';
 import { Reveal } from '@/components/Reveal';
 import { RIDERS_KEY } from '@/pages/Riders';
 import { zoneBounds } from '@/lib/zones';
@@ -94,6 +95,8 @@ export function RideDetailPage() {
     map.fit(trace.bbox);
   }, [map, trace]);
 
+  const [zoomed, setZoomed] = useState(false);
+  const [reset, setReset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -186,16 +189,14 @@ export function RideDetailPage() {
       </Reveal>
 
       <Reveal delay={0.06}>
-        <div className={trace ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
-          {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
-          <Card>
-            <RideStats ride={r} units={units} />
-          </Card>
-        </div>
+        <RideStats ride={r} units={units} />
       </Reveal>
 
       <Reveal delay={0.12}>
-        <ZonesCard ride={r} maxHr={maxHr} />
+        <div className={trace ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]' : 'grid gap-4'}>
+          {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
+          <ZonesCard ride={r} maxHr={maxHr} stack={!!trace} />
+        </div>
       </Reveal>
 
       {thisCurve && thisCurve.length > 0 && (
@@ -208,8 +209,12 @@ export function RideDetailPage() {
 
       <Reveal delay={0.24}>
         <Card className="grid gap-5">
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeader title="Ride data" hint="Drag across a chart to zoom in; the others follow." />
+            {zoomed && <Button variant="secondary" onClick={() => setReset((n) => n + 1)}>Reset zoom</Button>}
+          </div>
           {charts.map((c) => (
-            <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} zero={c.zero} bands={c.bands} group="ride" />
+            <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} zero={c.zero} bands={c.bands} group="ride" resetToken={reset} onZoom={setZoomed} />
           ))}
         </Card>
       </Reveal>

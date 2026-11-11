@@ -27,7 +27,7 @@ export function ZoneBars({ title, kind, seconds, base }: { title: string; kind: 
           const r = ranges[i];
           const range = r ? rangeLabel(r, unit) : '';
           return (
-            <li key={i} className="grid grid-cols-[minmax(9rem,auto)_1fr_6.5rem] items-center gap-x-3 text-sm">
+            <li key={i} className="grid grid-cols-[10.5rem_minmax(0,1fr)_6.5rem] items-center gap-x-3 text-sm">
               <span className="flex min-w-0 flex-col leading-tight">
                 <span>
                   <span className="numeral" style={{ color: `var(--zone-${i + 1})` }}>Z{i + 1}</span>{' '}

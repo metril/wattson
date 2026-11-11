@@ -31,7 +31,7 @@ function Legend() {
 }
 
 /** Time in power and heart-rate zones for one ride, with ranges and a legend. */
-export function ZonesCard({ ride, maxHr }: { ride: components['schemas']['RideOut']; maxHr?: number | null }) {
+export function ZonesCard({ ride, maxHr, stack = false }: { ride: components['schemas']['RideOut']; maxHr?: number | null; stack?: boolean }) {
   const hasPower = !!ride.power_zone_s && ride.power_zone_s.some((s) => s > 0);
   const hasHr = !!ride.hr_zone_s && ride.hr_zone_s.some((s) => s > 0);
   if (!hasPower && !hasHr && ride.ftp_w) return null;
@@ -54,7 +54,7 @@ export function ZonesCard({ ride, maxHr }: { ride: components['schemas']['RideOu
           </Link>
         </p>
       )}
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className={`grid gap-8 ${stack ? '' : 'lg:grid-cols-2'}`}>
         <ZoneBars title="Time in power zones" kind="power" seconds={ride.power_zone_s} base={ride.ftp_w} />
         <ZoneBars title="Time in heart-rate zones" kind="hr" seconds={ride.hr_zone_s} base={maxHr} />
       </div>

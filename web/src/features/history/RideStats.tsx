@@ -35,9 +35,9 @@ function Group({ title, rows }: { title: string; rows: (Row | false)[] }) {
   const shown = rows.filter((r): r is Row => !!r);
   if (shown.length === 0) return null;
   return (
-    <section aria-label={title}>
+    <section aria-label={title} className="rounded-panel border border-line-soft bg-panel p-4 shadow-panel">
       <SectionHeader title={title} as="h3" />
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
         {shown.map((r) => (
           <StatTile key={r.label} label={r.label} value={r.value} unit={r.unit} color={r.color} />
         ))}
@@ -46,11 +46,44 @@ function Group({ title, rows }: { title: string; rows: (Row | false)[] }) {
   );
 }
 
-/** Grouped detail figures of a finished ride; figures without a value are left out. */
-export function RideStats({ ride, units = 'metric' }: { ride: Ride; units?: Units }) {
-  const w = (v: number | null | undefined, label: string): Row | false => has(v) && { label, value: fixed0(v), unit: 'W', color: 'power' };
+/** Best average power over 5 s to 60 min as a row of bars, tallest = the ride's peak. */
+function Bests({ ride }: { ride: Ride }) {
+  const items = [
+    { label: '5 s', v: ride.peak_5s_w },
+    { label: '1 min', v: ride.peak_1m_w },
+    { label: '5 min', v: ride.peak_5m_w },
+    { label: '20 min', v: ride.peak_20m_w },
+    { label: '60 min', v: ride.peak_60m_w },
+  ].filter((x): x is { label: string; v: number } => has(x.v) && x.v > 0);
+  if (items.length === 0) return null;
+  const top = Math.max(...items.map((x) => x.v));
   return (
-    <div className="flex flex-col gap-6">
+    <section aria-label="Power bests" className="rounded-panel border border-line-soft bg-panel p-4 shadow-panel">
+      <SectionHeader title="Power bests" as="h3" />
+      <ul className="flex h-32 items-end gap-2">
+        {items.map((x) => (
+          <li key={x.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+            <span className="numeral text-sm text-m-power">{fixed0(x.v)}</span>
+            <span
+              className="w-full rounded-t-md bg-m-power/70"
+              style={{ height: `${Math.max(6, (x.v / top) * 100) * 0.62}%` }}
+              aria-hidden
+            />
+            <span className="text-xs text-dim">
+              <span className="sr-only">Best </span>
+              {x.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Grouped detail figures of a finished ride; figures without a value are left out. Groups fill the row so none is left alone. */
+export function RideStats({ ride, units = 'metric' }: { ride: Ride; units?: Units }) {
+  return (
+    <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 15rem), 1fr))' }}>
       <Group
         title="Effort"
         rows={[
@@ -60,16 +93,7 @@ export function RideStats({ ride, units = 'metric' }: { ride: Ride; units?: Unit
           has(ride.decoupling_pct) && { label: 'Decoupling', value: ride.decoupling_pct.toFixed(1), unit: '%' },
         ]}
       />
-      <Group
-        title="Power bests"
-        rows={[
-          w(ride.peak_5s_w, 'Best 5 s'),
-          w(ride.peak_1m_w, 'Best 1 min'),
-          w(ride.peak_5m_w, 'Best 5 min'),
-          w(ride.peak_20m_w, 'Best 20 min'),
-          w(ride.peak_60m_w, 'Best 60 min'),
-        ]}
-      />
+      <Bests ride={ride} />
       <Group
         title="Cadence and heart rate"
         rows={[

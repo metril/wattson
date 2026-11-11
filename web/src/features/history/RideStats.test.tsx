@@ -32,7 +32,8 @@ describe('RideStats', () => {
   it('shows computed metrics in their groups, in the chosen units', () => {
     render(<RideStats ride={rideFixture({ peak_5m_w: 310, vam_m_per_h: 600, ascent_m: 100, avg_hr_bpm: 140, efficiency_factor: 1.5 })} units="imperial" />);
     const bests = within(screen.getByRole('region', { name: 'Power bests' }));
-    expect(bests.getByText('Best 5 min').nextElementSibling).toHaveTextContent('310W');
+    expect(bests.getByText('310')).toBeInTheDocument();
+    expect(bests.getByText('5 min')).toBeInTheDocument();
     const terrain = within(screen.getByRole('region', { name: 'Terrain and speed' }));
     expect(terrain.getByText('Climb rate').nextElementSibling).toHaveTextContent('ft/h');
     expect(screen.getByText('Avg HR')).toBeInTheDocument();

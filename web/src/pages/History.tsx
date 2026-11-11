@@ -4,7 +4,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { RIDES_KEY } from '@/lib/rides';
-import { useUnits } from '@/lib/auth';
+import { useMe, useUnits } from '@/lib/auth';
 import { clockTime, distUnit, fixed0, hms, relDate, toDist, type Units } from '@/lib/format';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
@@ -152,6 +152,7 @@ export function HistoryPage() {
       ),
     getNextPageParam: (last) => (last.next_before > 0 ? last.next_before : undefined),
   });
+  const me = useMe();
   const list = rides.data?.pages.flatMap((p) => p.rides) ?? [];
 
   return (
@@ -161,9 +162,11 @@ export function HistoryPage() {
         subtitle="Every finished ride"
         actions={
           <>
-            <Link to="/stats" className="flex min-h-touch items-center rounded-control px-3 font-medium text-accent hover:bg-raised">
-              Stats
-            </Link>
+            {me.data?.via !== 'token' && (
+              <Link data-nav to="/stats" className="flex min-h-touch items-center rounded-control px-3 font-medium text-accent hover:bg-raised">
+                Stats
+              </Link>
+            )}
             {(riders.data?.length ?? 0) > 1 && (
               <div className="w-full sm:w-56">
                 <Select

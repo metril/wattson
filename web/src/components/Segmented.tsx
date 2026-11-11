@@ -17,6 +17,7 @@ export function Segmented<T extends string>({
   return (
     <ToggleGroup.Root
       type="single"
+      rovingFocus={false}
       value={value}
       aria-label={label}
       onValueChange={(v) => v && onChange(v as T)}

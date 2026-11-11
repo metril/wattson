@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/metril/wattson/compare/v0.1.4...v0.1.5) (2026-11-11)
+
+
+### Features
+
+* **web:** UI/UX redesign — performance-lab theme, history table, zone ranges, ECharts ([#9](https://github.com/metril/wattson/issues/9)) ([75d911b](https://github.com/metril/wattson/commit/75d911b0ef438e27177b6a6c1edb317d1b56360a))
+
 ## [0.1.4](https://github.com/metril/wattson/compare/v0.1.3...v0.1.4) (2026-11-10)
 
 

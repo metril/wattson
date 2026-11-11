@@ -16,6 +16,7 @@ import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
 import { RideHero, RideStats } from '@/features/history/RideStats';
 import { ZonesCard } from '@/features/history/ZonesCard';
 import { SectionHeader } from '@/components/SectionHeader';
+import { PageHeader } from '@/components/PageHeader';
 import { Reveal } from '@/components/Reveal';
 import { RIDERS_KEY } from '@/pages/Riders';
 import { zoneBounds } from '@/lib/zones';
@@ -153,13 +154,11 @@ export function RideDetailPage() {
   const r = ride.data;
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1 basis-60">
-          <h1 className="numeral truncate text-2xl">{r.route_name || 'Free ride'}</h1>
-          <p className="text-sm text-dim">
-            {rideDate(r.started_at)} · {r.rider_name}
-          </p>
-        </div>
+      <PageHeader
+        title={r.route_name || 'Free ride'}
+        subtitle={`${rideDate(r.started_at)} · ${r.rider_name}`}
+        actions={
+          <>
         <FitButton rideId={r.id} />
         <StravaUploadButton key={r.id} rideId={r.id} initial={r.strava} />
         <Button
@@ -178,7 +177,9 @@ export function RideDetailPage() {
         >
           {confirm ? 'Tap again to delete' : 'Delete'}
         </Button>
-      </div>
+          </>
+        }
+      />
 
       {error && <Banner tone="error">{error}</Banner>}
 

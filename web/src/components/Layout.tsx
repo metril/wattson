@@ -9,7 +9,7 @@ import { ME_KEY, useMe } from '@/lib/auth';
 import { useSpatialNav } from '@/lib/spatial-nav';
 
 const link =
-  'flex min-h-touch min-w-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-0.5 py-1 text-[11px] font-medium sm:px-3 sm:text-xs text-dim md:flex-none md:py-3 aria-[current=page]:bg-raised aria-[current=page]:text-chalk hover:text-chalk';
+  'flex min-h-touch min-w-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-0.5 py-1 text-[11px] font-medium sm:px-3 sm:text-xs text-dim transition-colors md:relative md:flex-none md:py-3 aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent hover:text-chalk md:aria-[current=page]:before:absolute md:aria-[current=page]:before:inset-y-2 md:aria-[current=page]:before:-left-2 md:aria-[current=page]:before:w-[3px] md:aria-[current=page]:before:rounded-full md:aria-[current=page]:before:bg-accent';
 
 /**
  * App shell: bottom tab bar on phones, left rail from 768 px up.
@@ -91,8 +91,12 @@ export function Layout() {
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-30 flex gap-0.5 border-t border-line bg-panel p-0.5 sm:gap-1 sm:p-1 md:static md:inset-auto md:w-24 md:shrink-0 md:flex-col md:border-t-0 md:border-r md:p-2 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:pb-2"
       >
-        <span className="numeral hidden px-1 pt-2 pb-4 text-center text-lg tracking-wide md:block">
-          Wattson
+        <span className="hidden flex-col items-center gap-1.5 px-1 pt-2 pb-4 md:flex">
+          <svg aria-hidden viewBox="0 0 32 32" className="size-8">
+            <rect width="32" height="32" rx="9" fill="var(--accent)" />
+            <path d="M18.5 5 8 18.5h7L13.5 27 24 13.5h-7z" fill="var(--accent-ink)" />
+          </svg>
+          <span className="numeral text-sm tracking-wide">Wattson</span>
         </span>
         <NavLink to="/" end data-nav className={link}>
           <Bike aria-hidden className="size-6" />
@@ -135,7 +139,7 @@ export function Layout() {
                 aria-expanded={more}
                 aria-controls="more-menu"
                 onClick={() => setMore((v) => !v)}
-                className={`${link} w-full ${more || (loc.pathname === '/stats' || loc.pathname === '/settings/tokens' || loc.pathname === '/account') ? 'bg-raised text-chalk' : ''}`}
+                className={`${link} w-full ${more || (loc.pathname === '/stats' || loc.pathname === '/settings/tokens' || loc.pathname === '/account') ? 'bg-accent-soft text-accent' : ''}`}
               >
                 <Ellipsis aria-hidden className="size-6" />
                 More
@@ -148,7 +152,7 @@ export function Layout() {
                   <NavLink
                     to="/stats"
                     data-nav
-                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-raised"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent"
                   >
                     <ChartNoAxesCombined aria-hidden className="size-5" />
                     Stats
@@ -156,7 +160,7 @@ export function Layout() {
                   <NavLink
                     to="/account"
                     data-nav
-                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-raised"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent"
                   >
                     <User aria-hidden className="size-5" />
                     Account
@@ -164,7 +168,7 @@ export function Layout() {
                   <NavLink
                     to="/settings/tokens"
                     data-nav
-                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-raised"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent"
                   >
                     <KeyRound aria-hidden className="size-5" />
                     Tokens

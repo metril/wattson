@@ -8,6 +8,7 @@ import { errMessage } from '@/lib/errors';
 import { fmtDist, fmtElev, rideDate } from '@/lib/format';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
+import { PageHeader } from '@/components/PageHeader';
 import { ROUTES_KEY } from '@/features/routes/queries';
 import { sourceLabel } from '@/features/routes/RouteStats';
 
@@ -129,8 +130,7 @@ export function RoutesPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="numeral flex-1 text-2xl">Routes</h1>
+      <PageHeader title="Routes" subtitle="Rides on real roads and synthetic climbs" actions={<>
         <label
           className={`${btn} cursor-pointer bg-accent text-accent-ink hover:brightness-110 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent`}
         >
@@ -159,7 +159,7 @@ export function RoutesPage() {
           <SlidersHorizontal aria-hidden className="size-5" />
           Synthetic
         </Link>
-      </div>
+      </>} />
 
       {error && <Banner tone="error">{error}</Banner>}
 

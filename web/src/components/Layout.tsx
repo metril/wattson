@@ -9,7 +9,7 @@ import { ME_KEY, useMe } from '@/lib/auth';
 import { useSpatialNav } from '@/lib/spatial-nav';
 
 const link =
-  'flex min-h-touch min-w-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-0.5 py-1 text-[11px] font-medium sm:px-3 sm:text-xs text-dim transition-colors md:relative md:flex-none md:py-3 aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent hover:text-chalk md:aria-[current=page]:before:absolute md:aria-[current=page]:before:inset-y-2 md:aria-[current=page]:before:-left-2 md:aria-[current=page]:before:w-[3px] md:aria-[current=page]:before:rounded-full md:aria-[current=page]:before:bg-accent';
+  'flex min-h-touch min-w-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-0.5 py-1 text-[11px] font-medium sm:px-3 sm:text-xs text-dim transition-colors md:relative md:flex-none md:py-3 aria-[current=page]:bg-accent-soft aria-[current=page]:text-chalk hover:text-chalk md:aria-[current=page]:before:absolute md:aria-[current=page]:before:inset-y-2 md:aria-[current=page]:before:-left-2 md:aria-[current=page]:before:w-[3px] md:aria-[current=page]:before:rounded-full md:aria-[current=page]:before:bg-accent';
 
 /**
  * App shell: bottom tab bar on phones, left rail from 768 px up.
@@ -139,7 +139,7 @@ export function Layout() {
                 aria-expanded={more}
                 aria-controls="more-menu"
                 onClick={() => setMore((v) => !v)}
-                className={`${link} w-full ${more || (loc.pathname === '/stats' || loc.pathname === '/settings/tokens' || loc.pathname === '/account') ? 'bg-accent-soft text-accent' : ''}`}
+                className={`${link} w-full ${more || (loc.pathname === '/stats' || loc.pathname === '/settings/tokens' || loc.pathname === '/account') ? 'bg-accent-soft text-chalk' : ''}`}
               >
                 <Ellipsis aria-hidden className="size-6" />
                 More
@@ -152,7 +152,7 @@ export function Layout() {
                   <NavLink
                     to="/stats"
                     data-nav
-                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-chalk"
                   >
                     <ChartNoAxesCombined aria-hidden className="size-5" />
                     Stats
@@ -160,7 +160,7 @@ export function Layout() {
                   <NavLink
                     to="/account"
                     data-nav
-                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-chalk"
                   >
                     <User aria-hidden className="size-5" />
                     Account
@@ -168,7 +168,7 @@ export function Layout() {
                   <NavLink
                     to="/settings/tokens"
                     data-nav
-                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent"
+                    className="flex min-h-touch items-center gap-3 rounded-control px-3 font-medium text-chalk hover:bg-raised aria-[current=page]:bg-accent-soft aria-[current=page]:text-chalk"
                   >
                     <KeyRound aria-hidden className="size-5" />
                     Tokens

@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router';
 import { PageHeader } from '@/components/PageHeader';
 
 const tab =
-  'flex min-h-touch shrink-0 items-center rounded-control px-4 text-sm font-medium text-dim transition-colors hover:text-chalk aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent';
+  'flex min-h-touch shrink-0 items-center rounded-control px-4 text-sm font-medium text-dim transition-colors hover:text-chalk aria-[current=page]:bg-accent-soft aria-[current=page]:text-chalk';
 
 const TABS = [
   ['general', 'General'],

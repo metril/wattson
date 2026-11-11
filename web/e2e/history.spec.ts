@@ -45,9 +45,12 @@ test('a simulated ride appears in history and downloads as a FIT file', async ({
     const row = page.getByRole('link').filter({ hasText: 'Free ride' });
     await expect(row).toHaveCount(1, { timeout: 10_000 });
     await expect(row).toContainText(/00:00:3\d(?!\d)/);
-    // Row cells sit side by side: one shared top, and a compact row on wide screens.
+    // Row cells sit side by side (one shared vertical centre), and the row is compact on wide screens.
     const box = await row.evaluate((el) => {
-      const kids = [...el.children].map((c) => c.getBoundingClientRect().top);
+      const kids = [...el.children].map((c) => {
+        const r = c.getBoundingClientRect();
+        return r.top + r.height / 2;
+      });
       return { spread: Math.max(...kids) - Math.min(...kids), h: el.getBoundingClientRect().height };
     });
     expect(box.spread).toBeLessThan(8);

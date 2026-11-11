@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryPage } from './History';
 import { renderWithClient, stubApi } from '@/test-utils';
@@ -46,8 +46,9 @@ describe('HistoryPage', () => {
     });
     renderWithClient(<HistoryPage />, '/history');
     expect(await screen.findByText('Ramp')).toBeInTheDocument();
-    for (const t of ['1.20', '00:02:00', '318', '24', '301', 'Strava']) expect(screen.getByText(t)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Ramp/ })).toHaveAttribute('href', '/history/9');
+    const row = screen.getByRole('link', { name: /Ramp/ });
+    for (const t of ['1.20', '00:02:00', '318', '24', '301', 'Strava']) expect(within(row).getByText(t)).toBeInTheDocument();
+    expect(row).toHaveAttribute('href', '/history/9');
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
   });
 
@@ -61,7 +62,11 @@ describe('HistoryPage', () => {
     let calls = 0;
     stubApi({
       'GET /api/riders': [200, riders],
-      'GET /api/rides': (): [number, unknown] => [200, { rides: [rideFixture({ id: 6 - calls })], next_before: calls++ === 0 ? 5 : 0 }],
+      'GET /api/rides': (): [number, unknown] => {
+        // The 30-day summary asks for 100 rides; only list pages count.
+        if (urls().at(-1)?.includes('limit=100')) return [200, { rides: [], next_before: 0 }];
+        return [200, { rides: [rideFixture({ id: 6 - calls })], next_before: calls++ === 0 ? 5 : 0 }];
+      },
     });
     renderWithClient(<HistoryPage />, '/history');
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));

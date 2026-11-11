@@ -13,8 +13,14 @@ import { Card } from '@/components/Card';
 import MapView, { type MapApi } from '@/features/map/MapView';
 import { FitButton } from '@/features/history/FitButton';
 import { StravaUploadButton } from '@/features/strava/StravaUploadButton';
-import { RideStats } from '@/features/history/RideStats';
-import { SeriesChart } from '@/features/history/SeriesChart';
+import { RideHero, RideStats } from '@/features/history/RideStats';
+import { ZonesCard } from '@/features/history/ZonesCard';
+import { SectionHeader } from '@/components/SectionHeader';
+import { PageHeader } from '@/components/PageHeader';
+import { Reveal } from '@/components/Reveal';
+import { RIDERS_KEY } from '@/pages/Riders';
+import { zoneBounds } from '@/lib/zones';
+import { SeriesChart, type Band } from '@/features/history/SeriesChart';
 import { invalidateRideData, RIDES_KEY } from '@/lib/rides';
 import { PowerCurve } from '@/features/stats/PowerCurve';
 import { curveKey } from '@/features/stats/queries';
@@ -58,6 +64,13 @@ export function RideDetailPage() {
     enabled: ride.isSuccess && riderId > 0,
     queryFn: async () => unwrap(await api.GET('/api/stats/power-curve', { params: { query: { window: 'all', rider_id: riderId } } })),
   });
+  // The rider's current max HR sets the heart-rate zone ranges; the zones card copes without it.
+  const riders = useQuery({
+    queryKey: RIDERS_KEY,
+    enabled: ride.isSuccess,
+    queryFn: async () => unwrap(await api.GET('/api/riders')),
+  });
+  const maxHr = riders.data?.find((x) => x.id === riderId)?.max_hr_bpm ?? null;
   const thisCurve = rideCurve.data?.points;
   const bestPts = bestCurve.data?.points;
 
@@ -83,6 +96,8 @@ export function RideDetailPage() {
     map.fit(trace.bbox);
   }, [map, trace]);
 
+  const [zoomed, setZoomed] = useState(false);
+  const [reset, setReset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -109,6 +124,22 @@ export function RideDetailPage() {
     },
   });
 
+  const rd = ride.data;
+  const charts = useMemo(() => {
+    if (!rd) return [];
+    const sr = rd.series;
+    const edges = rd.ftp_w ? [0, ...zoneBounds('power', rd.ftp_w)] : [];
+    const powerBands: Band[] = edges.map((from, i) => ({ from, to: edges[i + 1] ?? null, color: `--zone-${i + 1}` }));
+    const out: { label: string; unit: string; color: string; y: number[]; zero?: boolean; bands?: Band[] }[] = [
+      { label: 'Power', unit: 'W', color: '--m-power', y: sr.power_w, bands: powerBands },
+      ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--m-hr', y: sr.hr_bpm }] : []),
+      { label: 'Cadence', unit: 'rpm', color: '--m-cadence', y: sr.cadence_rpm },
+      { label: 'Speed', unit: speedUnit(units), color: '--m-speed', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
+      ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--m-elev', zero: false, y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
+    ];
+    return out;
+  }, [rd, units]);
+
   if (!valid) return <Gone />;
   if (ride.isPending) return <p role="status" className="text-dim">Loading…</p>;
   if (ride.isError) {
@@ -121,24 +152,13 @@ export function RideDetailPage() {
     );
   }
   const r = ride.data;
-  const sr = r.series;
-  const charts: { label: string; unit: string; color: string; y: number[] }[] = [
-    { label: 'Power', unit: 'W', color: '--accent', y: sr.power_w },
-    ...(sr.hr_bpm.some((v) => v > 0) ? [{ label: 'Heart rate', unit: 'bpm', color: '--danger', y: sr.hr_bpm }] : []),
-    { label: 'Cadence', unit: 'rpm', color: '--ok', y: sr.cadence_rpm },
-    { label: 'Speed', unit: speedUnit(units), color: '--warn', y: sr.speed_kmh.map((v) => toSpeed(v, units)) },
-    ...(sr.ele_m && sr.ele_m.length > 0 ? [{ label: 'Elevation', unit: elevUnit(units), color: '--chalk', y: sr.ele_m.map((v) => toElev(v, units)) }] : []),
-  ];
-
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1 basis-60">
-          <h1 className="numeral truncate text-2xl">{r.route_name || 'Free ride'}</h1>
-          <p className="text-sm text-dim">
-            {rideDate(r.started_at)} · {r.rider_name}
-          </p>
-        </div>
+      <PageHeader
+        title={r.route_name || 'Free ride'}
+        subtitle={`${rideDate(r.started_at)} · ${r.rider_name}`}
+        actions={
+          <>
         <FitButton rideId={r.id} />
         <StravaUploadButton key={r.id} rideId={r.id} initial={r.strava} />
         <Button
@@ -157,28 +177,48 @@ export function RideDetailPage() {
         >
           {confirm ? 'Tap again to delete' : 'Delete'}
         </Button>
-      </div>
+          </>
+        }
+      />
 
       {error && <Banner tone="error">{error}</Banner>}
 
-      <div className={trace ? 'grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : 'grid gap-4'}>
-        {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
-        <Card className="flex flex-col justify-between gap-5">
-          <RideStats ride={r} units={units} />
+      <Reveal>
+        <Card>
+          <RideHero ride={r} units={units} />
         </Card>
-      </div>
+      </Reveal>
+
+      <Reveal delay={0.06}>
+        <RideStats ride={r} units={units} />
+      </Reveal>
+
+      <Reveal delay={0.12}>
+        <div className={trace ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]' : 'grid gap-4'}>
+          {trace && <MapView data-testid="ride-map" className="h-72 md:h-96 lg:h-[26rem]" onReady={setMap} />}
+          <ZonesCard ride={r} maxHr={maxHr} stack={!!trace} />
+        </div>
+      </Reveal>
 
       {thisCurve && thisCurve.length > 0 && (
-        <Card>
-          <PowerCurve points={bestPts && bestPts.length > 0 ? bestPts : thisCurve} ride={bestPts && bestPts.length > 0 ? thisCurve : undefined} rideLabel="this ride" label="Power curve" />
-        </Card>
+        <Reveal delay={0.18}>
+          <Card>
+            <PowerCurve points={bestPts && bestPts.length > 0 ? bestPts : thisCurve} ride={bestPts && bestPts.length > 0 ? thisCurve : undefined} rideLabel="this ride" label="Power curve" />
+          </Card>
+        </Reveal>
       )}
 
-      <Card className="grid gap-5 xl:grid-cols-2">
-        {charts.map((c) => (
-          <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} />
-        ))}
-      </Card>
+      <Reveal delay={0.24}>
+        <Card className="grid gap-5">
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeader title="Ride data" hint="Drag across a chart to zoom in; the others follow." />
+            {zoomed && <Button variant="secondary" onClick={() => setReset((n) => n + 1)}>Reset zoom</Button>}
+          </div>
+          {charts.map((c) => (
+            <SeriesChart key={c.label} x={xs} xUnit={distUnit(units)} y={c.y} label={c.label} unit={c.unit} color={c.color} zero={c.zero} bands={c.bands} group="ride" resetToken={reset} onZoom={setZoomed} />
+          ))}
+        </Card>
+      </Reveal>
     </div>
   );
 }

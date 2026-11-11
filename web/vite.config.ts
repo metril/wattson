@@ -48,7 +48,7 @@ function serviceWorker(): Plugin {
 
 const backend = 'http://localhost:8080';
 
-const LAZY_NAMES: Record<string, string> = { Ride3D: 'ride3d', PhotoView: 'photo' };
+const LAZY_NAMES: Record<string, string> = { Ride3D: 'ride3d', PhotoView: 'photo', EChart: 'echarts' };
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorker(), restoreGitkeep()],
@@ -67,6 +67,9 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('/node_modules/maplibre-gl/')) return 'maplibre';
+          // Rollup's CommonJS interop helper is shared by MapLibre and CJS deps in the entry; left alone it lands
+          // in the maplibre chunk and index.html then preloads all of MapLibre on every page.
+          if (id.includes('commonjsHelpers')) return 'cjs-helpers';
         },
         // Ride3D and PhotoView are dynamic imports; naming them here (not in manualChunks, which
         // would pull shared code such as React into them and make index.html preload them)

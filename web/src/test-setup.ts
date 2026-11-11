@@ -42,3 +42,6 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
 }
+
+// ECharts needs a real canvas; chart components are tested through their option builders.
+vi.mock('@/features/charts/EChart', () => ({ default: () => null }));

@@ -10,7 +10,7 @@ import { chunkBytes, mainBundleBytes } from './check-size.mjs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'check-size.mjs');
 
-function fixture(jsBytes, chunks = { maplibre: 1024, mlworker: 1024, ride3d: 1024, photo: 1024 }) {
+function fixture(jsBytes, chunks = { maplibre: 1024, mlworker: 1024, ride3d: 1024, photo: 1024, echarts: 1024 }) {
   const dir = mkdtempSync(join(tmpdir(), 'size-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'assets/index-abc.js'), randomBytes(jsBytes));
@@ -53,7 +53,7 @@ test('600 KB of incompressible JS exceeds the limit', () => {
 
 // A dist whose only lazy chunk is `name` (plus the usual small entry).
 function chunkFixture(name, bytes) {
-  return fixture(1024, { maplibre: 1024, mlworker: 1024, ride3d: 1024, photo: 1024, [name]: bytes });
+  return fixture(1024, { maplibre: 1024, mlworker: 1024, ride3d: 1024, photo: 1024, echarts: 1024, [name]: bytes });
 }
 
 test('chunkBytes gzips assets/<name>-*.js and is 0 when the chunk is missing', () => {

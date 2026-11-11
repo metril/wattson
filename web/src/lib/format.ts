@@ -45,3 +45,21 @@ export const fmtDist = (m: number, u: Units): string => `${toDist(m, u).toFixed(
 export const fmtSpeed = (kmh: number, u: Units): string => `${toSpeed(kmh, u).toFixed(1)} ${speedUnit(u)}`;
 /** Elevation with unit, whole numbers. */
 export const fmtElev = (m: number, u: Units): string => `${toElev(m, u).toFixed(0)} ${elevUnit(u)}`;
+
+/** "Today", "Yesterday", a weekday within the last week, else a short date. */
+export function relDate(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '–';
+  const day = (x: Date) => Math.floor((Date.UTC(x.getFullYear(), x.getMonth(), x.getDate())) / 86_400_000);
+  const diff = day(now) - day(d);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff > 1 && diff < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+}
+
+/** Local clock time of an ISO timestamp, such as "05:05". */
+export function clockTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(undefined, { timeStyle: 'short' });
+}

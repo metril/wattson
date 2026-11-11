@@ -5,6 +5,7 @@ import { api, unwrap } from '@/lib/api';
 import { errMessage } from '@/lib/errors';
 import { mmss } from '@/lib/workout-math';
 import { Banner } from '@/components/Banner';
+import { PageHeader } from '@/components/PageHeader';
 import { WorkoutChart } from '@/features/workouts/WorkoutChart';
 import { DEFAULT_RIDER, riderLite, WORKOUTS_KEY } from '@/features/workouts/queries';
 import { RIDERS_KEY } from './Riders';
@@ -25,8 +26,7 @@ export function WorkoutsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="numeral flex-1 text-2xl">Workouts</h1>
+      <PageHeader title="Workouts" subtitle="Structured intervals for ERG mode" actions={<>
         <Link
           to="/workouts/new"
           className="inline-flex min-h-touch items-center justify-center gap-2 rounded-control bg-accent px-4 font-medium text-accent-ink hover:brightness-110"
@@ -34,7 +34,7 @@ export function WorkoutsPage() {
           <Plus aria-hidden className="size-5" />
           New workout
         </Link>
-      </div>
+      </>} />
 
       {q.isPending ? (
         <p role="status" className="text-dim">

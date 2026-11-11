@@ -5,6 +5,7 @@ import { ME_KEY, useMe } from '@/lib/auth';
 import { errMessage } from '@/lib/errors';
 import { RIDERS_KEY } from '@/pages/Riders';
 import { Banner } from '@/components/Banner';
+import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Field } from '@/components/Field';
@@ -38,7 +39,7 @@ export function AccountPage() {
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-4">
-      <h1 className="numeral text-2xl">Account</h1>
+      <PageHeader title="Account" subtitle="Your sign-in and password" />
       <Card>
         <form
           noValidate

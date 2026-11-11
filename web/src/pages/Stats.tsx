@@ -7,7 +7,11 @@ import { fmtDist, fmtElev, hms, type Units } from '@/lib/format';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
 import { Card } from '@/components/Card';
+import { PageHeader } from '@/components/PageHeader';
+import { Segmented } from '@/components/Segmented';
+import { SectionHeader } from '@/components/SectionHeader';
 import { Select } from '@/components/Select';
+import { StatTile } from '@/components/StatTile';
 import { FitnessChart } from '@/features/stats/FitnessChart';
 import { PowerCurve } from '@/features/stats/PowerCurve';
 import { TotalsChart } from '@/features/stats/TotalsChart';
@@ -44,6 +48,41 @@ function Tile({ label, children }: { label: string; children: string }) {
       <span className="text-xs text-dim">{label}</span>
       <span className="numeral text-xl">{children}</span>
     </div>
+  );
+}
+
+type Form = { word: 'Fresh' | 'Neutral' | 'Fatigued'; tone: 'ok' | 'accent' | 'warn'; blurb: string };
+/** Training-stress balance in words: positive means rested, deeply negative means carrying fatigue. */
+export function formOf(tsb: number): Form {
+  if (tsb >= 5) return { word: 'Fresh', tone: 'ok', blurb: 'Rested and ready for a hard effort or race.' };
+  if (tsb <= -10) return { word: 'Fatigued', tone: 'warn', blurb: 'Carrying fatigue. Easy days will bring it back.' };
+  return { word: 'Neutral', tone: 'accent', blurb: 'Balanced between fitness and fatigue.' };
+}
+const TONE_TEXT = { ok: 'text-ok', accent: 'text-accent', warn: 'text-warn' } as const;
+
+function FormCard({ day }: { day?: { ctl: number; atl: number; tsb: number } }) {
+  if (!day) {
+    return (
+      <Card className="flex flex-col gap-2">
+        <SectionHeader title="Form" />
+        <p className="text-dim">Form appears after your first ride with a training stress score.</p>
+      </Card>
+    );
+  }
+  const f = formOf(day.tsb);
+  return (
+    <Card className="flex flex-col gap-4" data-testid="form-card">
+      <SectionHeader title="Form" hint="Fitness minus fatigue, today" />
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <p className={`numeral text-5xl leading-none ${TONE_TEXT[f.tone]}`}>{f.word}</p>
+        <p className="text-sm text-dim">{f.blurb}</p>
+      </div>
+      <dl className="grid grid-cols-3 gap-4">
+        <StatTile label="Fitness (CTL)" value={day.ctl.toFixed(0)} color="speed" />
+        <StatTile label="Fatigue (ATL)" value={day.atl.toFixed(0)} color="hr" />
+        <StatTile label="Form (TSB)" value={`${day.tsb > 0 ? '+' : ''}${day.tsb.toFixed(0)}`} />
+      </dl>
+    </Card>
   );
 }
 
@@ -86,43 +125,56 @@ export function StatsPage() {
   const sk = totals.data?.streaks;
   const err = totals.error ?? fitness.error ?? curve.error;
 
+  const latestDay = fitDays[fitDays.length - 1];
+
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <h1 className="numeral min-w-0 flex-1 basis-40 text-2xl">Stats</h1>
-        {(riders.data?.length ?? 0) > 1 && (
-          <Select label="Rider" value={rider} onChange={(e) => setRider(Number(e.target.value))}>
-            <option value={0}>All riders</option>
-            {riders.data?.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </Select>
-        )}
-      </div>
+      <PageHeader
+        title="Stats"
+        subtitle="Training load, totals and power"
+        actions={
+          (riders.data?.length ?? 0) > 1 && (
+            <Select label="Rider" value={rider} onChange={(e) => setRider(Number(e.target.value))}>
+              <option value={0}>All riders</option>
+              {riders.data?.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+          )
+        }
+      />
       {err && <Banner tone="error">{errMessage(err)}</Banner>}
 
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <FormCard day={latestDay} />
+        <Card>
+          <SectionHeader title="Streaks" />
+          <div className="grid grid-cols-2 gap-2">
+            <Tile label="Day streak">{sk ? plural(sk.current_days, 'day') : '-'}</Tile>
+            <Tile label="Longest day streak">{sk ? plural(sk.longest_days, 'day') : '-'}</Tile>
+            <Tile label="Week streak">{sk ? plural(sk.current_weeks, 'week') : '-'}</Tile>
+            <Tile label="Longest week streak">{sk ? plural(sk.longest_weeks, 'week') : '-'}</Tile>
+          </div>
+        </Card>
+      </div>
+
       <Card className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Tile label="Day streak">{sk ? plural(sk.current_days, 'day') : '-'}</Tile>
-          <Tile label="Longest day streak">{sk ? plural(sk.longest_days, 'day') : '-'}</Tile>
-          <Tile label="Week streak">{sk ? plural(sk.current_weeks, 'week') : '-'}</Tile>
-          <Tile label="Longest week streak">{sk ? plural(sk.longest_weeks, 'week') : '-'}</Tile>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Select label="Period" value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
-            <option value="week">Weekly</option>
-            <option value="month">Monthly</option>
-            <option value="year">Yearly</option>
-          </Select>
-          <Select label="Measure" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
-            {METRICS.map((x) => (
-              <option key={x.key} value={x.key}>
-                {x.label}
-              </option>
-            ))}
-          </Select>
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented
+            label="Period"
+            value={period}
+            onChange={setPeriod}
+            options={[
+              { value: 'week', label: 'Weekly' },
+              { value: 'month', label: 'Monthly' },
+              { value: 'year', label: 'Yearly' },
+            ]}
+          />
+          <div className="max-w-full overflow-x-auto">
+            <Segmented label="Measure" value={metric} onChange={setMetric} options={METRICS.map((x) => ({ value: x.key, label: x.label }))} />
+          </div>
         </div>
         {cur && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label={`This ${period}`}>
@@ -151,14 +203,19 @@ export function StatsPage() {
       </Card>
 
       <Card className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <Select label="Power curve window" value={win} onChange={(e) => setWin(e.target.value as Window)}>
-            <option value="90d">Last 90 days</option>
-            <option value="1y">Last year</option>
-            <option value="all">All time</option>
-          </Select>
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented
+            label="Power curve window"
+            value={win}
+            onChange={setWin}
+            options={[
+              { value: '90d', label: '90 days' },
+              { value: '1y', label: '1 year' },
+              { value: 'all', label: 'All time' },
+            ]}
+          />
           {curve.data?.eftp_w != null && (
-            <p data-testid="eftp" className="numeral pb-3 text-lg">
+            <p data-testid="eftp" className="numeral text-lg">
               eFTP {Math.round(curve.data.eftp_w)} W
             </p>
           )}

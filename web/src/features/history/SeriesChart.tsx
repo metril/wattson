@@ -1,124 +1,134 @@
-import { useEffect, useMemo, useState } from 'react';
-import { chartGeometry } from '@/lib/chart-geometry';
-import { prepCanvas, tok, useCanvasBox } from '@/features/routes/canvas';
+import { useMemo } from 'react';
+import type { EChartsCoreOption } from 'echarts/core';
+import { ChartBox } from '@/features/charts/ChartBox';
+import { alpha, areaGradient, axisText, glow, gridLine, tooltipBase, useChartTheme, type ChartTheme } from '@/features/charts/theme';
+import { useMedia } from '@/lib/use-media';
 
-const PAD = 12;
-
-/** Index of the x closest to v in an ascending array. */
-function nearest(xs: number[], v: number): number {
-  let lo = 0;
-  let hi = xs.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (xs[mid] < v) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo > 0 && Math.abs(xs[lo - 1] - v) <= Math.abs(xs[lo] - v) ? lo - 1 : lo;
+export interface Band {
+  from: number;
+  /** Upper edge; null runs to the top of the chart. */
+  to: number | null;
+  color: string;
 }
 
-/** One ride series over distance (km) on a canvas. Moving a pointer over it reads out the nearest sample. */
-export function SeriesChart(p: {
+export interface SeriesOptions {
   x: number[];
   y: number[];
-  label: string;
   unit: string;
   /** Unit of x (distance); km by default. */
   xUnit?: string;
+  /** A hex colour or a CSS token name such as --m-power. */
   color: string;
-  height?: number;
-}) {
-  const { box, canvas, width } = useCanvasBox();
-  const h = p.height ?? 140;
-  const [hover, setHover] = useState<number | null>(null);
-  const geo = useMemo(() => chartGeometry(p.x, p.y, width, h, PAD), [p.x, p.y, width, h]);
+  /** Start the y axis at zero (default); elevation floats instead. */
+  zero?: boolean;
+  /** Coloured horizontal bands behind the line (power zones). */
+  bands?: Band[];
+}
+
+const decimalsOf = (unit: string) => (unit === 'km/h' || unit === 'mph' ? 1 : 0);
+
+/** ECharts option for one series over distance: gradient area, glowing line, zone bands, crosshair tooltip. */
+export function seriesOption(p: SeriesOptions, t: ChartTheme): EChartsCoreOption {
   const xUnit = p.xUnit ?? 'km';
-  const decimals = p.unit === 'km/h' || p.unit === 'mph' ? 1 : 0;
+  const n = Math.min(p.x.length, p.y.length);
+  const color = t.resolve(p.color);
+  const d = decimalsOf(p.unit);
+  let max = -Infinity;
+  for (let i = 0; i < n; i++) max = Math.max(max, p.y[i]);
+  if (!Number.isFinite(max) || max <= 0) max = 1;
+  const top = Math.ceil(max * 1.08);
+  const data = Array.from({ length: n }, (_, i) => [p.x[i], p.y[i]]);
+  const bands = (p.bands ?? [])
+    .filter((b) => b.from < top)
+    .map((b) => [
+      { yAxis: b.from, itemStyle: { color: alpha(t.resolve(b.color), 0.12) } },
+      { yAxis: Math.min(b.to ?? top, top) },
+    ]);
+  return {
+    animationDuration: 600,
+    animationEasing: 'cubicOut',
+    grid: { left: 44, right: 14, top: 12, bottom: 26 },
+    tooltip: {
+      ...tooltipBase(t),
+      trigger: 'axis',
+      confine: true,
+      formatter: (items: { value: [number, number] }[]) => {
+        const [x, y] = items[0].value;
+        return `<span style="color:${t.dim}">${x.toFixed(2)} ${xUnit}</span><br/><b style="color:${color};font-size:14px">${y.toFixed(d)} ${p.unit}</b>`;
+      },
+    },
+    toolbox: { show: true, top: -60, feature: { dataZoom: { yAxisIndex: 'none', filterMode: 'none', title: { zoom: '', back: '' } } } },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none', zoomOnMouseWheel: 'shift', moveOnMouseMove: false }],
+    xAxis: {
+      type: 'value',
+      min: n ? p.x[0] : 0,
+      max: n ? p.x[n - 1] : 1,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { ...axisText(t), formatter: (v: number) => (v % 1 === 0 ? `${v}` : v.toFixed(1)), hideOverlap: true },
+      name: xUnit,
+      nameLocation: 'end',
+      nameTextStyle: { ...axisText(t), align: 'right', verticalAlign: 'top', padding: [14, 0, 0, 0] },
+    },
+    yAxis: {
+      type: 'value',
+      min: p.zero === false ? 'dataMin' : 0,
+      max: top,
+      splitNumber: 3,
+      axisLabel: { ...axisText(t), formatter: (v: number) => v.toFixed(0) },
+      splitLine: gridLine(t),
+    },
+    series: [
+      {
+        type: 'line',
+        data,
+        showSymbol: false,
+        sampling: 'lttb',
+        lineStyle: { color, width: 2, ...glow(color) },
+        itemStyle: { color },
+        areaStyle: { color: areaGradient(color) },
+        emphasis: { disabled: true },
+        markArea: bands.length ? { silent: true, data: bands } : undefined,
+      },
+    ],
+  };
+}
 
-  useEffect(() => {
-    const c = canvas.current;
-    const n = Math.min(p.x.length, p.y.length);
-    if (!c || width <= 0 || n === 0) return;
-    const ctx = prepCanvas(c, width, h);
-    if (!ctx) return;
-    const color = p.color.startsWith('--') ? tok(p.color, '#54a9ff') : p.color;
-    ctx.beginPath();
-    ctx.moveTo(geo.x(p.x[0]), h - PAD);
-    for (let i = 0; i < n; i++) ctx.lineTo(geo.x(p.x[i]), geo.y(p.y[i]));
-    ctx.lineTo(geo.x(p.x[n - 1]), h - PAD);
-    ctx.closePath();
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-      const px = geo.x(p.x[i]);
-      const py = geo.y(p.y[i]);
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-    ctx.fillStyle = tok('--dim', '#93a8ae');
-    ctx.font = '12px "Saira Variable", system-ui, sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${geo.max.toFixed(decimals)} ${p.unit}`, PAD + 2, 2);
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(`${geo.min.toFixed(decimals)} ${p.unit}`, PAD + 2, h - 1);
-    ctx.textAlign = 'right';
-    ctx.fillText(`${p.x[n - 1].toFixed(1)} ${xUnit}`, width - PAD, h - 1);
-    ctx.textAlign = 'left';
-    if (hover !== null && hover < n) {
-      const hx = geo.x(p.x[hover]);
-      ctx.strokeStyle = tok('--chalk', '#eaf1ee');
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(hx, PAD);
-      ctx.lineTo(hx, h - PAD);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(hx, geo.y(p.y[hover]), 4, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-    }
-  }, [p.x, p.y, p.color, p.unit, geo, width, h, canvas, hover, decimals]);
-
-  function point(e: React.PointerEvent<HTMLDivElement>) {
-    const n = Math.min(p.x.length, p.y.length);
-    if (n === 0) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const f = Math.max(0, Math.min(1, (e.clientX - r.left - PAD) / Math.max(1, r.width - 2 * PAD)));
-    setHover(nearest(p.x, p.x[0] + f * (p.x[n - 1] - p.x[0])));
+/** One ride series over distance. Charts sharing a `group` share their crosshair and tooltip. */
+export function SeriesChart(p: SeriesOptions & { label: string; height?: number; group?: string; resetToken?: number; onZoom?: (zoomed: boolean) => void }) {
+  const t = useChartTheme();
+  const roomy = useMedia('(min-width: 768px)');
+  const h = p.height ?? (roomy ? 200 : 160);
+  const bandKey = JSON.stringify(p.bands ?? []);
+  const option = useMemo(() => seriesOption(p, t), [p.x, p.y, p.unit, p.xUnit, p.color, p.zero, bandKey, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  const d = decimalsOf(p.unit);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of p.y) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
-
-  const readout = hover !== null && hover < p.y.length ? `${p.y[hover].toFixed(decimals)} ${p.unit} @ ${p.x[hover].toFixed(2)} ${xUnit}` : '';
-
+  if (!Number.isFinite(lo)) lo = hi = 0;
   return (
-    <section className="flex flex-col gap-1">
+    <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-medium text-dim">{p.label}</h3>
-        <p data-testid="chart-readout" className="numeral h-6 text-base text-chalk">
-          {readout}
+        <h3 className="label flex items-center gap-2">
+          <span aria-hidden className="size-2 rounded-full" style={{ background: t.resolve(p.color) }} />
+          {p.label}
+        </h3>
+        <p className="numeral text-sm text-dim">
+          {lo.toFixed(d)}–{hi.toFixed(d)} {p.unit}
         </p>
       </div>
-      <div
-        ref={box}
-        className="relative w-full touch-pan-y overflow-hidden rounded-control bg-ground"
-        style={{ height: h }}
-        onPointerMove={point}
-        onPointerDown={point}
-        onPointerLeave={() => setHover(null)}
-      >
-        <canvas
-          ref={canvas}
-          role="img"
-          aria-label={`${p.label} over distance, ${geo.min.toFixed(decimals)} to ${geo.max.toFixed(decimals)} ${p.unit}`}
-          className="block"
-          style={{ width, height: h }}
-        />
-      </div>
+      <ChartBox
+        option={option}
+        height={h}
+        group={p.group}
+        resetToken={p.resetToken}
+        onZoom={p.onZoom}
+        label={`${p.label} over distance, ${lo.toFixed(d)} to ${hi.toFixed(d)} ${p.unit}`}
+      />
     </section>
   );
 }

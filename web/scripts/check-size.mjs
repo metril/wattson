@@ -1,5 +1,5 @@
 // Fails when the main bundle (entry JS + CSS referenced by index.html)
-// exceeds 400 KB gzipped, or a budgeted lazy chunk (maplibre, mlworker, ride3d, photo)
+// exceeds 400 KB gzipped, or a budgeted lazy chunk (maplibre, mlworker, ride3d, photo, echarts)
 // exceeds its own limit. Lazy chunks are not referenced from index.html and
 // so are not part of the main total.
 import { readdirSync, readFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { gzipSync } from 'node:zlib';
 export const LIMIT_BYTES = 409600;
 
 /** Lazy chunk name (assets/<name>-<hash>.js) -> gzipped limit in KB. */
-export const CHUNK_LIMITS_KB = { maplibre: 300, mlworker: 130, ride3d: 25, photo: 30 };
+export const CHUNK_LIMITS_KB = { maplibre: 300, mlworker: 130, ride3d: 25, photo: 30, echarts: 220 };
 
 function attrs(tag) {
   const out = {};

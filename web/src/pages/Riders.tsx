@@ -7,6 +7,7 @@ import { errMessage } from '@/lib/errors';
 import { clearSelectedRiderId, getSelectedRiderId, setSelectedRiderId } from '@/lib/rider';
 import type { components } from '@/lib/openapi';
 import { Banner } from '@/components/Banner';
+import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Field } from '@/components/Field';
@@ -283,13 +284,12 @@ export function RidersPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="numeral flex-1 text-2xl">Riders</h1>
+      <PageHeader title="Riders" subtitle="Weight, FTP and connected accounts" actions={<>
         <Button variant="primary" onClick={() => setCreating(true)} disabled={creating}>
           <Plus aria-hidden className="size-5" />
           New rider
         </Button>
-      </div>
+      </>} />
       {strava.result === 'connected' && <Banner tone="ok">{stravaReasonText('connected')}</Banner>}
       {strava.result === 'error' && <Banner tone="error">{stravaReasonText(strava.reason)}</Banner>}
       {creating && (

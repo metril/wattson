@@ -43,6 +43,7 @@ describe('StatsPage', () => {
     expect(screen.getByLabelText('This week')).toHaveTextContent('40.00 km');
     expect(screen.getByLabelText('This week')).toHaveTextContent('2:00:00');
     expect(await screen.findByTestId('eftp')).toHaveTextContent('eFTP 238 W');
+    expect(await screen.findByTestId('form-card')).toHaveTextContent('Fatigued');
     expect(screen.getByRole('img', { name: /distance per week/i })).toBeInTheDocument();
     expect(await screen.findByRole('img', { name: /fitness, fatigue and form/i })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /best power from 5 s/i })).toBeInTheDocument();
@@ -53,7 +54,7 @@ describe('StatsPage', () => {
     renderWithClient(<StatsPage />);
     await screen.findByText('3 days');
     expect(urls().some((u) => u.startsWith('/api/stats/totals?') && u.includes('period=week') && u.includes('tz='))).toBe(true);
-    await userEvent.selectOptions(screen.getByLabelText('Period'), 'year');
+    await userEvent.click(screen.getByRole('radio', { name: 'Yearly' }));
     await userEvent.selectOptions(await screen.findByLabelText('Rider'), '2');
     await waitFor(() => expect(urls().some((u) => u.includes('period=year') && u.includes('rider_id=2'))).toBe(true));
     await waitFor(() => expect(urls().some((u) => u.startsWith('/api/stats/power-curve') && u.includes('rider_id=2'))).toBe(true));

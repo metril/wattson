@@ -69,15 +69,9 @@ export function FitnessChart({ days }: { days: FitnessPoint[] }) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <h3 className="label">Fitness, fatigue and form</h3>
-        {shown && (
-          <p data-testid="fitness-readout" className="numeral text-sm text-dim">
-            {shown.date} · {SERIES.map((s) => `${s.short} ${shown[s.key].toFixed(0)}`).join(' · ')}
-          </p>
-        )}
-      </div>
-      <ChartBox option={option} height={H} label="Fitness, fatigue and form over time" />
-      <ul className="flex flex-wrap gap-x-4 text-xs text-dim">
+        <div className="flex flex-col gap-1">
+          <h3 className="label">Fitness, fatigue and form</h3>
+          <ul className="flex flex-wrap gap-x-4 text-xs text-dim">
         {SERIES.map((s) => (
           <li key={s.key} className="flex items-center gap-1.5">
             <span aria-hidden className="inline-block h-0.5 w-4 rounded" style={{ background: t[s.color] }} />
@@ -85,6 +79,14 @@ export function FitnessChart({ days }: { days: FitnessPoint[] }) {
           </li>
         ))}
       </ul>
+        </div>
+        {shown && (
+          <p data-testid="fitness-readout" className="numeral text-sm text-dim">
+            {shown.date} · {SERIES.map((s) => `${s.short} ${shown[s.key].toFixed(0)}`).join(' · ')}
+          </p>
+        )}
+      </div>
+      <ChartBox option={option} height={H} label="Fitness, fatigue and form over time" />
     </section>
   );
 }

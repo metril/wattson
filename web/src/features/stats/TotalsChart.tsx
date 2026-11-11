@@ -42,7 +42,7 @@ export function totalsOption(bars: Bar[], fmt: (v: number) => string, t: ChartTh
       {
         type: 'bar',
         barMaxWidth: 28,
-        barCategoryGap: '30%',
+        barCategoryGap: '35%',
         data: bars.map((b, i) => ({
           value: b.value,
           itemStyle: { color: i === bars.length - 1 ? t.accent : alpha(t.accent, 0.5), borderRadius: [5, 5, 0, 0] },
@@ -61,7 +61,13 @@ export function TotalsChart({ title, bars, fmt }: { title: string; bars: Bar[]; 
   return (
     <section className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <h3 className="label">{title}</h3>
+        <div className="flex flex-col gap-1">
+          <h3 className="label">{title}</h3>
+          <p className="flex items-center gap-3 text-xs text-dim">
+            <span className="flex items-center gap-1.5"><span aria-hidden className="size-2 rounded-sm bg-accent" />Current period</span>
+            <span className="flex items-center gap-1.5"><span aria-hidden className="size-2 rounded-sm bg-accent/50" />Earlier</span>
+          </p>
+        </div>
         {latest && (
           <p data-testid="totals-readout" className="numeral text-sm text-dim">
             {latest.label}: {fmt(latest.value)}

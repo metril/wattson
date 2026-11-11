@@ -22,7 +22,7 @@ describe('ZoneBars', () => {
   it('shows watt ranges and percent of FTP when the base is known', () => {
     render(<ZoneBars title="Power zones" kind="power" seconds={[60, 60, 0, 0, 0, 0, 0]} base={200} />);
     expect(screen.getByText('<110 W · <55% FTP')).toBeInTheDocument();
-    expect(screen.getByText('110–149 W · 56–75% FTP')).toBeInTheDocument();
+    expect(screen.getByText('110–149 W · 55–75% FTP')).toBeInTheDocument();
     expect(screen.getByText('Active recovery')).toBeInTheDocument();
   });
 

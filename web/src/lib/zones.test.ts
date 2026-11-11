@@ -16,9 +16,13 @@ describe('zones', () => {
     expect(rangeLabel(r[3], 'W')).toBe('180–209 W');
     expect(rangeLabel(r[6], 'W')).toBe('300+ W');
     for (let i = 1; i < r.length; i++) expect(r[i].lo).toBe(r[i - 1].hi! + 1);
-    expect(pctLabel(r[1], 'FTP')).toBe('56–75% FTP');
+    // Non-round FTP: 251*0.55 = 138.05, so 138 W is still zone 1.
+    const odd = zoneRanges('power', 251);
+    expect(odd[0].hi).toBe(138);
+    expect(odd[1].lo).toBe(139);
+    expect(pctLabel(r[1], 'FTP')).toBe('55–75% FTP');
     expect(pctLabel(r[0], 'FTP')).toBe('<55% FTP');
-    expect(pctLabel(r[6], 'FTP')).toBe('>150% FTP');
+    expect(pctLabel(r[6], 'FTP')).toBe('150%+ FTP');
   });
 
   it('has five heart-rate zones and no ranges without a base', () => {

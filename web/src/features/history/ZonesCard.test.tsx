@@ -15,8 +15,8 @@ describe('ZonesCard', () => {
 
   it('shows ranges for power and heart rate and the max HR note', () => {
     wrap(<ZonesCard ride={rideFixture({ ftp_w: 200, power_zone_s: [60, 60, 0, 0, 0, 0, 0], hr_zone_s: [0, 30, 30, 0, 0] })} maxHr={190} />);
-    expect(screen.getByText('110–149 W · 56–75% FTP')).toBeInTheDocument();
-    expect(screen.getByText('114–132 bpm · 61–70% max HR')).toBeInTheDocument();
+    expect(screen.getByText('110–149 W · 55–75% FTP')).toBeInTheDocument();
+    expect(screen.getByText('114–132 bpm · 60–70% max HR')).toBeInTheDocument();
     expect(screen.getByText(/based on current max HR \(190 bpm\)/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'About zones' })).toBeInTheDocument();
   });

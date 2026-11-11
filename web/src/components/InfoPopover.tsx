@@ -15,6 +15,7 @@ export function InfoPopover({ label, children }: { label: string; children: Reac
       </P.Trigger>
       <P.Portal>
         <P.Content
+          aria-label={label}
           align="end"
           sideOffset={4}
           collisionPadding={12}

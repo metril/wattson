@@ -49,9 +49,10 @@ export function zoneRanges(kind: ZoneKind, base?: number | null): ZoneRange[] {
   return zones.map((zone, i) => ({
     z: i + 1,
     ...zone,
-    lo: ok && i > 0 ? Math.round(base * edges[i - 1]) : null,
-    hi: ok && i < edges.length ? Math.round(base * edges[i]) - 1 : null,
-    pctLo: i > 0 ? Math.round(edges[i - 1] * 100) + 1 : null,
+    // First whole value at or above each edge (Go's ZoneOf is `v < edge`); the epsilon absorbs float noise like 200*0.55.
+    lo: ok && i > 0 ? Math.ceil(base * edges[i - 1] - 1e-9) : null,
+    hi: ok && i < edges.length ? Math.ceil(base * edges[i] - 1e-9) - 1 : null,
+    pctLo: i > 0 ? Math.round(edges[i - 1] * 100) : null,
     pctHi: i < edges.length ? Math.round(edges[i] * 100) : null,
   }));
 }
@@ -64,9 +65,9 @@ export function rangeLabel(r: ZoneRange, unit: string): string {
   return `${r.lo}–${r.hi} ${unit}`;
 }
 
-/** "56–75% FTP", "<55% FTP", ">150% FTP". */
+/** "55–75% FTP" (lower edge in, upper out), "<55% FTP", "150%+ FTP". */
 export function pctLabel(r: ZoneRange, of: string): string {
   if (r.pctLo === null) return `<${r.pctHi}% ${of}`;
-  if (r.pctHi === null) return `>${r.pctLo - 1}% ${of}`;
+  if (r.pctHi === null) return `${r.pctLo}%+ ${of}`;
   return `${r.pctLo}–${r.pctHi}% ${of}`;
 }
